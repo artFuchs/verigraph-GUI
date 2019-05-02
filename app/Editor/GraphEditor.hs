@@ -39,7 +39,7 @@ import Editor.EditorState
 -- It contains the informations: name, graph changed (0 - no, 1 - yes, 2 - is new), and a integer that is the identifier of the graph
 type GraphStore = (String, Int32, Int32)
 
-storeSetGraphStore :: Gtk.ListStore -> Gtk.TreeIter -> GraphStore -> IO ()
+storeSetGraphStore :: Gtk.TreeStore -> Gtk.TreeIter -> GraphStore -> IO ()
 storeSetGraphStore store iter (n,c,i) = do
   gv0 <- toGValue (Just n)
   gv1 <- toGValue c
@@ -84,8 +84,8 @@ startGUI = do
   #showAll window
 
   -- init an model to display in the tree panel --------------------------------
-  store <- Gtk.listStoreNew [gtypeString, gtypeInt, gtypeInt]
-  fstIter <- Gtk.listStoreAppend store
+  store <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt]
+  fstIter <- Gtk.treeStoreAppend store Nothing
   Gtk.treeViewSetModel treeview (Just store)
   storeSetGraphStore store fstIter ("new", 0, 0)
 
@@ -397,7 +397,7 @@ startGUI = do
                       writeIORef lastSavedState (M.map (\(es,_,_) -> (editorGetGraph es, editorGetGI es)) states)
                       gvChanged <- toGValue (0::Int32)
                       Gtk.treeModelForeach store $ \model path iter -> do
-                        Gtk.listStoreSetValue store iter 1 gvChanged
+                        Gtk.treeStoreSetValue store iter 1 gvChanged
                         return False
                       indicateProjChanged window False
                       updateSavedState lastSavedState graphStates
@@ -407,13 +407,13 @@ startGUI = do
                         Just fn -> set window [#title := T.pack ("Graph Editor - " ++ fn)]
 
   -- the next 2 are auxiliar functions to get the structures needed to save the project
-  let getListStoreValues iter = do
+  let getTreeStoreValues iter = do
           valN <- Gtk.treeModelGetValue store iter 0 >>= (\n -> fromGValue n :: IO (Maybe String)) >>= return . fromJust
           valI <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
           continue <- Gtk.treeModelIterNext store iter
           if continue
             then do
-              newVals <- getListStoreValues iter
+              newVals <- getTreeStoreValues iter
               return $ (valN, valI) : newVals
             else return $ (valN, valI) : []
 
@@ -422,7 +422,7 @@ startGUI = do
           if not valid
             then return []
             else do
-              treeNodeList <- getListStoreValues fstIter
+              treeNodeList <- getTreeStoreValues fstIter
               states <- readIORef graphStates
               let ids = map snd treeNodeList
                   editors = map (\iD -> let (es,_,_) = fromJust $ M.lookup iD states in es) ids
@@ -452,8 +452,8 @@ startGUI = do
     if continue
       then do
         writeIORef fileName Nothing
-        Gtk.listStoreClear store
-        iter <- Gtk.listStoreAppend store
+        Gtk.treeStoreClear store
+        iter <- Gtk.treeStoreAppend store Nothing
         storeSetGraphStore store iter ("new", 0, 0)
         writeIORef st emptyES
         writeIORef undoStack []
@@ -477,11 +477,11 @@ startGUI = do
           Just (list,fn) -> do
             if length list > 0
               then do
-                Gtk.listStoreClear store
+                Gtk.treeStoreClear store
                 let nameList = map (\(n,i) -> (n,0,i)) $ zip (map fst list) [0..]
                     statesList = map (\(es,i) -> (i, (es,[],[]))) $ zip (map snd list) [0..]
                 forM nameList $ \element -> do
-                  iter <- Gtk.listStoreAppend store
+                  iter <- Gtk.treeStoreAppend store Nothing
                   storeSetGraphStore store iter element
                 let (_,es) = list!!0
                 writeIORef st es
@@ -527,7 +527,7 @@ startGUI = do
         newKey <- readIORef graphStates >>= return . (+1) . maximum . M.keys
         modifyIORef graphStates $ M.insert newKey (editorSetGI gi . editorSetGraph g $ emptyES, [],[])
         -- update the treeview
-        iter <- Gtk.listStoreAppend store
+        iter <- Gtk.treeStoreAppend store Nothing
         storeSetGraphStore store iter (getName . getLastPart $ path, 2, newKey)
         path <- Gtk.treeModelGetPath store iter
         Gtk.treeViewSetCursor treeview path (Nothing :: Maybe Gtk.TreeViewColumn) False
@@ -860,7 +860,7 @@ startGUI = do
   on btnNew #clicked $ do
     states <- readIORef graphStates
     let newKey = maximum (M.keys states) + 1
-    iter <- Gtk.listStoreAppend store
+    iter <- Gtk.treeStoreAppend store Nothing
     storeSetGraphStore store iter ("new",2, newKey)
     modifyIORef graphStates (M.insert newKey (emptyES,[],[]))
 
@@ -872,7 +872,7 @@ startGUI = do
       False -> return ()
       True -> do
         index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
-        Gtk.listStoreRemove store iter
+        Gtk.treeStoreRemove store iter
         modifyIORef graphStates $ M.delete index
 
   -- edited a graph name
@@ -882,7 +882,7 @@ startGUI = do
     if v
       then do
         gval <- toGValue (Just newName)
-        Gtk.listStoreSet store iter [0] [gval]
+        Gtk.treeStoreSet store iter [0] [gval]
         writeIORef changedProject True
         indicateProjChanged window True
       else return ()
@@ -1264,18 +1264,18 @@ indicateProjChanged window False = do
     then set window [#title := T.pack title]
     else return ()
 
--- write in the liststore that the current graph was modified
-indicateGraphChanged :: Gtk.ListStore -> Gtk.TreeIter -> Bool -> IO ()
+-- write in the treestore that the current graph was modified
+indicateGraphChanged :: Gtk.TreeStore -> Gtk.TreeIter -> Bool -> IO ()
 indicateGraphChanged store iter True = do
   gvchanged <- toGValue (1::Int32)
-  Gtk.listStoreSetValue store iter 1 gvchanged
+  Gtk.treeStoreSetValue store iter 1 gvchanged
 
 indicateGraphChanged store iter False = do
   gvchanged <- toGValue (0::Int32)
-  Gtk.listStoreSetValue store iter 1 gvchanged
+  Gtk.treeStoreSetValue store iter 1 gvchanged
 
 -- change the flags that inform if the graphs and project were changed and indicate the changes
-setChangeFlags :: Gtk.Window -> Gtk.ListStore -> IORef Bool -> IORef [Bool] -> IORef Int32 -> Bool -> IO ()
+setChangeFlags :: Gtk.Window -> Gtk.TreeStore -> IORef Bool -> IORef [Bool] -> IORef Int32 -> Bool -> IO ()
 setChangeFlags window store changedProject changedGraph currentGraph changed = do
   index <- readIORef currentGraph >>= return . fromIntegral
   xs <- readIORef changedGraph
@@ -1295,37 +1295,3 @@ updateSavedState :: IORef (M.Map Int32 DiaGraph) -> IORef (M.Map Int32 (EditorSt
 updateSavedState sst graphStates = do
   states <- readIORef graphStates
   writeIORef sst $ (M.map (\(es,_,_) -> (editorGetGraph es, editorGetGI es) ) states)
-
-{-
-Tarefas ---------------------------------------------------------------------
-
-
-Progresso -------------------------------------------------------------------
-*Criar uma janela de ajuda
-
-Feito -----------------------------------------------------------------------
-*Melhorar menu de Propriedades
- *3 aparencias diferentes para nodos, edges e nodos+edges
-*Corrigir Zoom para ajustar o Pan quando ele for modificado
-*Copy/Paste/Cut
-*Corrigir arestas não sendo coladas com Cut/Paste
-*Corrigir movimento das arestas quando mover um nodo
-*corrigir bug no copiar/colar que ocorre quando a seleção é movida antes de copiar
-*Novo Arquivo
-*Separar a estrutura do grafo das estruturas gráficas
-*Estilos diferentes para as arestas
-*Criar uma janela de mensagens de erros para substituir prints
-*Mudar para que quando o usuario clique em um nodo, ele não invalide toda a seleção se o nodo for parte da seleção
-*Fazer com que duplo-clique em um nodo ou aresta ou pressionando F2 com nodos/arestas selecionados, o dialogo nome seja focado
-*Mudar estrutura do grafo para estrutura usada no verigraph
-*Editar multiplos grafos no mesmo projeto
-  *Criar uma arvore de grafos
-  *Consertar Undo/Redo
-*Espaçar edges quando houver mais de uma aresta entre dois nodos e ela estiver centralizada
-*Removida a opção "Insert Emoji" do menu da treeView, porque a ativação estava fazendo o programa encerrar.
-*Arrumado bug que fazia o programa encerrar ao salvar com algum grafo que não o primeiro selecionado.
-*Indicar em qual grafo está a mudança do projeto
-*Mudar a linguagem dos comentários para inglês
-*Perguntar se o usuario quer salvar o grafo no caso de ativar a ação 'new'
-*Mudar a linguagem da interface toda para inglês
--}
