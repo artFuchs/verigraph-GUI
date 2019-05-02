@@ -36,15 +36,16 @@ import Editor.EditorState
 --------------------------------------------------------------------------------
 -- |GraphStore
 -- A tuple representing what is showed in each node of the tree in the treeview
--- It contains the informations: name, graph changed (0 - no, 1 - yes, 2 - is new), and a integer that is the identifier of the graph
-type GraphStore = (String, Int32, Int32)
+-- It contains the informations: name, graph changed (0 - no, 1 - yes, 2 - is new), graph id, and type (0 - menu, 1 - graph)
+type GraphStore = (String, Int32, Int32, Int32)
 
 storeSetGraphStore :: Gtk.TreeStore -> Gtk.TreeIter -> GraphStore -> IO ()
-storeSetGraphStore store iter (n,c,i) = do
+storeSetGraphStore store iter (n,c,i,t) = do
   gv0 <- toGValue (Just n)
   gv1 <- toGValue c
   gv2 <- toGValue i
-  #set store iter [0,1,2] [gv0,gv1,gv2]
+  gv3 <- toGValue t
+  #set store iter [0,1,2,3] [gv0,gv1,gv2,gv3]
 
 
 --------------------------------------------------------------------------------
@@ -84,10 +85,19 @@ startGUI = do
   #showAll window
 
   -- init an model to display in the tree panel --------------------------------
-  store <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt]
-  fstIter <- Gtk.treeStoreAppend store Nothing
+  store <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt]
   Gtk.treeViewSetModel treeview (Just store)
-  storeSetGraphStore store fstIter ("new", 0, 0)
+  let initStore = do
+          fstIter <- Gtk.treeStoreAppend store Nothing
+          storeSetGraphStore store fstIter ("Type Graphs", 0, 0, 0)
+          fstTypeIter <- Gtk.treeStoreAppend store (Just fstIter)
+          storeSetGraphStore store fstTypeIter ("newTypeGraph", 0, 0, 1)
+          sndIter <- Gtk.treeStoreAppend store Nothing
+          storeSetGraphStore store sndIter ("Host Graphs", 0, 0, 0)
+          fstHostIter <- Gtk.treeStoreAppend store (Just sndIter)
+          storeSetGraphStore store fstHostIter ("newHostGraph", 0, 1, 1)
+
+  initStore
 
   projectCol <- Gtk.treeViewGetColumn treeview 0
 
@@ -130,10 +140,11 @@ startGUI = do
   currentLC       <- newIORef (0,0,0) -- the color to init new edges and the line and text of new nodes
   clipboard       <- newIORef DG.empty -- clipboard - DiaGraph
   fileName        <- newIORef (Nothing :: Maybe String) -- name of the opened file
-  currentGraph    <- newIORef 0 -- current graph being edited
-  graphStates     <- newIORef $ M.fromList [(0, (emptyES,[],[]) :: (EditorState,[DiaGraph],[DiaGraph]) )] -- map of states foreach graph in the editor
+  currentPath     <- newIORef [0,0] -- current graph being edited
+  currentGraph    <- newIORef 0
+  graphStates     <- newIORef $ M.fromList [(0, (emptyES,[],[])), (1, (emptyES, [], []))] -- map of states foreach graph in the editor
   changedProject  <- newIORef False -- set this flag as True when the graph is changed somehow
-  changedGraph    <- newIORef [False] -- when modify a graph, set the flag in the 'currentGraph' to True
+  changedGraph    <- newIORef [False] -- when modify a graph, set the flag in the 'currentPath' to True
   lastSavedState  <- newIORef (M.empty :: M.Map Int32 DiaGraph)
 
   ------------------------------------------------------------------------------
@@ -217,13 +228,13 @@ startGUI = do
               c <- readIORef currentC
               lc <- readIORef currentLC
               createNode' st (x',y') shape c lc context
-              setChangeFlags window store changedProject changedGraph currentGraph True
+              setChangeFlags window store changedProject changedGraph currentPath currentGraph True
               -- one node selected: create edges targeting this node
             (False, Just nid) -> do
               estyle <- readIORef currentStyle
               color <- readIORef currentLC
               modifyIORef st (\es -> createEdges es nid estyle color)
-              setChangeFlags window store changedProject changedGraph currentGraph True
+              setChangeFlags window store changedProject changedGraph currentPath currentGraph True
             -- ctrl pressed: middle mouse button emulation
             (True,_) -> return ()
           Gtk.widgetQueueDraw canvas
@@ -256,7 +267,7 @@ startGUI = do
         modifyIORef st (\es -> moveNodes es (ox,oy) (x',y'))
         modifyIORef st (\es -> if (>0) . length . fst . editorGetSelected $ es then es else moveEdges es (ox,oy) (x',y'))
         writeIORef oldPoint (x',y')
-        setChangeFlags window store changedProject changedGraph currentGraph True
+        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         mv <- readIORef movingGI
         if not mv
           then do
@@ -326,13 +337,13 @@ startGUI = do
   --       es <- readIORef st
   --       stackUndo undoStack redoStack es
   --       modifyIORef st (\es -> deleteSelected es)
-  --       setChangeFlags window store changedProject changedGraph currentGraph True
+  --       setChangeFlags window store changedProject changedGraph currentPath True
   --       Gtk.widgetQueueDraw canvas
   --     (True,False,'d') -> do
   --       es <- readIORef st
   --       stackUndo undoStack redoStack es
   --       modifyIORef st (\es -> deleteSelected es)
-  --       setChangeFlags window store changedProject changedGraph currentGraph True
+  --       setChangeFlags window store changedProject changedGraph currentPath True
   --       Gtk.widgetQueueDraw canvas
   --     -- CTRL + [SHIFT] + A : [de]select all
   --     (True, True, 'a') -> do
@@ -453,8 +464,7 @@ startGUI = do
       then do
         writeIORef fileName Nothing
         Gtk.treeStoreClear store
-        iter <- Gtk.treeStoreAppend store Nothing
-        storeSetGraphStore store iter ("new", 0, 0)
+        initStore
         writeIORef st emptyES
         writeIORef undoStack []
         writeIORef redoStack []
@@ -478,7 +488,7 @@ startGUI = do
             if length list > 0
               then do
                 Gtk.treeStoreClear store
-                let nameList = map (\(n,i) -> (n,0,i)) $ zip (map fst list) [0..]
+                let nameList = map (\(n,i) -> (n,0,i,1)) $ zip (map fst list) [0..]
                     statesList = map (\(es,i) -> (i, (es,[],[]))) $ zip (map snd list) [0..]
                 forM nameList $ \element -> do
                   iter <- Gtk.treeStoreAppend store Nothing
@@ -488,7 +498,7 @@ startGUI = do
                 writeIORef undoStack []
                 writeIORef redoStack []
                 writeIORef fileName $ Just fn
-                writeIORef currentGraph 0
+                writeIORef currentPath [0,0]
                 writeIORef graphStates $ M.fromList statesList
                 writeIORef changedProject False
                 writeIORef changedGraph [False]
@@ -528,7 +538,7 @@ startGUI = do
         modifyIORef graphStates $ M.insert newKey (editorSetGI gi . editorSetGraph g $ emptyES, [],[])
         -- update the treeview
         iter <- Gtk.treeStoreAppend store Nothing
-        storeSetGraphStore store iter (getName . getLastPart $ path, 2, newKey)
+        storeSetGraphStore store iter (getName . getLastPart $ path, 2, newKey, 1)
         path <- Gtk.treeModelGetPath store iter
         Gtk.treeViewSetCursor treeview path (Nothing :: Maybe Gtk.TreeViewColumn) False
         modifyIORef changedGraph (\xs -> xs ++ [True])
@@ -550,7 +560,7 @@ startGUI = do
     es <- readIORef st
     stackUndo undoStack redoStack es
     modifyIORef st (\es -> deleteSelected es)
-    setChangeFlags window store changedProject changedGraph currentGraph True
+    setChangeFlags window store changedProject changedGraph currentPath currentGraph True
     Gtk.widgetQueueDraw canvas
 
 
@@ -565,7 +575,7 @@ startGUI = do
         x = case M.lookup (fromIntegral index) $ sst of
               Just diag -> diag
               Nothing -> DG.empty
-    setChangeFlags window store changedProject changedGraph currentGraph $ not (isDiaGraphEqual (g,gi) x)
+    setChangeFlags window store changedProject changedGraph currentPath currentGraph $ not (isDiaGraphEqual (g,gi) x)
     Gtk.widgetQueueDraw canvas
 
   -- redo
@@ -579,7 +589,7 @@ startGUI = do
         x = case M.lookup (fromIntegral index) $ sst of
               Just diag -> diag
               Nothing -> DG.empty
-    setChangeFlags window store changedProject changedGraph currentGraph $ not (isDiaGraphEqual (g,gi) x)
+    setChangeFlags window store changedProject changedGraph currentPath currentGraph $ not (isDiaGraphEqual (g,gi) x)
     Gtk.widgetQueueDraw canvas
 
   -- copy
@@ -594,7 +604,7 @@ startGUI = do
     es <- readIORef st
     clip <- readIORef clipboard
     stackUndo undoStack redoStack es
-    setChangeFlags window store changedProject changedGraph currentGraph True
+    setChangeFlags window store changedProject changedGraph currentPath currentGraph True
     modifyIORef st (pasteClipBoard clip)
     Gtk.widgetQueueDraw canvas
 
@@ -604,7 +614,7 @@ startGUI = do
     writeIORef clipboard $ copySelected es
     modifyIORef st (\es -> deleteSelected es)
     stackUndo undoStack redoStack es
-    setChangeFlags window store changedProject changedGraph currentGraph True
+    setChangeFlags window store changedProject changedGraph currentPath currentGraph  True
     Gtk.widgetQueueDraw canvas
 
   -- select all
@@ -677,7 +687,7 @@ startGUI = do
     k <- get eventKey #keyval >>= return . chr . fromIntegral
     let setName = do es <- readIORef st
                      stackUndo undoStack redoStack es
-                     setChangeFlags window store changedProject changedGraph currentGraph True
+                     setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                      name <- Gtk.entryGetText entryName >>= return . T.unpack
                      context <- Gtk.widgetGetPangoContext canvas
                      renameSelected st name context
@@ -707,7 +717,7 @@ startGUI = do
         let (ngiM, egiM) = editorGetGI es
             newngiM = M.mapWithKey (\k ngi -> if NodeId k `elem` nds then nodeGiSetColor color ngi else ngi) ngiM
         stackUndo undoStack redoStack es
-        setChangeFlags window store changedProject changedGraph currentGraph True
+        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> editorSetGI (newngiM, egiM) es)
         Gtk.widgetQueueDraw canvas
 
@@ -727,7 +737,7 @@ startGUI = do
             newngiM = M.mapWithKey (\k ngi -> if NodeId k `elem` nds then nodeGiSetLineColor color ngi else ngi) ngiM
             newegiM = M.mapWithKey (\k egi -> if EdgeId k `elem` edgs then edgeGiSetColor color egi else egi) egiM
         stackUndo undoStack redoStack es
-        setChangeFlags window store changedProject changedGraph currentGraph True
+        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> editorSetGI (newngiM, newegiM) es)
         Gtk.widgetQueueDraw canvas
 
@@ -743,7 +753,7 @@ startGUI = do
       then return ()
       else do
         stackUndo undoStack redoStack es
-        setChangeFlags window store changedProject changedGraph currentGraph True
+        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> changeNodeShape es NCircle)
         Gtk.widgetQueueDraw canvas
 
@@ -757,7 +767,7 @@ startGUI = do
       then return ()
       else do
         stackUndo undoStack redoStack es
-        setChangeFlags window store changedProject changedGraph currentGraph True
+        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> changeNodeShape es NRect)
         Gtk.widgetQueueDraw canvas
 
@@ -771,7 +781,7 @@ startGUI = do
       then return ()
       else do
         stackUndo undoStack redoStack es
-        setChangeFlags window store changedProject changedGraph currentGraph True
+        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> changeNodeShape es NSquare)
         Gtk.widgetQueueDraw canvas
 
@@ -787,7 +797,7 @@ startGUI = do
       then return ()
       else do
         stackUndo undoStack redoStack es
-        setChangeFlags window store changedProject changedGraph currentGraph True
+        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> changeEdgeStyle es ENormal)
         Gtk.widgetQueueDraw canvas
 
@@ -801,7 +811,7 @@ startGUI = do
       then return ()
       else do
         stackUndo undoStack redoStack es
-        setChangeFlags window store changedProject changedGraph currentGraph True
+        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> changeEdgeStyle es EPointed)
         Gtk.widgetQueueDraw canvas
 
@@ -815,7 +825,7 @@ startGUI = do
       then return ()
       else do
         stackUndo undoStack redoStack es
-        setChangeFlags window store changedProject changedGraph currentGraph True
+        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> changeEdgeStyle es ESlashed)
         Gtk.widgetQueueDraw canvas
 
@@ -842,9 +852,9 @@ startGUI = do
       False -> return ()
       True -> do
         cIndex <- readIORef currentGraph
-        val <- Gtk.treeModelGetValue model iter 2
-        index <- fromGValue val :: IO Int32
-        if cIndex == index
+        index <- Gtk.treeModelGetValue model iter 2 >>= fromGValue  :: IO Int32
+        typeG <- Gtk.treeModelGetValue model iter 3 >>= fromGValue  :: IO Int32
+        if cIndex == index || typeG == 0
           then return ()
           else do
             -- update the current graph in the tree
@@ -853,15 +863,34 @@ startGUI = do
             r <- readIORef redoStack
             modifyIORef graphStates (M.insert cIndex (currentES,u,r))
             -- load the selected graph from the tree
+            mpath <- Gtk.treeModelGetPath model iter >>= Gtk.treePathGetIndices
+            path <- case mpath of
+              Nothing -> return [0,0]
+              Just p -> return p
+            writeIORef currentPath $ path
             loadFromStore index
             Gtk.widgetQueueDraw canvas
 
   -- pressed the 'new' button on the treeview area
   on btnNew #clicked $ do
     states <- readIORef graphStates
-    let newKey = maximum (M.keys states) + 1
-    iter <- Gtk.treeStoreAppend store Nothing
-    storeSetGraphStore store iter ("new",2, newKey)
+    let newKey = if M.size states > 0 then maximum (M.keys states) + 1 else 0
+    parent <- do
+      selection <- Gtk.treeViewGetSelection treeview
+      (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
+      case sel of
+        False -> do
+          (valid, fIter) <- Gtk.treeModelGetIterFirst model
+          return $ if valid then (Just fIter) else Nothing
+        True -> do
+          typeI <- (Gtk.treeModelGetValue store iter 3 >>= fromGValue ) :: IO Int32
+          case typeI of
+            0 -> return $ Just iter
+            1 -> do
+              (valid, pIter) <- Gtk.treeModelIterParent model iter
+              return $ if valid then (Just pIter) else Nothing
+    iter <- Gtk.treeStoreAppend store parent
+    storeSetGraphStore store iter ("new",2, newKey,1)
     modifyIORef graphStates (M.insert newKey (emptyES,[],[]))
 
   -- pressed the 'remove' button on the treeview area
@@ -871,9 +900,13 @@ startGUI = do
     case sel of
       False -> return ()
       True -> do
-        index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
-        Gtk.treeStoreRemove store iter
-        modifyIORef graphStates $ M.delete index
+        typeI <- (Gtk.treeModelGetValue store iter 3 >>= fromGValue ) :: IO Int32
+        case typeI of
+          0 -> return ()
+          1 -> do
+            index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
+            Gtk.treeStoreRemove store iter
+            modifyIORef graphStates $ M.delete index
 
   -- edited a graph name
   on treeRenderer #edited $ \pathStr newName -> do
@@ -1275,8 +1308,8 @@ indicateGraphChanged store iter False = do
   Gtk.treeStoreSetValue store iter 1 gvchanged
 
 -- change the flags that inform if the graphs and project were changed and indicate the changes
-setChangeFlags :: Gtk.Window -> Gtk.TreeStore -> IORef Bool -> IORef [Bool] -> IORef Int32 -> Bool -> IO ()
-setChangeFlags window store changedProject changedGraph currentGraph changed = do
+setChangeFlags :: Gtk.Window -> Gtk.TreeStore -> IORef Bool -> IORef [Bool] -> IORef [Int32] -> IORef Int32 -> Bool -> IO ()
+setChangeFlags window store changedProject changedGraph currentPath currentGraph changed = do
   index <- readIORef currentGraph >>= return . fromIntegral
   xs <- readIORef changedGraph
   let xs' = take index xs ++ [changed] ++ drop (index+1) xs
@@ -1284,7 +1317,8 @@ setChangeFlags window store changedProject changedGraph currentGraph changed = d
   writeIORef changedGraph xs'
   writeIORef changedProject $ projChanged
   indicateProjChanged window $ projChanged
-  (valid,iter) <- Gtk.treeModelGetIterFromString store (T.pack . show $ index)
+  path <- readIORef currentPath >>= Gtk.treePathNewFromIndices
+  (valid,iter) <- Gtk.treeModelGetIter store path
   if valid
     then indicateGraphChanged store iter changed
     else return ()

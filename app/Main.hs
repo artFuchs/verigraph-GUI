@@ -5,7 +5,6 @@ main = startGUI
 
 {-
 Tarefas ---------------------------------------------------------------------
-*Modificar a aplicação para aceitar ramificações da treestore
 *Adicionar diferentes tipos de grafos, mudando o inspector (painel a direita) quando o usuario clicar nele
   *Typed - grafo com mais liberdade de opções, define os tipos dos elementos
   *Host  - grafo em que elementos são associados a um tipo
@@ -13,6 +12,9 @@ Tarefas ---------------------------------------------------------------------
 
 
 Progresso -------------------------------------------------------------------
+*Modificar a aplicação para aceitar ramificações da treestore
+  *Durante a edição
+  *Salvar/Carregar
 
 Feito -----------------------------------------------------------------------
 *Melhorar menu de Propriedades
