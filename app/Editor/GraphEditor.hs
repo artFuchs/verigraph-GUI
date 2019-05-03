@@ -23,6 +23,7 @@ import qualified Control.Exception as E
 import qualified Data.Map as M
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
+import qualified Data.Tree as Tree
 import Editor.GraphicalInfo
 import Editor.Render
 import Editor.Helper
@@ -38,6 +39,14 @@ import Editor.EditorState
 -- A tuple representing what is showed in each node of the tree in the treeview
 -- It contains the informations: name, graph changed (0 - no, 1 - yes, 2 - is new), graph id, and type (0 - menu, 1 - graph)
 type GraphStore = (String, Int32, Int32, Int32)
+
+type NList = [(Int,String)]
+type EList = [(Int,Int,Int,String)]
+data SaveInfo = Topic String | TypeGraph String EditorState
+data UncompressedSaveInfo = T0 String
+                          | T1 String NList EList GraphicalInfo
+                          deriving (Show, Read)
+
 
 storeSetGraphStore :: Gtk.TreeStore -> Gtk.TreeIter -> GraphStore -> IO ()
 storeSetGraphStore store iter (n,c,i,t) = do
@@ -419,25 +428,40 @@ startGUI = do
 
   -- the next 2 are auxiliar functions to get the structures needed to save the project
   let getTreeStoreValues iter = do
+          valT <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
           valN <- Gtk.treeModelGetValue store iter 0 >>= (\n -> fromGValue n :: IO (Maybe String)) >>= return . fromJust
-          valI <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
-          continue <- Gtk.treeModelIterNext store iter
-          if continue
-            then do
-              newVals <- getTreeStoreValues iter
-              return $ (valN, valI) : newVals
-            else return $ (valN, valI) : []
+          valI <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
+          case valT of
+            1 -> do continue <- Gtk.treeModelIterNext store iter
+                    if continue
+                      then do
+                        newVals <- getTreeStoreValues iter
+                        return $ (Tree.Node (valT, (valN, valI)) []) : newVals
+                      else return $ (Tree.Node (valT, (valN, valI)) []) : []
+            0 -> do (valid, childIter) <- Gtk.treeModelIterChildren store (Just iter)
+                    subForest <- if valid
+                                  then getTreeStoreValues childIter
+                                  else return []
+                    continue <- Gtk.treeModelIterNext store iter
+                    if continue
+                      then do
+                        newVals <- getTreeStoreValues iter
+                        return $ (Tree.Node (valT, (valN, valI)) subForest) : newVals
+                      else return $ (Tree.Node (valT, (valN, valI)) subForest) : []
 
   let getStructsToSave = do
           (valid, fstIter) <- Gtk.treeModelGetIterFirst store
           if not valid
             then return []
             else do
-              treeNodeList <- getTreeStoreValues fstIter
+              treeNodeList <- getTreeStoreValues fstIter :: IO (Tree.Forest (Int32,(String,Int32)))
               states <- readIORef graphStates
-              let ids = map snd treeNodeList
-                  editors = map (\iD -> let (es,_,_) = fromJust $ M.lookup iD states in es) ids
-                  structs = zip (map fst treeNodeList) editors
+              let structs = map
+                            (fmap (\(t, (name, nid)) -> case t of
+                                        0 -> Topic name
+                                        1 -> let (es,_,_) = fromJust $ M.lookup nid states
+                                             in TypeGraph name es))
+                            treeNodeList
               return structs
 
   -- auxiliar function to check if the project was changed
@@ -476,36 +500,36 @@ startGUI = do
         Gtk.widgetQueueDraw canvas
       else return ()
 
-  -- open project
-  on opn #activate $ do
-    continue <- confirmOperation
-    if continue
-      then do
-        mg <- loadFile window loadProject
-        case mg of
-          Nothing -> return ()
-          Just (list,fn) -> do
-            if length list > 0
-              then do
-                Gtk.treeStoreClear store
-                let nameList = map (\(n,i) -> (n,0,i,1)) $ zip (map fst list) [0..]
-                    statesList = map (\(es,i) -> (i, (es,[],[]))) $ zip (map snd list) [0..]
-                forM nameList $ \element -> do
-                  iter <- Gtk.treeStoreAppend store Nothing
-                  storeSetGraphStore store iter element
-                let (_,es) = list!!0
-                writeIORef st es
-                writeIORef undoStack []
-                writeIORef redoStack []
-                writeIORef fileName $ Just fn
-                writeIORef currentPath [0,0]
-                writeIORef graphStates $ M.fromList statesList
-                writeIORef changedProject False
-                writeIORef changedGraph [False]
-                set window [#title := T.pack ("Graph Editor - " ++ fn)]
-                Gtk.widgetQueueDraw canvas
-              else return ()
-      else return ()
+
+  --open project
+  -- on opn #activate $ do
+  --   continue <- confirmOperation
+  --   if continue
+  --     then do
+  --       mg <- loadFile window loadProject
+  --       case mg of
+  --         Nothing -> return ()
+  --         Just (tree,fn) -> do
+  --               Gtk.treeStoreClear store
+  --               let idTree = map ()
+  --
+  --               let nameList = map (\(n,i) -> (n,0,i,1)) $ zip (map fst list) [0..]
+  --                   statesList = map (\(es,i) -> (i, (es,[],[]))) $ zip (map snd list) [0..]
+  --               forM nameList $ \element -> do
+  --                 iter <- Gtk.treeStoreAppend store Nothing
+  --                 storeSetGraphStore store iter element
+  --               let (_,es) = list!!0
+  --               writeIORef st es
+  --               writeIORef undoStack []
+  --               writeIORef redoStack []
+  --               writeIORef fileName $ Just fn
+  --               writeIORef currentPath [0,0]
+  --               writeIORef graphStates $ M.fromList statesList
+  --               writeIORef changedProject False
+  --               writeIORef changedGraph [False]
+  --               set window [#title := T.pack ("Graph Editor - " ++ fn)]
+  --               Gtk.widgetQueueDraw canvas
+  --     else return ()
 
   -- save project
   on svn #activate $ do
@@ -1091,14 +1115,16 @@ saveFileAs x saveF fileName window changeFN = do
 
 -- auxiliar save functions -----------------------------------------------------
 -- save project
-saveProject :: [(String,EditorState)] -> String -> IO Bool
-saveProject esList path = do
-  let getWhatMatters = (\(name, es) -> (name, editorGetGraph es, editorGetGI es))
-      whatMatters = map getWhatMatters esList
-      contents = map (\(name, g, gi) -> ( name
-                                        , map (\n -> (nodeId n, nodeInfo n) ) $ nodes g
-                                        , map (\e -> (edgeId e, sourceId e, targetId e, edgeInfo e)) $ edges g
-                                        , gi )) whatMatters
+saveProject :: Tree.Forest SaveInfo -> String -> IO Bool
+saveProject saveInfo path = do
+  let contents =  map
+                  (fmap (\node -> case node of
+                                      Topic name -> T0 name
+                                      TypeGraph name es -> T1 name
+                                                              (map (\n -> (fromEnum . nodeId $ n, nodeInfo n)) $ (nodes $ editorGetGraph es))
+                                                              (map (\e -> (fromEnum . edgeId $ e, fromEnum . sourceId $ e, fromEnum . targetId $ e, edgeInfo e)) $ (edges $ editorGetGraph es))
+                                                              (editorGetGI es) ) )
+                  saveInfo
       writeProject = writeFile path $ show contents
   saveTry <- E.try (writeProject)  :: IO (Either E.IOException ())
   case saveTry of
@@ -1147,23 +1173,27 @@ loadFile window loadF = do
       return Nothing
 
 -- auxiliar load functions -----------------------------------------------------
--- load project
-type NList = [(Int,String)]
-type EList = [(Int,Int,Int,String)]
-loadProject :: String -> Maybe [(String, EditorState)]
-loadProject content = editorList
+loadProject :: String -> Maybe (Tree.Forest SaveInfo)
+loadProject content = loadedTree
   where
+    loadedTree = case reads content :: [(Tree.Forest UncompressedSaveInfo, String)] of
+      [(tree,"")] -> Just $ compress tree
+      _ -> Nothing
     genNodes = map (\(nid, info) -> Node (NodeId nid) info)
     genEdges = map (\(eid, src, dst, info) -> Edge (EdgeId eid) (NodeId src) (NodeId dst) info)
-    genProj = map (\(name,readNodes,readEdges,gi) ->
-                      let nds = genNodes readNodes
-                          eds = genEdges readEdges
-                          g = fromNodesAndEdges nds eds
-                      in (name, editorSetGI gi . editorSetGraph g $ emptyES) )
-    editorList = case reads content :: [([(String, NList, EList, GraphicalInfo)], String)] of
-      [(contentList,"")] -> Just $ genProj contentList
-      _ -> Nothing
--- -- load graph
+    compress = map
+               (fmap
+                  (\node -> case node of
+                              T0 name -> Topic name
+                              T1 name nlist elist gi -> let edgs = (genEdges elist)
+                                                            nds = (genNodes nlist)
+                                                            g = fromNodesAndEdges nds edgs
+                                                            es = editorSetGI gi . editorSetGraph g $ emptyES
+                                                        in TypeGraph name es
+                  ) )
+
+
+
 loadGraph :: String -> Maybe (Graph String String,GraphicalInfo)
 loadGraph contents = result
   where
