@@ -42,6 +42,7 @@ renderNode node content selected = do
       (rl,gl,bl) = lineColor node
       (pw,ph) = dims node
 
+  setLineWidth 2
   setSourceRGB r g b
   case shape node of
     NCircle -> let radius = (max pw ph)/2 in renderCircle (x,y) radius (r,g,b) (rl,gl,bl) selected
