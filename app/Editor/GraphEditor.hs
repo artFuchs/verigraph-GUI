@@ -24,6 +24,8 @@ import qualified Data.Map as M
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
 import qualified Data.Tree as Tree
+import Data.Monoid
+import Control.Monad.Zip
 import Editor.GraphicalInfo
 import Editor.Render
 import Editor.Helper
@@ -55,6 +57,19 @@ storeSetGraphStore store iter (n,c,i,t) = do
   gv2 <- toGValue i
   gv3 <- toGValue t
   #set store iter [0,1,2,3] [gv0,gv1,gv2,gv3]
+
+genForestIds :: Tree.Forest a -> Int32 -> Tree.Forest Int32
+genForestIds [] i = []
+genForestIds (t:ts) i = t' : (genForestIds ts i')
+  where (t',i') = genTreeId t i
+
+genTreeId :: Tree.Tree a -> Int32 -> (Tree.Tree Int32, Int32)
+genTreeId (Tree.Node x []) i = (Tree.Node i [], i + 1)
+genTreeId (Tree.Node x f) i = (Tree.Node i f', i')
+  where
+    f' = genForestIds f (i+1)
+    i' = (maximum (fmap maximum f')) + 1
+
 
 
 --------------------------------------------------------------------------------
@@ -501,35 +516,48 @@ startGUI = do
       else return ()
 
 
+
   --open project
-  -- on opn #activate $ do
-  --   continue <- confirmOperation
-  --   if continue
-  --     then do
-  --       mg <- loadFile window loadProject
-  --       case mg of
-  --         Nothing -> return ()
-  --         Just (tree,fn) -> do
-  --               Gtk.treeStoreClear store
-  --               let idTree = map ()
-  --
-  --               let nameList = map (\(n,i) -> (n,0,i,1)) $ zip (map fst list) [0..]
-  --                   statesList = map (\(es,i) -> (i, (es,[],[]))) $ zip (map snd list) [0..]
-  --               forM nameList $ \element -> do
-  --                 iter <- Gtk.treeStoreAppend store Nothing
-  --                 storeSetGraphStore store iter element
-  --               let (_,es) = list!!0
-  --               writeIORef st es
-  --               writeIORef undoStack []
-  --               writeIORef redoStack []
-  --               writeIORef fileName $ Just fn
-  --               writeIORef currentPath [0,0]
-  --               writeIORef graphStates $ M.fromList statesList
-  --               writeIORef changedProject False
-  --               writeIORef changedGraph [False]
-  --               set window [#title := T.pack ("Graph Editor - " ++ fn)]
-  --               Gtk.widgetQueueDraw canvas
-  --     else return ()
+  on opn #activate $ do
+    continue <- confirmOperation
+    if continue
+      then do
+        mg <- loadFile window loadProject
+        case mg of
+          Nothing -> return ()
+          Just (forest,fn) -> do
+                Gtk.treeStoreClear store
+                let toGSandStates n i = case n of
+                              Topic name -> ((name,0,0,0), (i,(emptyES, [], [])))
+                              TypeGraph name es -> ((name,0,i,1), (i,(es, [], [])))
+                let idForest = genForestIds forest 0
+                    infoList = zipWith toGSandStates (concat . map Tree.flatten $ forest) (concat . map Tree.flatten $ idForest)
+                    nameList = map fst infoList
+                    statesList = map snd $ filter (\((name,c,i,t), st) -> t>0) infoList
+                foldM (\lastIter node@(_,_,_,t) -> do
+                  if t == 0
+                    then do
+                      iter <- Gtk.treeStoreAppend store Nothing
+                      storeSetGraphStore store iter node
+                      return $ lastIter `mappend` (Last (Just iter))
+                    else do
+                      iter <- Gtk.treeStoreAppend store (getLast lastIter)
+                      storeSetGraphStore store iter node
+                      return lastIter
+                      ) (Last Nothing) nameList
+                let (i,(es, _,_)) = if length statesList > 0 then statesList!!0 else (0,(emptyES,[],[]))
+                writeIORef st es
+                writeIORef undoStack []
+                writeIORef redoStack []
+                writeIORef fileName $ Just fn
+                writeIORef currentPath [0,0]
+                writeIORef currentGraph i
+                writeIORef graphStates $ M.fromList statesList
+                writeIORef changedProject False
+                writeIORef changedGraph [False]
+                set window [#title := T.pack ("Graph Editor - " ++ fn)]
+                Gtk.widgetQueueDraw canvas
+      else return ()
 
   -- save project
   on svn #activate $ do
