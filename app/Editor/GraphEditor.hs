@@ -528,23 +528,24 @@ startGUI = do
           Just (forest,fn) -> do
                 Gtk.treeStoreClear store
                 let toGSandStates n i = case n of
-                              Topic name -> ((name,0,0,0), (i,(emptyES, [], [])))
-                              TypeGraph name es -> ((name,0,i,1), (i,(es, [], [])))
-                let idForest = genForestIds forest 0
-                    infoList = zipWith toGSandStates (concat . map Tree.flatten $ forest) (concat . map Tree.flatten $ idForest)
-                    nameList = map fst infoList
-                    statesList = map snd $ filter (\((name,c,i,t), st) -> t>0) infoList
-                foldM (\lastIter node@(_,_,_,t) -> do
-                  if t == 0
-                    then do
-                      iter <- Gtk.treeStoreAppend store Nothing
-                      storeSetGraphStore store iter node
-                      return $ lastIter `mappend` (Last (Just iter))
-                    else do
-                      iter <- Gtk.treeStoreAppend store (getLast lastIter)
-                      storeSetGraphStore store iter node
-                      return lastIter
-                      ) (Last Nothing) nameList
+                              Topic name -> ((name,0,0,0), (0,(i,(emptyES, [], []))))
+                              TypeGraph name es -> ((name,0,i,1), (1, (i,(es, [], []))))
+                    idForest = genForestIds forest 0
+                    infoForest = zipWith (mzipWith toGSandStates) forest idForest
+                    nameForest = map (fmap fst) infoForest
+                    statesForest = map (fmap snd) infoForest
+                    statesList = map snd . filter (\st -> fst st /= 0) . concat . map Tree.flatten $ statesForest
+
+                let putInStore (Tree.Node (name,c,i,t) fs) mparent =
+                        case t of
+                          0 -> do iter <- Gtk.treeStoreAppend store mparent
+                                  storeSetGraphStore store iter (name,c,i,t)
+                                  mapM (\n -> putInStore n (Just iter)) fs
+                                  return ()
+                          1 -> do iter <- Gtk.treeStoreAppend store mparent
+                                  storeSetGraphStore store iter (name,c,i,t)
+                                  return ()
+                mapM (\n -> putInStore n Nothing) nameForest
                 let (i,(es, _,_)) = if length statesList > 0 then statesList!!0 else (0,(emptyES,[],[]))
                 writeIORef st es
                 writeIORef undoStack []
