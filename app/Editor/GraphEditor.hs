@@ -547,16 +547,24 @@ startGUI = do
                                   return ()
                 mapM (\n -> putInStore n Nothing) nameForest
                 let (i,(es, _,_)) = if length statesList > 0 then statesList!!0 else (0,(emptyES,[],[]))
+                let getFirstIndex = foldl (\(b,path) (Tree.Node (Topic _) fs) -> case (b,length fs > 0) of
+                                                                                  (True,_) -> (b,path)
+                                                                                  (False,True) -> (True,path++[0])
+                                                                                  (False,False) -> let i:[] = path in (False,[i+1])) (False,[0])
+                let pindices = let (v,p) = getFirstIndex forest in if v then p else [0]
                 writeIORef st es
                 writeIORef undoStack []
                 writeIORef redoStack []
                 writeIORef fileName $ Just fn
-                writeIORef currentPath [0,0]
+                writeIORef currentPath pindices
                 writeIORef currentGraph i
                 writeIORef graphStates $ M.fromList statesList
                 writeIORef changedProject False
                 writeIORef changedGraph [False]
                 set window [#title := T.pack ("Graph Editor - " ++ fn)]
+                p <- Gtk.treePathNewFromIndices pindices
+                Gtk.treeViewExpandToPath treeview p
+                Gtk.treeViewSetCursor treeview p projectCol False
                 Gtk.widgetQueueDraw canvas
       else return ()
 
@@ -590,13 +598,22 @@ startGUI = do
         newKey <- readIORef graphStates >>= return . (+1) . maximum . M.keys
         modifyIORef graphStates $ M.insert newKey (editorSetGI gi . editorSetGraph g $ emptyES, [],[])
         -- update the treeview
-        iter <- Gtk.treeStoreAppend store Nothing
+        parentIndices <- readIORef currentPath >>= \indices -> if length indices > 1 then return $ init indices else return indices
+        parentPath <- Gtk.treePathNewFromIndices parentIndices
+        parentIter <- Gtk.treeModelGetIter store parentPath >>= \(valid, iter) -> return $ if valid then Just iter else Nothing
+        iter <- Gtk.treeStoreAppend store parentIter
         storeSetGraphStore store iter (getName . getLastPart $ path, 2, newKey, 1)
         path <- Gtk.treeModelGetPath store iter
+        Gtk.treeViewExpandToPath treeview path
         Gtk.treeViewSetCursor treeview path (Nothing :: Maybe Gtk.TreeViewColumn) False
+        -- update the IORefs
+        pathIndices <- Gtk.treePathGetIndices path >>= return . fromJust
+        writeIORef currentPath pathIndices
+        writeIORef currentGraph newKey
         modifyIORef changedGraph (\xs -> xs ++ [True])
         writeIORef changedProject True
         indicateProjChanged window True
+
         Gtk.widgetQueueDraw canvas
       _      -> return ()
 
@@ -904,6 +921,11 @@ startGUI = do
     case sel of
       False -> return ()
       True -> do
+        mpath <- Gtk.treeModelGetPath model iter >>= Gtk.treePathGetIndices
+        path <- case mpath of
+          Nothing -> return [0,0]
+          Just p -> return p
+        writeIORef currentPath path
         cIndex <- readIORef currentGraph
         index <- Gtk.treeModelGetValue model iter 2 >>= fromGValue  :: IO Int32
         typeG <- Gtk.treeModelGetValue model iter 3 >>= fromGValue  :: IO Int32
@@ -916,11 +938,6 @@ startGUI = do
             r <- readIORef redoStack
             modifyIORef graphStates (M.insert cIndex (currentES,u,r))
             -- load the selected graph from the tree
-            mpath <- Gtk.treeModelGetPath model iter >>= Gtk.treePathGetIndices
-            path <- case mpath of
-              Nothing -> return [0,0]
-              Just p -> return p
-            writeIORef currentPath $ path
             loadFromStore index
             Gtk.widgetQueueDraw canvas
 
