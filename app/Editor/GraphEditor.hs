@@ -39,7 +39,7 @@ import Editor.EditorState
 --------------------------------------------------------------------------------
 -- |GraphStore
 -- A tuple representing what is showed in each node of the tree in the treeview
--- It contains the informations: name, graph changed (0 - no, 1 - yes, 2 - is new), graph id, and type (0 - menu, 1 - graph)
+-- It contains the informations: name, graph changed (0 - no, 1 - yes, 2 - is new), graph id, and type (0 - topic, 1 - graph)
 type GraphStore = (String, Int32, Int32, Int32)
 
 type NList = [(Int,String)]
@@ -152,24 +152,32 @@ startGUI = do
 
   ------------------------------------------------------------------------------
   -- init the editor variables  ------------------------------------------------
+  -- global variables
   st              <- newIORef emptyES -- actual state: all the necessary info to draw the graph
   oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
   squareSelection <- newIORef Nothing -- selection box : Maybe (x,y,w,h)
   undoStack       <- newIORef ([] :: [DiaGraph])
   redoStack       <- newIORef ([] :: [DiaGraph])
   movingGI        <- newIORef False -- if the user started moving some object - necessary to add a position to the undoStack
+  clipboard       <- newIORef DG.empty -- clipboard - DiaGraph
+  fileName        <- newIORef (Nothing :: Maybe String) -- name of the opened file
+  currentPath     <- newIORef [0,0] -- indices of path to current graph being edited
+  currentGraph    <- newIORef 0 -- current graph being edited
+  graphStates     <- newIORef $ M.fromList [(0, (emptyES,[],[])), (1, (emptyES, [], []))] -- map of states foreach graph in the editor
+  changedProject  <- newIORef False -- set this flag as True when the graph is changed somehow
+  changedGraph    <- newIORef [False] -- when modify a graph, set the flag in the 'currentGraph' to True
+  lastSavedState  <- newIORef (M.empty :: M.Map Int32 DiaGraph) --
+
+  -- variables to specify typeGraphs
   currentShape    <- newIORef NCircle -- the shape that all new nodes must have
   currentStyle    <- newIORef ENormal -- the style that all new edges must have
   currentC        <- newIORef (1,1,1) -- the color to init new nodes
   currentLC       <- newIORef (0,0,0) -- the color to init new edges and the line and text of new nodes
-  clipboard       <- newIORef DG.empty -- clipboard - DiaGraph
-  fileName        <- newIORef (Nothing :: Maybe String) -- name of the opened file
-  currentPath     <- newIORef [0,0] -- current graph being edited
-  currentGraph    <- newIORef 0
-  graphStates     <- newIORef $ M.fromList [(0, (emptyES,[],[])), (1, (emptyES, [], []))] -- map of states foreach graph in the editor
-  changedProject  <- newIORef False -- set this flag as True when the graph is changed somehow
-  changedGraph    <- newIORef [False] -- when modify a graph, set the flag in the 'currentPath' to True
-  lastSavedState  <- newIORef (M.empty :: M.Map Int32 DiaGraph)
+
+  -- variables to specify hostGraphs
+  possibleNodeTypes   <- newIORef ( M.empty :: M.Map String NodeGI) -- possible types that a node can have in a hostGraph. Each node type is identified by a string and specifies Graphical information
+  possibleEdgeTypes   <- newIORef ( M.empty :: M.Map String EdgeGI) -- similar to above.
+  activeTypeGraph     <- newIORef G.empty  -- the connection information from the active typeGraph
 
   ------------------------------------------------------------------------------
   -- EVENT BINDINGS ------------------------------------------------------------
@@ -941,42 +949,111 @@ startGUI = do
             loadFromStore index
             Gtk.widgetQueueDraw canvas
 
+  -- auxiliar function to select menus
+  let newGraph = do
+        states <- readIORef graphStates
+        let newKey = if M.size states > 0 then maximum (M.keys states) + 1 else 0
+        parent <- do
+          selection <- Gtk.treeViewGetSelection treeview
+          (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
+          case sel of
+            False -> do
+              (valid, fIter) <- Gtk.treeModelGetIterFirst model
+              return $ if valid then (Just fIter) else Nothing
+            True -> do
+              typeI <- (Gtk.treeModelGetValue store iter 3 >>= fromGValue ) :: IO Int32
+              case typeI of
+                0 -> return $ Just iter
+                1 -> do
+                  (valid, pIter) <- Gtk.treeModelIterParent model iter
+                  return $ if valid then (Just pIter) else Nothing
+        iter <- Gtk.treeStoreAppend store parent
+        storeSetGraphStore store iter ("new",2, newKey,1)
+        modifyIORef graphStates (M.insert newKey (emptyES,[],[]))
+
+  let rmvGraph = do
+        selection <- Gtk.treeViewGetSelection treeview
+        (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
+        case sel of
+          False -> return ()
+          True -> do
+            typeI <- (Gtk.treeModelGetValue store iter 3 >>= fromGValue ) :: IO Int32
+            case typeI of
+              0 -> return ()
+              1 -> do
+                index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
+                Gtk.treeStoreRemove store iter
+                modifyIORef graphStates $ M.delete index
+
+  let activateTypeGraph = do
+        selection <- Gtk.treeViewGetSelection treeview
+        (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
+        case sel of
+          False -> return ()
+          True -> do
+            typeG <- (Gtk.treeModelGetValue store iter 3 >>= fromGValue ) :: IO Int32
+            index <- (Gtk.treeModelGetValue store iter 2 >>= fromGValue) :: IO Int32
+            cindex <- readIORef currentGraph
+            selState <- if index /= cindex
+              then do states <- readIORef graphStates
+                      return $ M.lookup index states
+              else do es <- readIORef st
+                      return $ Just (es,[],[])
+            case (typeG, selState) of
+              (0,_) -> return ()
+              (1,Nothing) -> return ()
+              (1,Just (es,_,_)) -> do
+                -- check if all edges and nodes have different names
+                let g = editorGetGraph es
+                    giM = editorGetGI es
+                    nds = nodes g
+                    edgs = edges g
+                    allDiff l = case l of
+                                  [] -> True
+                                  x:xs -> (notElem x xs) && (allDiff xs)
+                    diffNames = (allDiff (map nodeInfo nds)) && (allDiff (map edgeInfo edgs))
+                if diffNames
+                  then showError window "Must implement this."
+                  else showError window "There are conflicting definitions of elements in the typeGraph. \n The conflicts must be fixed before activating the typeGraph."
+
+
+
+
+
+
+
+
+
+  -- when the user select a item
+  on treeview #buttonPressEvent $ \eventButton -> do
+    b <- get eventButton #button
+    case b of
+      3 -> do
+        -- create popup menu
+        popmenu <- new Gtk.Menu [];
+        newItem <- new Gtk.MenuItem [ #label := "create graph"];
+        delItem <- new Gtk.MenuItem [ #label := "delete graph"];
+        actItem <- new Gtk.MenuItem [ #label := "activate"];
+        Gtk.containerAdd popmenu newItem
+        Gtk.containerAdd popmenu delItem
+        Gtk.containerAdd popmenu actItem
+        -- connect menuItems
+        on newItem #activate newGraph
+        on delItem #activate rmvGraph
+        on actItem #activate activateTypeGraph
+
+
+
+        #showAll popmenu
+        Gtk.menuPopupAtPointer popmenu Nothing
+      _ -> return ()
+    return False
+
   -- pressed the 'new' button on the treeview area
-  on btnNew #clicked $ do
-    states <- readIORef graphStates
-    let newKey = if M.size states > 0 then maximum (M.keys states) + 1 else 0
-    parent <- do
-      selection <- Gtk.treeViewGetSelection treeview
-      (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
-      case sel of
-        False -> do
-          (valid, fIter) <- Gtk.treeModelGetIterFirst model
-          return $ if valid then (Just fIter) else Nothing
-        True -> do
-          typeI <- (Gtk.treeModelGetValue store iter 3 >>= fromGValue ) :: IO Int32
-          case typeI of
-            0 -> return $ Just iter
-            1 -> do
-              (valid, pIter) <- Gtk.treeModelIterParent model iter
-              return $ if valid then (Just pIter) else Nothing
-    iter <- Gtk.treeStoreAppend store parent
-    storeSetGraphStore store iter ("new",2, newKey,1)
-    modifyIORef graphStates (M.insert newKey (emptyES,[],[]))
+  on btnNew #clicked newGraph
 
   -- pressed the 'remove' button on the treeview area
-  on btnRmv #clicked $ do
-    selection <- Gtk.treeViewGetSelection treeview
-    (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
-    case sel of
-      False -> return ()
-      True -> do
-        typeI <- (Gtk.treeModelGetValue store iter 3 >>= fromGValue ) :: IO Int32
-        case typeI of
-          0 -> return ()
-          1 -> do
-            index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
-            Gtk.treeStoreRemove store iter
-            modifyIORef graphStates $ M.delete index
+  on btnRmv #clicked rmvGraph
 
   -- edited a graph name
   on treeRenderer #edited $ \pathStr newName -> do
