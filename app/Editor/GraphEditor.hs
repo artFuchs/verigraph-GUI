@@ -1000,7 +1000,7 @@ startGUI = do
               else do es <- readIORef st
                       return $ Just (es,[],[])
             case (typeG, selState) of
-              (0,_) -> return ()
+              (0, _) -> return ()
               (1,Nothing) -> return ()
               (1,Just (es,_,_)) -> do
                 -- check if all edges and nodes have different names
@@ -1013,8 +1013,23 @@ startGUI = do
                                   x:xs -> (notElem x xs) && (allDiff xs)
                     diffNames = (allDiff (map nodeInfo nds)) && (allDiff (map edgeInfo edgs))
                 if diffNames
-                  then showError window "Must implement this."
+                  then do -- load the variables with the info from the typeGraph
+                    writeIORef activeTypeGraph g
+                    writeIORef possibleNodeTypes $
+                        foldr (\(Node nid info) m -> let ngi = getNodeGI (fromEnum nid) (fst giM)
+                                                     in M.insert info ngi m) M.empty nds
+                    writeIORef possibleEdgeTypes $
+                        foldr (\(Edge eid _ _ info) m -> let egi = getEdgeGI (fromEnum eid) (snd giM)
+                                                         in M.insert info egi m) M.empty edgs
+                    possibleNT <- readIORef possibleNodeTypes
+                    possibleET <- readIORef possibleEdgeTypes
+                    putStrLn $ "possibleNodeTypes: " ++ show possibleNT
+                    putStrLn $ "possibleEdgeTypes: " ++ show possibleET
+
+
+
                   else showError window "There are conflicting definitions of elements in the typeGraph. \n The conflicts must be fixed before activating the typeGraph."
+              (_,_) -> showError window "The choosen graph is not a typeGraph"
 
 
 
