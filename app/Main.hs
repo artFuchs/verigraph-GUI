@@ -11,8 +11,17 @@ Tarefas ---------------------------------------------------------------------
 
 
 Progresso -------------------------------------------------------------------
-*Adicionar diferentes tipos de grafos, mudando o inspector (painel a direita) quando o usuario clicar nele
-  *Host  - grafo em que elementos são associados a um tipo
+*Adicionar grafos de tipo Host - grafos em que elementos são associados a um tipo e herdam a informação visual desses elementos
+ - fazer inspector mudar para hostInspector - v
+ - carregar comboboxes com informações de tipo - v
+ - fazer elementos do diagrama serem associados aos tipos
+ - mudar a aparência dos elementos do diagrama conforme seus tipos
+ - fazer atualização do hostInspector com a função updateInspector
+ - indicar erro caso o tipo do elemento não esteja especificado no typeGraph
+
+
+
+
 
 
 Feito -----------------------------------------------------------------------

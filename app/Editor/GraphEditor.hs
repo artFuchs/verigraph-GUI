@@ -101,9 +101,9 @@ startGUI = do
   (treeBox, treeview, treeRenderer, btnNew, btnRmv) <- buildTreePanel
   Gtk.containerAdd treeFrame treeBox
   -- creates the inspector panel and add to the window
-  (tinspBox, typeEntry, colorBtn, lineColorBtn, radioShapes, radioStyles, propBoxes) <- buildTypeInspector
-  (hinspBox, hostEntry, nodetCBox, edgeTCBox, (nodeTypeBox, edgeTypeBox)) <- buildHostInspector
-  Gtk.containerAdd inspectorFrame tinspBox
+  (typeInspBox, typeEntry, colorBtn, lineColorBtn, radioShapes, radioStyles, tPropBoxes) <- buildTypeInspector
+  (hostInspBox, hostEntry, nodeTCBox, edgeTCBox, (nodeTypeBox, edgeTypeBox)) <- buildHostInspector
+  Gtk.containerAdd inspectorFrame typeInspBox
   let
     inspWidgets = (typeEntry, colorBtn, lineColorBtn, radioShapes, radioStyles)
     [radioCircle, radioRect, radioQuad] = radioShapes
@@ -247,7 +247,7 @@ startGUI = do
                   jointSE = if null e then oldSE else delete (e!!0) oldSE
               modifyIORef st (editorSetGraph graph . editorSetSelected (jointSN,jointSE))
           Gtk.widgetQueueDraw canvas
-          updatePropMenu st currentC currentLC inspWidgets propBoxes
+          updateInspector st currentC currentLC inspWidgets tPropBoxes
         -- right button click: create nodes and insert edges
         (3, False) -> liftIO $ do
           let g = editorGetGraph es
@@ -272,7 +272,7 @@ startGUI = do
             -- ctrl pressed: middle mouse button emulation
             (True,_) -> return ()
           Gtk.widgetQueueDraw canvas
-          updatePropMenu st currentC currentLC inspWidgets propBoxes
+          updateInspector st currentC currentLC inspWidgets tPropBoxes
         _           -> return ()
       return True
 
@@ -339,7 +339,7 @@ startGUI = do
                                                     in pointInsideRectangle pos (x + (w/2), y + (h/2), abs w, abs h)) $ edges graph
                 newEs = editorSetSelected (sNodes, sEdges) $ es
             writeIORef st newEs
-            updatePropMenu st currentC currentLC inspWidgets propBoxes
+            updateInspector st currentC currentLC inspWidgets tPropBoxes
           ((n,e), Nothing) -> return ()
           _ -> return ()
       _ -> return ()
@@ -939,9 +939,10 @@ startGUI = do
         cIndex <- readIORef currentGraph
         index <- Gtk.treeModelGetValue model iter 2 >>= fromGValue  :: IO Int32
         typeG <- Gtk.treeModelGetValue model iter 3 >>= fromGValue  :: IO Int32
-        if cIndex == index || typeG == 0
-          then return ()
-          else do
+        case (cIndex == index, typeG) of
+          (True, _)  -> return ()
+          (False, 0) -> return ()
+          (False, _) -> do
             -- update the current graph in the tree
             currentES <- readIORef st
             u <- readIORef undoStack
@@ -949,7 +950,28 @@ startGUI = do
             modifyIORef graphStates (M.insert cIndex (currentES,u,r))
             -- load the selected graph from the tree
             loadFromStore index
-            Gtk.widgetQueueDraw canvas
+        case (typeG) of
+          0 -> return ()
+          1 -> do
+            child <- Gtk.containerGetChildren inspectorFrame >>= \a -> return (a!!0)
+            Gtk.containerRemove inspectorFrame child
+            Gtk.containerAdd inspectorFrame typeInspBox
+            #showAll inspectorFrame
+          2 -> do
+            child <- Gtk.containerGetChildren inspectorFrame >>= \a -> return (a!!0)
+            Gtk.containerRemove inspectorFrame child
+            Gtk.containerAdd inspectorFrame hostInspBox
+            -- update the comboBoxes
+            possibleNT <- readIORef possibleNodeTypes
+            Gtk.comboBoxTextRemoveAll nodeTCBox
+            forM (M.keys possibleNT) $ \k -> Gtk.comboBoxTextAppendText nodeTCBox (T.pack k)
+            possibleET <- readIORef possibleEdgeTypes
+            Gtk.comboBoxTextRemoveAll edgeTCBox
+            forM (M.keys possibleET) $ \k -> Gtk.comboBoxTextAppendText edgeTCBox (T.pack k)
+            #showAll inspectorFrame
+
+
+        Gtk.widgetQueueDraw canvas
 
   -- auxiliar function to select menus
   let newGraph = do
@@ -1103,8 +1125,8 @@ startGUI = do
 --------------------------------------------------------------------------------
 
 -- update the inspector --------------------------------------------------------
-updatePropMenu :: IORef EditorState -> IORef (Double,Double,Double) -> IORef (Double,Double,Double) -> (Gtk.Entry, Gtk.ColorButton, Gtk.ColorButton, [Gtk.RadioButton], [Gtk.RadioButton]) -> (Gtk.Box, Gtk.Frame, Gtk.Frame)-> IO ()
-updatePropMenu st currentC currentLC (typeEntry, colorBtn, lcolorBtn, radioShapes, radioStyles) (hBoxColor, frameShape, frameStyle) = do
+updateInspector :: IORef EditorState -> IORef (Double,Double,Double) -> IORef (Double,Double,Double) -> (Gtk.Entry, Gtk.ColorButton, Gtk.ColorButton, [Gtk.RadioButton], [Gtk.RadioButton]) -> (Gtk.Box, Gtk.Frame, Gtk.Frame)-> IO ()
+updateInspector st currentC currentLC (typeEntry, colorBtn, lcolorBtn, radioShapes, radioStyles) (hBoxColor, frameShape, frameStyle) = do
   emptyColor <- new Gdk.RGBA [#red := 0.5, #blue := 0.5, #green := 0.5, #alpha := 1.0]
   est <- readIORef st
   let g = editorGetGraph est
