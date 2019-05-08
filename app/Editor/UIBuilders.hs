@@ -145,13 +145,11 @@ buildTypeInspector = do
   return (mainBox, typeEntry, colorButton, lineColorButton, radioShapes, radioStyles, (colorBox, frameShape, frameStyle))
 
 -- creates the inspector for the host graph
-buildHostInspector :: IO (Gtk.Frame, Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, (Gtk.Box, Gtk.Box))
+buildHostInspector :: IO (Gtk.Box, Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, (Gtk.Box, Gtk.Box))
 buildHostInspector = do
-  frame <- new Gtk.Frame [ #shadowType := Gtk.ShadowTypeIn]
   mainBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical
                          , #spacing := 8
                          ]
-  Gtk.containerAdd frame mainBox
 
   -- creates a title label
   titleLabel <- new Gtk.Label [#label := "Inspector"]
@@ -186,7 +184,7 @@ buildHostInspector = do
   edgeTypeComboBox <- new Gtk.ComboBoxText []
   Gtk.boxPackStart edgeTypeBox edgeTypeComboBox True True 0
 
-  return (frame, labelEntry, nodeTypeComboBox, edgeTypeComboBox, (nodeTypeBox, edgeTypeBox))
+  return (mainBox, labelEntry, nodeTypeComboBox, edgeTypeComboBox, (nodeTypeBox, edgeTypeBox))
 
 buildRuleInspector :: IO (Gtk.Frame, Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.ComboBoxText, (Gtk.Box, Gtk.Box))
 buildRuleInspector = do
