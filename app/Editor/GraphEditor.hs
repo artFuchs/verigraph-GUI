@@ -39,14 +39,15 @@ import Editor.EditorState
 --------------------------------------------------------------------------------
 -- |GraphStore
 -- A tuple representing what is showed in each node of the tree in the treeview
--- It contains the informations: name, graph changed (0 - no, 1 - yes, 2 - is new), graph id, and type (0 - topic, 1 - graph)
+-- It contains the informations: name, graph changed (0 - no, 1 - yes, 2 - is new), graph id, and type (0 - topic, 1 - typeGraph, 2 - hostGraph)
 type GraphStore = (String, Int32, Int32, Int32)
 
 type NList = [(Int,String)]
 type EList = [(Int,Int,Int,String)]
-data SaveInfo = Topic String | TypeGraph String EditorState
-data UncompressedSaveInfo = T0 String
-                          | T1 String NList EList GraphicalInfo
+data SaveInfo = Topic String | TypeGraph String EditorState | HostGraph String EditorState
+data UncompressedSaveInfo = T String
+                          | TG String NList EList GraphicalInfo
+                          | HG String NList EList GraphicalInfo
                           deriving (Show, Read)
 
 
@@ -100,10 +101,11 @@ startGUI = do
   (treeBox, treeview, treeRenderer, btnNew, btnRmv) <- buildTreePanel
   Gtk.containerAdd treeFrame treeBox
   -- creates the inspector panel and add to the window
-  (inspBox, entryName, colorBtn, lineColorBtn, radioShapes, radioStyles, propBoxes) <- buildTypeInspector
-  Gtk.containerAdd inspectorFrame inspBox
+  (tinspBox, typeEntry, colorBtn, lineColorBtn, radioShapes, radioStyles, propBoxes) <- buildTypeInspector
+  (hinspBox, hostEntry, nodetCBox, edgeTCBox, (nodeTypeBox, edgeTypeBox)) <- buildHostInspector
+  Gtk.containerAdd inspectorFrame tinspBox
   let
-    inspWidgets = (entryName, colorBtn, lineColorBtn, radioShapes, radioStyles)
+    inspWidgets = (typeEntry, colorBtn, lineColorBtn, radioShapes, radioStyles)
     [radioCircle, radioRect, radioQuad] = radioShapes
     [radioNormal, radioPointed, radioSlashed] = radioStyles
   #showAll window
@@ -119,7 +121,7 @@ startGUI = do
           sndIter <- Gtk.treeStoreAppend store Nothing
           storeSetGraphStore store sndIter ("Host Graphs", 0, 0, 0)
           fstHostIter <- Gtk.treeStoreAppend store (Just sndIter)
-          storeSetGraphStore store fstHostIter ("newHostGraph", 0, 1, 1)
+          storeSetGraphStore store fstHostIter ("newHostGraph", 0, 1, 2)
 
   initStore
 
@@ -209,7 +211,7 @@ startGUI = do
           let (n,e) = editorGetSelected es
           if null n && null e
             then return ()
-            else liftIO $ Gtk.widgetGrabFocus entryName
+            else liftIO $ Gtk.widgetGrabFocus typeEntry
         -- left button: select nodes and edges
         (1, False)  -> liftIO $ do
           let (oldSN,oldSE) = editorGetSelected es
@@ -385,7 +387,7 @@ startGUI = do
   --       modifyIORef st (\es -> let g = editorGetGraph es in editorSetSelected (nodeIds g, edgeIds g) es)
   --       Gtk.widgetQueueDraw canvas
   --     -- F2 - rename selection
-  --     (False,False,'\65471') -> Gtk.widgetGrabFocus entryName
+  --     (False,False,'\65471') -> Gtk.widgetGrabFocus typeEntry
   --     -- CTRL + C/V/X : copy/paste/cut
   --     (True, False, 'c') -> Gtk.menuItemActivate cpy
   --     (True, False, 'v') -> Gtk.menuItemActivate pst
@@ -760,13 +762,13 @@ startGUI = do
     #showAll helpWindow
 
   -- event bindings -- inspector panel -----------------------------------------
-  -- pressed a key when editing the entryName
-  on entryName #keyPressEvent $ \eventKey -> do
+  -- pressed a key when editing the typeEntry
+  on typeEntry #keyPressEvent $ \eventKey -> do
     k <- get eventKey #keyval >>= return . chr . fromIntegral
     let setName = do es <- readIORef st
                      stackUndo undoStack redoStack es
                      setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-                     name <- Gtk.entryGetText entryName >>= return . T.unpack
+                     name <- Gtk.entryGetText typeEntry >>= return . T.unpack
                      context <- Gtk.widgetGetPangoContext canvas
                      renameSelected st name context
                      Gtk.widgetQueueDraw canvas
@@ -1102,7 +1104,7 @@ startGUI = do
 
 -- update the inspector --------------------------------------------------------
 updatePropMenu :: IORef EditorState -> IORef (Double,Double,Double) -> IORef (Double,Double,Double) -> (Gtk.Entry, Gtk.ColorButton, Gtk.ColorButton, [Gtk.RadioButton], [Gtk.RadioButton]) -> (Gtk.Box, Gtk.Frame, Gtk.Frame)-> IO ()
-updatePropMenu st currentC currentLC (entryName, colorBtn, lcolorBtn, radioShapes, radioStyles) (hBoxColor, frameShape, frameStyle) = do
+updatePropMenu st currentC currentLC (typeEntry, colorBtn, lcolorBtn, radioShapes, radioStyles) (hBoxColor, frameShape, frameStyle) = do
   emptyColor <- new Gdk.RGBA [#red := 0.5, #blue := 0.5, #green := 0.5, #alpha := 1.0]
   est <- readIORef st
   let g = editorGetGraph est
@@ -1114,7 +1116,7 @@ updatePropMenu st currentC currentLC (entryName, colorBtn, lcolorBtn, radioShape
     (0,0) -> do
       (r, g, b)    <- readIORef currentC
       (r', g', b') <- readIORef currentLC
-      set entryName [#text := ""]
+      set typeEntry [#text := ""]
       color <- new Gdk.RGBA [#red := r, #green := g, #blue := b, #alpha:=1.0]
       lcolor <- new Gdk.RGBA [#red := r', #green := g', #blue := b', #alpha:=1.0]
       Gtk.colorChooserSetRgba colorBtn color
@@ -1131,7 +1133,7 @@ updatePropMenu st currentC currentLC (entryName, colorBtn, lcolorBtn, radioShape
           nodeShape = shape gi
       color <- new Gdk.RGBA [#red := r, #green := g, #blue := b, #alpha := 1.0]
       lcolor <- new Gdk.RGBA [#red := r', #green := g', #blue := b', #alpha := 1.0]
-      set entryName [#text := name]
+      set typeEntry [#text := name]
       Gtk.colorChooserSetRgba colorBtn $ if n==1 then color else emptyColor
       Gtk.colorChooserSetRgba lcolorBtn $ if n==1 then lcolor else emptyColor
       case (n,nodeShape) of
@@ -1150,7 +1152,7 @@ updatePropMenu st currentC currentLC (entryName, colorBtn, lcolorBtn, radioShape
           (r,g,b) = color gi
           edgeStyle = style gi
       edgeColor <- new Gdk.RGBA [#red := r, #green := g, #blue := b, #alpha := 1.0]
-      set entryName [#text := name]
+      set typeEntry [#text := name]
       Gtk.colorChooserSetRgba lcolorBtn $ if n == 1 then edgeColor else emptyColor
       case (n,edgeStyle) of
         (1,ENormal) -> Gtk.toggleButtonSetActive (radioStyles!!0) True
@@ -1162,7 +1164,7 @@ updatePropMenu st currentC currentLC (entryName, colorBtn, lcolorBtn, radioShape
       set frameShape [#visible := False]
       set frameStyle [#visible := True]
     _ -> do
-      set entryName [#text := "----" ]
+      set typeEntry [#text := "----" ]
       Gtk.colorChooserSetRgba colorBtn emptyColor
       Gtk.colorChooserSetRgba lcolorBtn emptyColor
       set hBoxColor [#visible := True]
@@ -1255,13 +1257,13 @@ saveFileAs x saveF fileName window changeFN = do
 -- save project
 saveProject :: Tree.Forest SaveInfo -> String -> IO Bool
 saveProject saveInfo path = do
-  let contents =  map
+  let nodeContents es = map (\(Node nid info) -> (fromEnum nid, info)) (nodes $ editorGetGraph es)
+      edgeContents es = map (\(Edge eid srcid tgtid info) -> (fromEnum eid, fromEnum srcid, fromEnum tgtid, info)) (edges $ editorGetGraph es)
+      contents =  map
                   (fmap (\node -> case node of
-                                      Topic name -> T0 name
-                                      TypeGraph name es -> T1 name
-                                                              (map (\n -> (fromEnum . nodeId $ n, nodeInfo n)) $ (nodes $ editorGetGraph es))
-                                                              (map (\e -> (fromEnum . edgeId $ e, fromEnum . sourceId $ e, fromEnum . targetId $ e, edgeInfo e)) $ (edges $ editorGetGraph es))
-                                                              (editorGetGI es) ) )
+                                      Topic name -> T name
+                                      TypeGraph name es -> TG name (nodeContents es) (edgeContents es) (editorGetGI es)
+                                      HostGraph name es -> HG name (nodeContents es) (edgeContents es) (editorGetGI es) ) )
                   saveInfo
       writeProject = writeFile path $ show contents
   saveTry <- E.try (writeProject)  :: IO (Either E.IOException ())
@@ -1322,12 +1324,13 @@ loadProject content = loadedTree
     compress = map
                (fmap
                   (\node -> case node of
-                              T0 name -> Topic name
-                              T1 name nlist elist gi -> let edgs = (genEdges elist)
-                                                            nds = (genNodes nlist)
-                                                            g = fromNodesAndEdges nds edgs
+                              T name -> Topic name
+                              TG name nlist elist gi -> let g = fromNodesAndEdges (genNodes nlist) (genEdges elist)
                                                             es = editorSetGI gi . editorSetGraph g $ emptyES
                                                         in TypeGraph name es
+                              HG name nlist elist gi -> let g = fromNodesAndEdges (genNodes nlist) (genEdges elist)
+                                                            es = editorSetGI gi . editorSetGraph g $ emptyES
+                                                        in HostGraph name es
                   ) )
 
 

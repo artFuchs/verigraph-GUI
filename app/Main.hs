@@ -6,15 +6,14 @@ main = startGUI
 {-
 Tarefas ---------------------------------------------------------------------
 *Adicionar diferentes tipos de grafos, mudando o inspector (painel a direita) quando o usuario clicar nele
-  *Typed - grafo com mais liberdade de opções, define os tipos dos elementos
   *Host  - grafo em que elementos são associados a um tipo
   *Rule  - grafo em que elementos indicam transformações sobre grafos Host
 
 
 Progresso -------------------------------------------------------------------
-*Modificar a aplicação para aceitar ramificações da treestore
-  *Durante a edição
-  *Salvar/Carregar
+*Adicionar diferentes tipos de grafos, mudando o inspector (painel a direita) quando o usuario clicar nele
+  *Host  - grafo em que elementos são associados a um tipo
+
 
 Feito -----------------------------------------------------------------------
 *Melhorar menu de Propriedades
@@ -42,4 +41,9 @@ Feito -----------------------------------------------------------------------
 *Perguntar se o usuario quer salvar o grafo no caso de ativar a ação 'new'
 *Mudar a linguagem da interface toda para inglês
 *Mudar o modelo da treeview para uma treeStore
+*Modificar a aplicação para aceitar ramificações da treestore
+  *Durante a edição
+  *Salvar/Carregar
+  *Adicionar diferentes tipos de grafos, mudando o inspector (painel a direita) quando o usuario clicar nele
+    *Typed - grafo com mais liberdade de opções, define os tipos dos elementos
 -}
