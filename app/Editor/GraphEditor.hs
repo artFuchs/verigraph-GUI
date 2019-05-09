@@ -50,6 +50,24 @@ data UncompressedSaveInfo = T String
                           | HG String NList EList GraphicalInfo
                           deriving (Show, Read)
 
+type ElementInfo = String -- string no formato "label{tipo}"
+elementInfoLabel :: ElementInfo -> String
+elementInfoLabel [] = []
+elementInfoLabel ('{':cs) = []
+elementInfoLabel (c:cs) = c : elementInfoLabel cs
+
+elementInfoType :: ElementInfo -> String
+elementInfoType [] = []
+elementInfoType ('{':cs) = elementInfoTypeAux cs
+elementInfoType (c:cs) = elementInfoType cs
+
+elementInfoTypeAux :: ElementInfo -> String
+elementInfoTypeAux [] = []
+elementInfoTypeAux ('}':cs) = []
+elementInfoTypeAux (c:cs) = c : elementInfoTypeAux cs
+
+
+
 
 storeSetGraphStore :: Gtk.TreeStore -> Gtk.TreeIter -> GraphStore -> IO ()
 storeSetGraphStore store iter (n,c,i,t) = do
@@ -909,6 +927,28 @@ startGUI = do
         modifyIORef st (\es -> changeEdgeStyle es ESlashed)
         Gtk.widgetQueueDraw canvas
 
+
+  -- for the hostGraph
+  on nodeTCBox #changed $ do
+    cbmodel <- Gtk.comboBoxGetModel nodeTCBox
+    (valid, _) <- Gtk.treeModelGetIterFirst cbmodel
+    if not valid
+      then print "zero"
+      else do
+        es <- readIORef st
+        typeInfo <- Gtk.comboBoxTextGetActiveText nodeTCBox >>= return . T.unpack >>= \t -> return $ "{" ++ t ++ "}"
+        let (sNids,sEids) = editorGetSelected es
+            g = editorGetGraph es
+            sNodes = map (\nid -> fromJust $ lookupNode nid g) sNids
+            newNodes = map (\node -> Node {nodeId = nodeId node, nodeInfo = (elementInfoLabel $ nodeInfo node) ++ typeInfo}) sNodes
+            newGraph = foldl (\g node -> updateNodePayload (nodeId node) g (\_ -> nodeInfo node)) g newNodes
+        writeIORef st (editorSetGraph newGraph es)
+
+
+
+
+
+
   -- event bindings for the graphs' tree ---------------------------------------
 
   -- auxiliar
@@ -961,19 +1001,11 @@ startGUI = do
             child <- Gtk.containerGetChildren inspectorFrame >>= \a -> return (a!!0)
             Gtk.containerRemove inspectorFrame child
             Gtk.containerAdd inspectorFrame hostInspBox
-            -- update the comboBoxes
-            possibleNT <- readIORef possibleNodeTypes
-            Gtk.comboBoxTextRemoveAll nodeTCBox
-            forM (M.keys possibleNT) $ \k -> Gtk.comboBoxTextAppendText nodeTCBox (T.pack k)
-            possibleET <- readIORef possibleEdgeTypes
-            Gtk.comboBoxTextRemoveAll edgeTCBox
-            forM (M.keys possibleET) $ \k -> Gtk.comboBoxTextAppendText edgeTCBox (T.pack k)
             #showAll inspectorFrame
-
 
         Gtk.widgetQueueDraw canvas
 
-  -- auxiliar function to select menus
+  -- auxiliar functions to use when activate a menuitem in the treeview popup menu
   let newGraph = do
         states <- readIORef graphStates
         let newKey = if M.size states > 0 then maximum (M.keys states) + 1 else 0
@@ -1049,6 +1081,13 @@ startGUI = do
                     possibleET <- readIORef possibleEdgeTypes
                     putStrLn $ "possibleNodeTypes: " ++ show possibleNT
                     putStrLn $ "possibleEdgeTypes: " ++ show possibleET
+                    -- update the comboBoxes
+                    Gtk.comboBoxTextRemoveAll nodeTCBox
+                    forM (M.keys possibleNT) $ \k -> Gtk.comboBoxTextAppendText nodeTCBox (T.pack k)
+                    Gtk.comboBoxTextRemoveAll edgeTCBox
+                    forM (M.keys possibleET) $ \k -> Gtk.comboBoxTextAppendText edgeTCBox (T.pack k)
+                    return ()
+
 
 
 
