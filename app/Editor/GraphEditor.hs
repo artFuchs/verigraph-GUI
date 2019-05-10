@@ -509,12 +509,7 @@ startGUI = do
           valN <- Gtk.treeModelGetValue store iter 0 >>= (\n -> fromGValue n :: IO (Maybe String)) >>= return . fromJust
           valI <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
           case valT of
-            1 -> do continue <- Gtk.treeModelIterNext store iter
-                    if continue
-                      then do
-                        newVals <- getTreeStoreValues iter
-                        return $ (Tree.Node (valT, (valN, valI)) []) : newVals
-                      else return $ (Tree.Node (valT, (valN, valI)) []) : []
+            -- Topic
             0 -> do (valid, childIter) <- Gtk.treeModelIterChildren store (Just iter)
                     subForest <- if valid
                                   then getTreeStoreValues childIter
@@ -525,6 +520,13 @@ startGUI = do
                         newVals <- getTreeStoreValues iter
                         return $ (Tree.Node (valT, (valN, valI)) subForest) : newVals
                       else return $ (Tree.Node (valT, (valN, valI)) subForest) : []
+            -- Graphs
+            _ -> do continue <- Gtk.treeModelIterNext store iter
+                    if continue
+                      then do
+                        newVals <- getTreeStoreValues iter
+                        return $ (Tree.Node (valT, (valN, valI)) []) : newVals
+                      else return $ (Tree.Node (valT, (valN, valI)) []) : []
 
   let getStructsToSave = do
           (valid, fstIter) <- Gtk.treeModelGetIterFirst store
@@ -537,8 +539,10 @@ startGUI = do
                             (fmap (\(t, (name, nid)) -> case t of
                                         0 -> Topic name
                                         1 -> let (es,_,_) = fromJust $ M.lookup nid states
-                                             in TypeGraph name es))
-                            treeNodeList
+                                             in TypeGraph name es
+                                        2 -> let (es,_,_) = fromJust $ M.lookup nid states
+                                             in HostGraph name es
+                            )) treeNodeList
               return structs
 
   -- auxiliar function to check if the project was changed
@@ -592,6 +596,7 @@ startGUI = do
                 let toGSandStates n i = case n of
                               Topic name -> ((name,0,0,0), (0,(i,(emptyES, [], []))))
                               TypeGraph name es -> ((name,0,i,1), (1, (i,(es, [], []))))
+                              HostGraph name es -> ((name,0,i,2), (2, (i,(es, [], []))))
                     idForest = genForestIds forest 0
                     infoForest = zipWith (mzipWith toGSandStates) forest idForest
                     nameForest = map (fmap fst) infoForest
@@ -604,7 +609,7 @@ startGUI = do
                                   storeSetGraphStore store iter (name,c,i,t)
                                   mapM (\n -> putInStore n (Just iter)) fs
                                   return ()
-                          1 -> do iter <- Gtk.treeStoreAppend store mparent
+                          _ -> do iter <- Gtk.treeStoreAppend store mparent
                                   storeSetGraphStore store iter (name,c,i,t)
                                   return ()
                 mapM (\n -> putInStore n Nothing) nameForest
@@ -1084,7 +1089,7 @@ startGUI = do
         Gtk.widgetQueueDraw canvas
 
   -- auxiliar functions to use when activate a menuitem in the treeview popup menu
-  let newGraph = do
+  let newGraph t = do
         states <- readIORef graphStates
         let newKey = if M.size states > 0 then maximum (M.keys states) + 1 else 0
         parent <- do
@@ -1098,11 +1103,11 @@ startGUI = do
               typeI <- (Gtk.treeModelGetValue store iter 3 >>= fromGValue ) :: IO Int32
               case typeI of
                 0 -> return $ Just iter
-                1 -> do
+                _ -> do
                   (valid, pIter) <- Gtk.treeModelIterParent model iter
                   return $ if valid then (Just pIter) else Nothing
         iter <- Gtk.treeStoreAppend store parent
-        storeSetGraphStore store iter ("new",2, newKey,1)
+        storeSetGraphStore store iter ("new",2, newKey,t)
         modifyIORef graphStates (M.insert newKey (emptyES,[],[]))
 
   let rmvGraph = do
@@ -1114,10 +1119,11 @@ startGUI = do
             typeI <- (Gtk.treeModelGetValue store iter 3 >>= fromGValue ) :: IO Int32
             case typeI of
               0 -> return ()
-              1 -> do
+              _ -> do
                 index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
                 Gtk.treeStoreRemove store iter
                 modifyIORef graphStates $ M.delete index
+
 
   let activateTypeGraph = do
         selection <- Gtk.treeViewGetSelection treeview
@@ -1193,14 +1199,17 @@ startGUI = do
       3 -> do
         -- create popup menu
         popmenu <- new Gtk.Menu [];
-        newItem <- new Gtk.MenuItem [ #label := "create graph"];
+        newTGItem <- new Gtk.MenuItem [ #label := "create TypeGraph"];
+        newHGItem <- new Gtk.MenuItem [ #label := "create HostGraph"];
         delItem <- new Gtk.MenuItem [ #label := "delete graph"];
         actItem <- new Gtk.MenuItem [ #label := "activate"];
-        Gtk.containerAdd popmenu newItem
+        Gtk.containerAdd popmenu newTGItem
+        Gtk.containerAdd popmenu newHGItem
         Gtk.containerAdd popmenu delItem
         Gtk.containerAdd popmenu actItem
         -- connect menuItems
-        on newItem #activate newGraph
+        on newTGItem #activate $ newGraph 1
+        on newHGItem #activate $ newGraph 2
         on delItem #activate rmvGraph
         on actItem #activate activateTypeGraph
 
@@ -1212,7 +1221,7 @@ startGUI = do
     return False
 
   -- pressed the 'new' button on the treeview area
-  on btnNew #clicked newGraph
+  on btnNew #clicked $ newGraph 1
 
   -- pressed the 'remove' button on the treeview area
   on btnRmv #clicked rmvGraph
