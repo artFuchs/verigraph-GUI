@@ -14,12 +14,11 @@ Tarefas ---------------------------------------------------------------------
 Progresso -------------------------------------------------------------------
 *Adicionar grafos de tipo Host - grafos em que elementos são associados a um tipo e herdam a informação visual desses elementos
  - fazer inspector mudar para hostInspector - v
- - carregar comboboxes com informações de tipo - ~
-    - crashando quando carrega mais de uma vez com mais de 1 elemento.
- - fazer elementos do diagrama serem associados aos tipos
-    - fazer com que a informação de um elemento (nodeInfo, edgeInfo) seja uma string no formato " label { tipo }"
- - mudar a aparência dos elementos do diagrama conforme seus tipos
- - fazer atualização do hostInspector com a função updateInspector
+ - carregar comboboxes com informações de tipo - V
+ - fazer elementos do diagrama serem associados aos tipos - V
+    - fazer com que a informação de um elemento (nodeInfo, edgeInfo) seja uma string no formato " label { tipo }" - V
+ - mudar a aparência dos elementos do diagrama conforme seus tipos - V
+ - fazer atualização do hostInspector com a função updateInspector - V
  - indicar erro caso o tipo do elemento não esteja especificado no typeGraph
 
 
