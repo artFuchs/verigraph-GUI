@@ -172,6 +172,9 @@ startGUI = do
             Gtk.clearCellRendererTextForeground r
           (Nothing,_) -> return ()
         )
+      path <- Gtk.treePathNewFromIndices [0,0]
+      Gtk.treeViewExpandToPath treeview path
+      Gtk.treeViewSetCursor treeview path (Nothing :: Maybe Gtk.TreeViewColumn) False
 
 
   ------------------------------------------------------------------------------
@@ -190,9 +193,10 @@ startGUI = do
   graphStates     <- newIORef $ M.fromList [(0, (emptyES,[],[])), (1, (emptyES, [], []))] -- map of states foreach graph in the editor
   changedProject  <- newIORef False -- set this flag as True when the graph is changed somehow
   changedGraph    <- newIORef [False] -- when modify a graph, set the flag in the 'currentGraph' to True
-  lastSavedState  <- newIORef (M.empty :: M.Map Int32 DiaGraph) --
+  lastSavedState  <- newIORef (M.empty :: M.Map Int32 DiaGraph)
+  currentGraphType <- newIORef 1
 
-  -- variables to specify typeGraphs
+  -- variables to specify graphs
   currentShape    <- newIORef NCircle -- the shape that all new nodes must have
   currentStyle    <- newIORef ENormal -- the style that all new edges must have
   currentC        <- newIORef (1,1,1) -- the color to init new nodes
@@ -202,14 +206,16 @@ startGUI = do
   possibleNodeTypes   <- newIORef ( M.empty :: M.Map String (NodeGI, Int32)) -- possible types that a node can have in a hostGraph. Each node type is identified by a string and specifies Graphical information
   possibleEdgeTypes   <- newIORef ( M.empty :: M.Map String (EdgeGI, Int32)) -- similar to above.
   activeTypeGraph     <- newIORef G.empty  -- the connection information from the active typeGraph
+  currentNodeType     <- newIORef Nothing
+  currentEdgeType     <- newIORef Nothing
 
   ------------------------------------------------------------------------------
   -- EVENT BINDINGS ------------------------------------------------------------
   -- event bindings for the canvas ---------------------------------------------
   -- drawing event
   on canvas #draw $ \context -> do
-    es <- liftIO $ readIORef st
-    sq <- liftIO $ readIORef squareSelection
+    es <- readIORef st
+    sq <- readIORef squareSelection
     renderWithContext context $ drawGraph es sq canvas
     return False
 
@@ -220,7 +226,8 @@ startGUI = do
     y <- get eventButton #y
     ms <- get eventButton #state
     click <- get eventButton #type
-    es <- liftIO $ readIORef st
+    es <- readIORef st
+    typeG <- readIORef currentGraphType
     let z = editorGetZoom es
         (px,py) = editorGetPan es
         (x',y') = (x/z - px, y/z - py)
@@ -278,14 +285,34 @@ startGUI = do
               dstNode = selectNodeInPosition gi (x',y')
           context <- Gtk.widgetGetPangoContext canvas
           stackUndo undoStack redoStack es
+          cShape <- readIORef currentShape
+          cColor <- readIORef currentC
+          cLColor <- readIORef currentLC
           case (Gdk.ModifierTypeControlMask `elem` ms, dstNode) of
             -- no selected node: create node
-            (False, Nothing) -> do
-              shape <- readIORef currentShape
-              c <- readIORef currentC
-              lc <- readIORef currentLC
-              createNode' st (x',y') shape c lc context
-              setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+            (False, Nothing) -> case typeG of
+                0 -> return ()
+                1 -> do
+                  createNode' st "" (x',y') cShape cColor cLColor context
+                  setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+                2 -> do
+                  mntype <- readIORef currentNodeType
+                  (t, shape, c, lc) <- case mntype of
+                    Nothing -> return ("", cShape, cColor, cLColor)
+                    Just t -> do
+                      possibleNT <- readIORef possibleNodeTypes
+                      let possibleNT' = M.map (\(gi,i) -> gi) possibleNT
+                          mngi = M.lookup t possibleNT'
+                      case mngi of
+                        Nothing -> return ("", cShape, cColor, cLColor)
+                        Just gi -> return ("{" ++ t ++ "}", shape gi, fillColor gi, lineColor gi)
+                  createNode' st t (x',y') shape c lc context
+                  setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+
+
+
+
+
               -- one node selected: create edges targeting this node
             (False, Just nid) -> do
               estyle <- readIORef currentStyle
@@ -960,6 +987,7 @@ startGUI = do
                 newNGI = foldl (\gi nid -> let ngi = getNodeGI (fromEnum nid) gi
                                            in M.insert (fromEnum nid) (nodeGiSetPosition (position ngi) . nodeGiSetDims (dims ngi) $ typeGI) gi) (fst giM) sNids
             writeIORef st (editorSetGI (newNGI, snd giM) . editorSetGraph newGraph $ es)
+            writeIORef currentNodeType $ Just typeInfo
             Gtk.widgetQueueDraw canvas
 
   on edgeTCBox #changed $ do
@@ -987,6 +1015,7 @@ startGUI = do
                 newGI = (fst giM, newEGI)
                 newGraph = foldl (\g eid -> updateEdgePayload eid g (\info -> (elementInfoLabel info) ++ "{" ++ typeInfo ++ "}" )) g sEids
             writeIORef st (editorSetGI newGI . editorSetGraph newGraph $ es)
+            writeIORef currentEdgeType $ Just typeInfo
             Gtk.widgetQueueDraw canvas
 
 
@@ -1033,6 +1062,7 @@ startGUI = do
             r <- readIORef redoStack
             modifyIORef graphStates (M.insert cIndex (currentES,u,r))
             -- load the selected graph from the tree
+            writeIORef currentGraphType typeG
             loadFromStore index
         case (typeG) of
           0 -> return ()
@@ -1045,6 +1075,10 @@ startGUI = do
             child <- Gtk.containerGetChildren inspectorFrame >>= \a -> return (a!!0)
             Gtk.containerRemove inspectorFrame child
             Gtk.containerAdd inspectorFrame hostInspBox
+            writeIORef currentShape NCircle
+            writeIORef currentStyle ENormal
+            writeIORef currentC (1,1,1)
+            writeIORef currentLC (0,0,0)
             #showAll inspectorFrame
 
         Gtk.widgetQueueDraw canvas
@@ -1507,13 +1541,12 @@ loadGraph contents = result
 
 -- graph interaction
 -- create a new node, auto-generating it's name and dimensions
-createNode' :: IORef EditorState -> GIPos -> NodeShape -> GIColor -> GIColor -> P.Context ->  IO ()
-createNode' st pos nshape color lcolor context = do
+createNode' :: IORef EditorState -> String -> GIPos -> NodeShape -> GIColor -> GIColor -> P.Context ->  IO ()
+createNode' st content pos nshape color lcolor context = do
   es <- readIORef st
   let nid = head $ newNodes (editorGetGraph es)
-      --content = "node " ++ show nid
-      content = ""
-  dim <- getStringDims content context
+      content' = elementInfoLabel content
+  dim <- getStringDims content' context
   writeIORef st $ createNode es pos dim content nshape color lcolor
 
 -- rename the selected itens
