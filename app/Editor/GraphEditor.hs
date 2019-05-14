@@ -216,7 +216,16 @@ startGUI = do
   on canvas #draw $ \context -> do
     es <- readIORef st
     sq <- readIORef squareSelection
-    renderWithContext context $ drawGraph es sq canvas
+    t <- readIORef currentGraphType
+    case t of
+      0 -> return ()
+      1 -> renderWithContext context $ drawGraph es sq
+      2 -> do
+        pnt <- readIORef possibleNodeTypes
+        pet <- readIORef possibleEdgeTypes
+        let pnt' = M.map (\(gi,i) -> gi) pnt
+            pet' = M.map (\(gi,i) -> gi) pet
+        renderWithContext context $ drawGraph' es sq pnt' pet'
     return False
 
   -- mouse button pressed on canvas
@@ -1394,10 +1403,12 @@ updateHostInspector st possibleNT possibleET (entry, nodeTCBox, edgeTCBox) (node
 
 
 -- draw a graph in the canvas --------------------------------------------------
-drawGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Gtk.DrawingArea -> Render ()
-drawGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq canvas = do
+drawGraph :: EditorState -> Maybe (Double,Double,Double,Double)-> Render ()
+drawGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
   scale z z
   translate px py
+
+  let selectColor = (0.29,0.56,0.85)
 
   -- draw the edges
   forM (edges g) (\e -> do
@@ -1406,7 +1417,7 @@ drawGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq canvas = do
         egi  = M.lookup (fromEnum . edgeId   $ e) eGI
         selected = (edgeId e) `elem` sEdges
     case (egi, srcN, dstN) of
-      (Just gi, Just src, Just dst) -> renderEdge gi (edgeInfo e) selected src dst
+      (Just gi, Just src, Just dst) -> renderEdge gi (edgeInfo e) src dst selected selectColor
       _ -> return ())
 
   -- draw the nodes
@@ -1415,7 +1426,7 @@ drawGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq canvas = do
         selected = (nodeId n) `elem` (sNodes)
         info = nodeInfo n
     case (ngi) of
-      Just gi -> renderNode gi info selected
+      Just gi -> renderNode gi info selected selectColor
       Nothing -> return ())
 
   -- draw the selectionBox
@@ -1429,6 +1440,62 @@ drawGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq canvas = do
       stroke
     Nothing -> return ()
   return ()
+
+drawGraph' :: EditorState -> Maybe (Double,Double,Double,Double) -> M.Map String NodeGI -> M.Map String EdgeGI -> Render ()
+drawGraph' (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq pnt pet = do
+  scale z z
+  translate px py
+
+  -- specify colors for select and error
+  let selectColor = (0.29,0.56,0.85)
+      errorColor = (0.9,0.2,0.2)
+
+  -- draw the edges
+  forM (edges g) (\e -> do
+    let dstN = M.lookup (fromEnum . targetId $ e) nGI
+        srcN = M.lookup (fromEnum . sourceId $ e) nGI
+        egi  = M.lookup (fromEnum . edgeId   $ e) eGI
+        selected = (edgeId e) `elem` sEdges
+        typeError = case M.lookup (elementInfoType (edgeInfo e)) pet of
+                     Nothing -> True
+                     Just _ -> False
+        color = case (selected,typeError) of
+                 (False,False) -> (0,0,0)
+                 (False,True) -> errorColor
+                 (True,_) -> selectColor
+    case (egi, srcN, dstN) of
+      (Just gi, Just src, Just dst) -> renderEdge gi (elementInfoLabel (edgeInfo e)) src dst (selected || typeError) color
+      _ -> return ())
+
+  -- draw the nodes
+  forM (nodes g) (\n -> do
+    let ngi = M.lookup (fromEnum . nodeId $ n) nGI
+        selected = (nodeId n) `elem` (sNodes)
+        info = nodeInfo n
+        label = elementInfoLabel info
+        typeError = case M.lookup (elementInfoType info) pnt of
+                     Nothing -> True
+                     Just _ -> False
+        color = case (selected,typeError) of
+                  (False,False) -> (0,0,0)
+                  (False,True) -> errorColor
+                  (True,_) -> selectColor
+    case (ngi) of
+      Just gi -> renderNode gi label (selected || typeError) color
+      Nothing -> return ())
+
+  -- draw the selectionBox
+  case sq of
+    Just (x,y,w,h) -> do
+      rectangle x y w h
+      setSourceRGBA 0.29 0.56 0.85 0.5
+      fill
+      rectangle x y w h
+      setSourceRGBA 0.29 0.56 0.85 1
+      stroke
+    Nothing -> return ()
+  return ()
+
 
 -- general save function -------------------------------------------------------
 saveFile :: a -> (a -> String -> IO Bool) -> IORef (Maybe String) -> Gtk.Window -> Bool -> IO Bool

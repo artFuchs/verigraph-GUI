@@ -35,8 +35,8 @@ renderWithContext ct r = withManagedPtr ct $ \p ->
 
 
 -- draw a node with it's label
-renderNode :: NodeGI -> String -> Bool -> Render ()
-renderNode node content selected = do
+renderNode :: NodeGI -> String -> Bool -> (Double,Double,Double) -> Render ()
+renderNode node content drawShadow shadowColor= do
   let (x,y) = position node
       (r,g,b) = fillColor node
       (rl,gl,bl) = lineColor node
@@ -45,9 +45,9 @@ renderNode node content selected = do
   setLineWidth 2
   setSourceRGB r g b
   case shape node of
-    NCircle -> let radius = (max pw ph)/2 in renderCircle (x,y) radius (r,g,b) (rl,gl,bl) selected
-    NRect -> renderRectangle (x, y, pw, ph) (r,g,b) (rl,gl,bl) selected
-    NSquare -> renderRectangle (x,y, (max pw ph), (max pw ph)) (r,g,b) (rl,gl,bl) selected
+    NCircle -> let radius = (max pw ph)/2 in renderCircle (x,y) radius (r,g,b) (rl,gl,bl) drawShadow shadowColor
+    NRect -> renderRectangle (x, y, pw, ph) (r,g,b) (rl,gl,bl) drawShadow shadowColor
+    NSquare -> renderRectangle (x,y, (max pw ph), (max pw ph)) (r,g,b) (rl,gl,bl) drawShadow shadowColor
 
   setSourceRGB rl gl bl
   moveTo (x-(pw/2-2)) (y-(ph/2-2))
@@ -58,11 +58,11 @@ renderNode node content selected = do
   showLayout pL
 
 
-renderCircle :: (Double,Double) -> Double -> (Double,Double,Double) -> (Double,Double,Double) -> Bool ->  Render ()
-renderCircle (x,y) radius (r,g,b) (lr,lg,lb) selected = do
-  if selected
+renderCircle :: (Double,Double) -> Double -> (Double,Double,Double) -> (Double,Double,Double) -> Bool -> (Double,Double,Double) -> Render ()
+renderCircle (x,y) radius (r,g,b) (lr,lg,lb) drawShadow (sr,sg,sb) = do
+  if drawShadow
     then do
-      setSourceRGB 0.29 0.56 0.85
+      setSourceRGB sr sg sb
       arc x y (radius+3) 0 (2*pi)
       fill
     else
@@ -74,11 +74,11 @@ renderCircle (x,y) radius (r,g,b) (lr,lg,lb) selected = do
   arc x y radius 0 (2*pi)
   stroke
 
-renderRectangle :: (Double,Double,Double,Double) -> (Double,Double,Double) -> (Double,Double,Double) -> Bool ->  Render ()
-renderRectangle (x,y,w,h) (r,g,b) (lr,lg,lb) selected = do
-  if selected
+renderRectangle :: (Double,Double,Double,Double) -> (Double,Double,Double) -> (Double,Double,Double) -> Bool -> (Double,Double,Double) ->  Render ()
+renderRectangle (x,y,w,h) (r,g,b) (lr,lg,lb) drawShadow (sr,sg,sb) = do
+  if drawShadow
     then do
-      setSourceRGB 0.29 0.56 0.85
+      setSourceRGB sr sg sb
       rectangle (x-(w/2+3)) (y-(h/2+3)) (w+6) (h+6)
       fill
     else
@@ -92,14 +92,14 @@ renderRectangle (x,y,w,h) (r,g,b) (lr,lg,lb) selected = do
 
 
 -- draws an edge
-renderEdge :: EdgeGI -> String -> Bool -> NodeGI -> NodeGI -> Render ()
-renderEdge edge content selected nodeSrc nodeDst = do
+renderEdge :: EdgeGI -> String -> NodeGI -> NodeGI -> Bool -> (Double, Double, Double) -> Render ()
+renderEdge edge content nodeSrc nodeDst drawShadow (shadowColor) = do
   if nodeSrc == nodeDst
-    then renderLoop edge content selected nodeSrc
-    else renderNormalEdge edge content selected nodeSrc nodeDst
+    then renderLoop edge content nodeSrc drawShadow (shadowColor)
+    else renderNormalEdge edge content nodeSrc nodeDst drawShadow (shadowColor)
 
-renderNormalEdge :: EdgeGI -> String -> Bool -> NodeGI -> NodeGI -> Render ()
-renderNormalEdge edge content selected nodeSrc nodeDst = do
+renderNormalEdge :: EdgeGI -> String -> NodeGI -> NodeGI -> Bool -> (Double, Double, Double) -> Render ()
+renderNormalEdge edge content nodeSrc nodeDst drawShadow (sr,sg,sb) = do
   -- calculate the intersection points of the edge with the source and target nodes
   let (x1, y1) = position nodeSrc
       (pw, ph) = dims nodeSrc
@@ -128,18 +128,18 @@ renderNormalEdge edge content selected nodeSrc nodeDst = do
   let (r,g,b) = color edge
       centered = (xe,ye) == midPoint (x1,y1) (x2,y2)
 
-  -- draw a bold line/curve to highlight the edge if it is selected
-  case (selected, centered) of
+  -- draw shadow
+  case (drawShadow, centered) of
     (False, _) -> return ()
     (True, True) -> do
       setLineWidth 6
-      setSourceRGB 0.29 0.56 0.85
+      setSourceRGB sr sg sb
       moveTo x1' y1'
       lineTo x2' y2'
       stroke
     (True, False) -> do
       setLineWidth 6
-      setSourceRGB 0.29 0.56 0.85
+      setSourceRGB sr sg sb
       let aglobal = angle (x1',y1') (x2', y2')
           d = pointDistance (x1',y1') (x2',y2')
           p1 = pointAt (pi+aglobal) (d/4) (xe,ye)
@@ -209,8 +209,8 @@ renderNormalEdge edge content selected nodeSrc nodeDst = do
       moveTo (fst labelPos - pw/2) (snd labelPos - ph/2)
       showLayout pL
 
-renderLoop:: EdgeGI -> String -> Bool -> NodeGI -> Render ()
-renderLoop edge content selected node = do
+renderLoop:: EdgeGI -> String -> NodeGI -> Bool -> (Double, Double, Double) -> Render ()
+renderLoop edge content node drawShadow (sr,sg,sb) = do
   let (a, d) = cPosition edge
       (x,y) = position node
       (xe, ye) = pointAt a d (x,y)
@@ -220,9 +220,9 @@ renderLoop edge content selected node = do
       p2' = pointAt (a-pi/2) (d/1.5) (xe,ye)
       (rl,gl,bl) = color edge
 
-  if selected
+  if drawShadow
     then do
-      setSourceRGB 0.29 0.56 0.85
+      setSourceRGB sr sg sb
       setLineWidth 6
       moveTo x y
       curveTo (fst p1) (snd p1) (fst p2) (snd p2) xe ye
