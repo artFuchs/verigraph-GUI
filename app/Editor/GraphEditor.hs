@@ -203,7 +203,7 @@ startGUI = do
   currentLC       <- newIORef (0,0,0) -- the color to init new edges and the line and text of new nodes
 
   -- variables to specify hostGraphs
-  possibleNodeTypes   <- newIORef ( M.empty :: M.Map String (NodeGI, Int32)) -- possible types that a node can have in a hostGraph. Each node type is identified by a string and specifies Graphical information
+  possibleNodeTypes   <- newIORef ( M.empty :: M.Map String (NodeGI, Int32)) -- possible types that a node can have in a hostGraph. Each node type is identified by a string and specifies a pair with Graphical information and the position of the entry in the comboBox
   possibleEdgeTypes   <- newIORef ( M.empty :: M.Map String (EdgeGI, Int32)) -- similar to above.
   activeTypeGraph     <- newIORef G.empty  -- the connection information from the active typeGraph
   currentNodeType     <- newIORef Nothing
@@ -1085,6 +1085,26 @@ startGUI = do
             writeIORef currentC (1,1,1)
             writeIORef currentLC (0,0,0)
             #showAll inspectorFrame
+            -- update nodes and edges elements according to the active typeGraph
+            pnt <- readIORef possibleNodeTypes
+            pet <- readIORef possibleEdgeTypes
+            es <- readIORef st
+            let g = editorGetGraph es
+                (ngi, egi) = editorGetGI es
+                fn node = (nid, elementInfoType (nodeInfo node), getNodeGI nid ngi)
+                          where nid = fromEnum (nodeId node)
+                gn (i,t,gi) = case M.lookup t pnt of
+                                Nothing -> (i,gi)
+                                Just (gi',_) -> (i,nodeGiSetColor (fillColor gi') . nodeGiSetShape (shape gi') $ gi)
+                fe edge = (eid, elementInfoType (edgeInfo edge), getEdgeGI eid egi)
+                          where eid = fromEnum (edgeId edge)
+                ge (i,t,gi) = case M.lookup t pet of
+                                Nothing -> (i,gi)
+                                Just (gi',_) -> (i,edgeGiSetColor (color gi') . edgeGiSetStyle (style gi') $ gi)
+                newNodeGI = M.fromList . map gn . map fn $ nodes g
+                newEdgeGI = M.fromList . map ge . map fe $ edges g
+            writeIORef st (editorSetGI (newNodeGI, newEdgeGI) es)
+
 
         Gtk.widgetQueueDraw canvas
 
