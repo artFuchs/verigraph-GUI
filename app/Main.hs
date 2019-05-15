@@ -6,20 +6,13 @@ main = startGUI
 {-
 Tarefas ---------------------------------------------------------------------
 *Adicionar diferentes tipos de grafos, mudando o inspector (painel a direita) quando o usuario clicar nele
-  *Host  - grafo em que elementos são associados a um tipo
   *Rule  - grafo em que elementos indicam transformações sobre grafos Host
 *Arrumar função para indicar mudanças - ela está indicando mudanças em nodos do tipo Topic
-
+*Adicinar coluna na treeview para atributo de ativação de typeGraphs
+*Atualizar informações do typegraph ativado automaticamente
 
 Progresso -------------------------------------------------------------------
-*Adicionar grafos de tipo Host - grafos em que elementos são associados a um tipo e herdam a informação visual desses elementos
- - fazer inspector mudar para hostInspector - v
- - carregar comboboxes com informações de tipo - V
- - fazer elementos do diagrama serem associados aos tipos - V
-    - fazer com que a informação de um elemento (nodeInfo, edgeInfo) seja uma string no formato " label { tipo }" - V
- - mudar a aparência dos elementos do diagrama conforme seus tipos - V
- - fazer atualização do hostInspector com a função updateInspector - V
- - indicar erro caso o tipo do elemento não esteja especificado no typeGraph
+*Verificar se um elemento do hostGraph foi mapeado corretamente para TypedGraph
 
 
 
@@ -55,6 +48,14 @@ Feito -----------------------------------------------------------------------
 *Modificar a aplicação para aceitar ramificações da treestore
   *Durante a edição
   *Salvar/Carregar
-  *Adicionar diferentes tipos de grafos, mudando o inspector (painel a direita) quando o usuario clicar nele
-    *Typed - grafo com mais liberdade de opções, define os tipos dos elementos
+*Adicionar diferentes tipos de grafos, mudando o inspector (painel a direita) quando o usuario clicar nele
+  *Typed - grafo com mais liberdade de opções, define os tipos dos elementos
+  *Host - grafos em que elementos são associados a um tipo e herdam a informação visual desses elementos
+   - fazer inspector mudar para hostInspector
+   - carregar comboboxes com informações de tipo
+   - fazer elementos do diagrama serem associados aos tipos
+      - fazer com que a informação de um elemento (nodeInfo, edgeInfo) seja uma string no formato " label { tipo }"
+   - mudar a aparência dos elementos do diagrama conforme seus tipos
+   - fazer atualização do hostInspector com a função updateInspector
+   - indicar erro caso o tipo do elemento não esteja especificado no typeGraph
 -}

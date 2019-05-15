@@ -23,6 +23,8 @@ import qualified Control.Exception as E
 import qualified Data.Map as M
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
+import qualified Data.Graphs.Morphism as Morph
+import qualified Data.TypedGraph as TG
 import qualified Data.Tree as Tree
 import Data.Monoid
 import Control.Monad.Zip
@@ -50,21 +52,21 @@ data UncompressedSaveInfo = T String
                           | HG String NList EList GraphicalInfo
                           deriving (Show, Read)
 
-type ElementInfo = String -- string no formato "label{tipo}"
-elementInfoLabel :: ElementInfo -> String
-elementInfoLabel [] = []
-elementInfoLabel ('{':cs) = []
-elementInfoLabel (c:cs) = c : elementInfoLabel cs
+type Info = String -- string no formato "label{tipo}"
+infoLabel :: Info -> String
+infoLabel [] = []
+infoLabel ('{':cs) = []
+infoLabel (c:cs) = c : infoLabel cs
 
-elementInfoType :: ElementInfo -> String
-elementInfoType [] = []
-elementInfoType ('{':cs) = elementInfoTypeAux cs
-elementInfoType (c:cs) = elementInfoType cs
+infoType :: Info -> String
+infoType [] = []
+infoType ('{':cs) = infoTypeAux cs
+infoType (c:cs) = infoType cs
 
-elementInfoTypeAux :: ElementInfo -> String
-elementInfoTypeAux [] = []
-elementInfoTypeAux ('}':cs) = []
-elementInfoTypeAux (c:cs) = c : elementInfoTypeAux cs
+infoTypeAux :: Info -> String
+infoTypeAux [] = []
+infoTypeAux ('}':cs) = []
+infoTypeAux (c:cs) = c : infoTypeAux cs
 
 
 
@@ -223,9 +225,10 @@ startGUI = do
       2 -> do
         pnt <- readIORef possibleNodeTypes
         pet <- readIORef possibleEdgeTypes
+        tg   <- readIORef activeTypeGraph
         let pnt' = M.map (\(gi,i) -> gi) pnt
             pet' = M.map (\(gi,i) -> gi) pet
-        renderWithContext context $ drawGraph' es sq pnt' pet'
+        renderWithContext context $ drawGraph' es sq pnt' pet' tg
     return False
 
   -- mouse button pressed on canvas
@@ -582,7 +585,8 @@ startGUI = do
         writeIORef st emptyES
         writeIORef undoStack []
         writeIORef redoStack []
-        writeIORef graphStates (M.fromList [(0,(emptyES,[],[]))])
+        newIORef $ M.fromList [(0, (emptyES,[],[])), (1, (emptyES, [], []))]
+        writeIORef currentGraphType 1
         writeIORef lastSavedState M.empty
         writeIORef changedProject False
         writeIORef changedGraph [False]
@@ -997,7 +1001,7 @@ startGUI = do
             let (sNids,sEids) = editorGetSelected es
                 g = editorGetGraph es
                 giM = editorGetGI es
-                newGraph = foldl (\g nid -> updateNodePayload nid g (\info -> (elementInfoLabel info) ++ "{" ++ typeInfo ++ "}")) g sNids
+                newGraph = foldl (\g nid -> updateNodePayload nid g (\info -> (infoLabel info) ++ "{" ++ typeInfo ++ "}")) g sNids
                 newNGI = foldl (\gi nid -> let ngi = getNodeGI (fromEnum nid) gi
                                            in M.insert (fromEnum nid) (nodeGiSetPosition (position ngi) . nodeGiSetDims (dims ngi) $ typeGI) gi) (fst giM) sNids
             writeIORef st (editorSetGI (newNGI, snd giM) . editorSetGraph newGraph $ es)
@@ -1027,7 +1031,7 @@ startGUI = do
                 newEGI = foldl (\gi eid -> let egi = getEdgeGI (fromEnum eid) gi
                                            in M.insert (fromEnum eid) (edgeGiSetPosition (cPosition egi) typeGI) gi) (snd giM) sEids
                 newGI = (fst giM, newEGI)
-                newGraph = foldl (\g eid -> updateEdgePayload eid g (\info -> (elementInfoLabel info) ++ "{" ++ typeInfo ++ "}" )) g sEids
+                newGraph = foldl (\g eid -> updateEdgePayload eid g (\info -> (infoLabel info) ++ "{" ++ typeInfo ++ "}" )) g sEids
             writeIORef st (editorSetGI newGI . editorSetGraph newGraph $ es)
             writeIORef currentEdgeType $ Just typeInfo
             Gtk.widgetQueueDraw canvas
@@ -1100,12 +1104,12 @@ startGUI = do
             es <- readIORef st
             let g = editorGetGraph es
                 (ngi, egi) = editorGetGI es
-                fn node = (nid, elementInfoType (nodeInfo node), getNodeGI nid ngi)
+                fn node = (nid, infoType (nodeInfo node), getNodeGI nid ngi)
                           where nid = fromEnum (nodeId node)
                 gn (i,t,gi) = case M.lookup t pnt of
                                 Nothing -> (i,gi)
                                 Just (gi',_) -> (i,nodeGiSetColor (fillColor gi') . nodeGiSetShape (shape gi') $ gi)
-                fe edge = (eid, elementInfoType (edgeInfo edge), getEdgeGI eid egi)
+                fe edge = (eid, infoType (edgeInfo edge), getEdgeGI eid egi)
                           where eid = fromEnum (edgeId edge)
                 ge (i,t,gi) = case M.lookup t pet of
                                 Nothing -> (i,gi)
@@ -1371,7 +1375,7 @@ updateHostInspector st possibleNT possibleET (entry, nodeTCBox, edgeTCBox) (node
       set nodeTBox [#visible := True]
       set edgeTBox [#visible := True]
     (n,0) -> do
-      let typeL = unifyNames $ map (elementInfoType . nodeInfo) ns
+      let typeL = unifyNames $ map (infoType . nodeInfo) ns
           typeI = case M.lookup typeL pNT of
                   Nothing -> -1
                   Just (gi,i) -> i
@@ -1379,7 +1383,7 @@ updateHostInspector st possibleNT possibleET (entry, nodeTCBox, edgeTCBox) (node
       set nodeTBox [#visible := True]
       set edgeTBox [#visible := False]
     (0,e) -> do
-      let typeL = unifyNames $ map (elementInfoType . edgeInfo) es
+      let typeL = unifyNames $ map (infoType . edgeInfo) es
           typeI = case M.lookup typeL pET of
                   Nothing -> -1
                   Just (gi,i) -> i
@@ -1388,11 +1392,11 @@ updateHostInspector st possibleNT possibleET (entry, nodeTCBox, edgeTCBox) (node
       set edgeTBox [#visible := True]
       set nodeTBox [#visible := False]
     (n,e) -> do
-      let typeNL = unifyNames $ map (elementInfoType . nodeInfo) ns
+      let typeNL = unifyNames $ map (infoType . nodeInfo) ns
           typeNI = case M.lookup typeNL pNT of
                   Nothing -> -1
                   Just (gi,i) -> i
-          typeEL = unifyNames $ map (elementInfoType . edgeInfo) es
+          typeEL = unifyNames $ map (infoType . edgeInfo) es
           typeEI = case M.lookup typeEL pET of
                   Nothing -> -1
                   Just (gi,i) -> i
@@ -1441,8 +1445,8 @@ drawGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
     Nothing -> return ()
   return ()
 
-drawGraph' :: EditorState -> Maybe (Double,Double,Double,Double) -> M.Map String NodeGI -> M.Map String EdgeGI -> Render ()
-drawGraph' (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq pnt pet = do
+drawGraph' :: EditorState -> Maybe (Double,Double,Double,Double) -> M.Map String NodeGI -> M.Map String EdgeGI -> Graph String String -> Render ()
+drawGraph' (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq pnt pet tg = do
   scale z z
   translate px py
 
@@ -1450,21 +1454,22 @@ drawGraph' (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq pnt pet = do
   let selectColor = (0.29,0.56,0.85)
       errorColor = (0.9,0.2,0.2)
 
+  let vg = validationGraph g tg
   -- draw the edges
   forM (edges g) (\e -> do
     let dstN = M.lookup (fromEnum . targetId $ e) nGI
         srcN = M.lookup (fromEnum . sourceId $ e) nGI
         egi  = M.lookup (fromEnum . edgeId   $ e) eGI
         selected = (edgeId e) `elem` sEdges
-        typeError = case M.lookup (elementInfoType (edgeInfo e)) pet of
-                     Nothing -> True
-                     Just _ -> False
+        typeError = case lookupEdge (edgeId e) vg of
+                      Just e' -> not $ edgeInfo e'
+                      Nothing -> True
         color = case (selected,typeError) of
                  (False,False) -> (0,0,0)
                  (False,True) -> errorColor
                  (True,_) -> selectColor
     case (egi, srcN, dstN) of
-      (Just gi, Just src, Just dst) -> renderEdge gi (elementInfoLabel (edgeInfo e)) src dst (selected || typeError) color
+      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabel (edgeInfo e)) src dst (selected || typeError) color
       _ -> return ())
 
   -- draw the nodes
@@ -1472,10 +1477,10 @@ drawGraph' (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq pnt pet = do
     let ngi = M.lookup (fromEnum . nodeId $ n) nGI
         selected = (nodeId n) `elem` (sNodes)
         info = nodeInfo n
-        label = elementInfoLabel info
-        typeError = case M.lookup (elementInfoType info) pnt of
-                     Nothing -> True
-                     Just _ -> False
+        label = infoLabel info
+        typeError = case lookupNode (nodeId n) vg of
+                      Just n' -> not $ nodeInfo n'
+                      Nothing -> True
         color = case (selected,typeError) of
                   (False,False) -> (0,0,0)
                   (False,True) -> errorColor
@@ -1495,6 +1500,51 @@ drawGraph' (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq pnt pet = do
       stroke
     Nothing -> return ()
   return ()
+
+
+validationGraph :: Graph String String -> Graph String String -> Graph Bool Bool
+validationGraph g tg = fromNodesAndEdges vn ve
+  where
+    vn = map nodeIsValid $ nodes g
+    ve = map edgeIsValid $ edges g
+    -- auxiliar functions to define the typedGraph
+    mkpairs xs ys = do x <- xs
+                       y <- ys
+                       return (x,y)
+    nodeToJust = \n -> Node (nodeId n) (Just $ nodeInfo n)
+    edgeToJust = \e -> Edge (edgeId e) (sourceId e) (targetId e) (Just $ edgeInfo e)
+
+    -- auxiliar structs to define the typedGraph
+    epairs = map (applyPair edgeId) . filter (\(e,et) -> infoLabel (edgeInfo et) == infoType (edgeInfo e)) $ mkpairs (edges g) (edges tg)
+    npairs = map (applyPair nodeId) . filter (\(n,nt) -> infoLabel (nodeInfo nt) == infoType (nodeInfo n)) $ mkpairs (nodes g) (nodes tg)
+    g' = fromNodesAndEdges (map nodeToJust (nodes g)) (map edgeToJust (edges g))
+    tg' = fromNodesAndEdges (map nodeToJust (nodes tg)) (map edgeToJust (edges tg))
+
+    -- typedGraph
+    typedG = TG.fromGraphMorphism $ Morph.fromGraphsAndLists g' tg' npairs epairs
+
+    -- functions to create the nodes and edges of the validationGraph
+    nodeIsValid n = Node (nodeId n) $ case Morph.applyNodeId typedG (nodeId n) of
+                      Just _ -> True
+                      Nothing -> False
+
+    edgeIsValid e = Edge (edgeId e) (sourceId e) (targetId e) nodesTypesAreValid
+      where
+        tge = Morph.applyEdgeId typedG (edgeId e)
+        tgtgt = Morph.applyNodeId typedG (targetId e)
+        tgsrc = Morph.applyNodeId typedG (sourceId e)
+        nodesTypesAreValid = case (tge, tgsrc, tgtgt) of
+                              (Just eid, Just srcid, Just tgtid) -> srcid == srce' && tgtid == tgte'
+                                where
+                                  e' = fromJust . lookupEdge eid $ tg
+                                  tgte' = nodeId . fromJust . lookupNode (targetId e') $ tg
+                                  srce' = nodeId . fromJust . lookupNode (sourceId e') $ tg
+                              _ -> False
+
+
+
+
+
 
 
 -- general save function -------------------------------------------------------
@@ -1641,7 +1691,7 @@ createNode' :: IORef EditorState -> String -> GIPos -> NodeShape -> GIColor -> G
 createNode' st content pos nshape color lcolor context = do
   es <- readIORef st
   let nid = head $ newNodes (editorGetGraph es)
-      content' = elementInfoLabel content
+      content' = infoLabel content
   dim <- getStringDims content' context
   writeIORef st $ createNode es pos dim content nshape color lcolor
 
