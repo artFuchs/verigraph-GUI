@@ -118,7 +118,7 @@ startGUI = do
       (zin,zut,z50,zdf,z150,z200,vdf) = viewItems
       (hlp,abt) = helpItems
   -- creates the tree panel
-  (treeBox, treeview, treeRenderer, btnNew, btnRmv) <- buildTreePanel
+  (treeBox, treeview, treeRenderer, createBtn, btnRmv) <- buildTreePanel
   Gtk.containerAdd treeFrame treeBox
   -- creates the inspector panel and add to the window
   (typeInspBox, typeEntry, colorBtn, lineColorBtn, radioShapes, radioStyles, tPropBoxes) <- buildTypeInspector
@@ -221,7 +221,7 @@ startGUI = do
     case t of
       0 -> return ()
       1 -> renderWithContext context $ drawGraph es sq
-      2 -> do
+      _ -> do
         tg   <- readIORef activeTypeGraph
         renderWithContext context $ drawGraph' es sq tg
     return False
@@ -302,7 +302,7 @@ startGUI = do
                 1 -> do
                   createNode' st "" (x',y') cShape cColor cLColor context
                   setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-                2 -> do
+                _ -> do
                   mntype <- readIORef currentNodeType
                   (t, shape, c, lc) <- case mntype of
                     Nothing -> return ("", cShape, cColor, cLColor)
@@ -316,16 +316,13 @@ startGUI = do
                   createNode' st t (x',y') shape c lc context
                   setChangeFlags window store changedProject changedGraph currentPath currentGraph True
 
-
-
-
-
               -- one node selected: create edges targeting this node
             (False, Just nid) -> do
               estyle <- readIORef currentStyle
               color <- readIORef currentLC
               modifyIORef st (\es -> createEdges es nid estyle color)
               setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+
             -- ctrl pressed: middle mouse button emulation
             (True,_) -> return ()
           Gtk.widgetQueueDraw canvas
@@ -367,12 +364,7 @@ startGUI = do
             stackUndo undoStack redoStack es
           else return ()
         Gtk.widgetQueueDraw canvas
-      -- if middle button is pressed, then move the view
-      (False ,True, _, _) -> liftIO $ do
-        let (dx,dy) = (x'-ox,y'-oy)
-        modifyIORef st (editorSetPan (px+dx, py+dy))
-        Gtk.widgetQueueDraw canvas
-      (_,_,_,_) -> return ()
+      _ -> return ()
     return True
 
   -- mouse button release on canvas
@@ -425,6 +417,10 @@ startGUI = do
   --   k <- get eventKey #keyval >>= return . chr . fromIntegral
   --   ms <- get eventKey #state
   --   case (Gdk.ModifierTypeControlMask `elem` ms, Gdk.ModifierTypeShiftMask `elem` ms, toLower k) of
+  --     -- F2 - rename selection
+  --     (False,False,'\65471') -> Gtk.widgetGrabFocus typeEntry
+  --     _ -> return ()
+  --   return True
   --     -- <delete> | <Ctrl> + D : delete selection
   --     (False,False,'\65535') -> do
   --       es <- readIORef st
@@ -445,8 +441,6 @@ startGUI = do
   --     (True, False, 'a') -> do
   --       modifyIORef st (\es -> let g = editorGetGraph es in editorSetSelected (nodeIds g, edgeIds g) es)
   --       Gtk.widgetQueueDraw canvas
-  --     -- F2 - rename selection
-  --     (False,False,'\65471') -> Gtk.widgetGrabFocus typeEntry
   --     -- CTRL + C/V/X : copy/paste/cut
   --     (True, False, 'c') -> Gtk.menuItemActivate cpy
   --     (True, False, 'v') -> Gtk.menuItemActivate pst
@@ -466,7 +460,7 @@ startGUI = do
   --     -- CTRL + <0> : reset pan & zoom
   --     (True,_,'0') -> Gtk.menuItemActivate vdf
   --     -- CTRL + N : create a new graph in the treeView
-  --     (True, False, 'n') -> Gtk.buttonClicked btnNew
+  --     (True, False, 'n') -> Gtk.buttonClicked createBtn
   --     -- CTRL + W : remove a graph from the treeView
   --     (True, False, 'w') -> Gtk.buttonClicked btnRmv
   --     -- CTRL + SHIFT + N : create a new file
@@ -1124,41 +1118,66 @@ startGUI = do
         Gtk.widgetQueueDraw canvas
 
   -- auxiliar functions to use when activate a menuitem in the treeview popup menu
-  let newGraph t = do
+  -- let newGraph t = do
+  --       states <- readIORef graphStates
+  --       let newKey = if M.size states > 0 then maximum (M.keys states) + 1 else 0
+  --       parent <- do
+  --         selection <- Gtk.treeViewGetSelection treeview
+  --         (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
+  --         case sel of
+  --           False -> do
+  --             (valid, fIter) <- Gtk.treeModelGetIterFirst model
+  --             return $ if valid then (Just fIter) else Nothing
+  --           True -> do
+  --             typeI <- (Gtk.treeModelGetValue store iter 3 >>= fromGValue ) :: IO Int32
+  --             case typeI of
+  --               0 -> return $ Just iter
+  --               _ -> do
+  --                 (valid, pIter) <- Gtk.treeModelIterParent model iter
+  --                 return $ if valid then (Just pIter) else Nothing
+  --       iter <- Gtk.treeStoreAppend store parent
+  --       storeSetGraphStore store iter ("new",2, newKey,t)
+  --       modifyIORef graphStates (M.insert newKey (emptyES,[],[]))
+
+  -- let rmvGraph = do
+  --       selection <- Gtk.treeViewGetSelection treeview
+  --       (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
+  --       case sel of
+  --         False -> return ()
+  --         True -> do
+  --           typeI <- (Gtk.treeModelGetValue store iter 3 >>= fromGValue ) :: IO Int32
+  --           case typeI of
+  --             0 -> return ()
+  --             _ -> do
+  --               index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
+  --               Gtk.treeStoreRemove store iter
+  --               modifyIORef graphStates $ M.delete index
+
+  let createRule = do
         states <- readIORef graphStates
         let newKey = if M.size states > 0 then maximum (M.keys states) + 1 else 0
-        parent <- do
-          selection <- Gtk.treeViewGetSelection treeview
-          (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
-          case sel of
-            False -> do
-              (valid, fIter) <- Gtk.treeModelGetIterFirst model
-              return $ if valid then (Just fIter) else Nothing
-            True -> do
-              typeI <- (Gtk.treeModelGetValue store iter 3 >>= fromGValue ) :: IO Int32
-              case typeI of
-                0 -> return $ Just iter
-                _ -> do
-                  (valid, pIter) <- Gtk.treeModelIterParent model iter
-                  return $ if valid then (Just pIter) else Nothing
-        iter <- Gtk.treeStoreAppend store parent
-        storeSetGraphStore store iter ("new",2, newKey,t)
-        modifyIORef graphStates (M.insert newKey (emptyES,[],[]))
+        (valid,parent) <- Gtk.treeModelIterNthChild store Nothing 2
+        if not valid
+          then return ()
+          else do
+            n <- Gtk.treeModelIterNChildren store (Just parent)
+            iter <- Gtk.treeStoreAppend store (Just parent)
+            storeSetGraphStore store iter ("Rule" ++ (show n),0,newKey,2)
+            modifyIORef graphStates (M.insert newKey (emptyES,[],[]))
 
-  let rmvGraph = do
+  let removeRule = do
         selection <- Gtk.treeViewGetSelection treeview
         (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
-        case sel of
-          False -> return ()
-          True -> do
-            typeI <- (Gtk.treeModelGetValue store iter 3 >>= fromGValue ) :: IO Int32
-            case typeI of
-              0 -> return ()
-              _ -> do
+        if not sel
+          then return ()
+          else do
+            (valid, parent) <- Gtk.treeModelIterParent store iter
+            if not valid
+              then showError window "Selected Graph is not a rule"
+              else do
                 index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
                 Gtk.treeStoreRemove store iter
                 modifyIORef graphStates $ M.delete index
-
 
   let activateTypeGraph = do
         selection <- Gtk.treeViewGetSelection treeview
@@ -1212,10 +1231,6 @@ startGUI = do
                     Gtk.comboBoxTextRemoveAll edgeTCBox
                     forM (M.keys possibleET) $ \k -> Gtk.comboBoxTextAppendText edgeTCBox (T.pack k)
                     return ()
-
-
-
-
                   else showError window "There are conflicting definitions of elements in the typeGraph. \n The conflicts must be fixed before activating the typeGraph."
               (_,_) -> showError window "The choosen graph is not a typeGraph"
 
@@ -1234,18 +1249,15 @@ startGUI = do
       3 -> do
         -- create popup menu
         popmenu <- new Gtk.Menu [];
-        newTGItem <- new Gtk.MenuItem [ #label := "create TypeGraph"];
-        newHGItem <- new Gtk.MenuItem [ #label := "create HostGraph"];
-        delItem <- new Gtk.MenuItem [ #label := "delete graph"];
+        newItem <- new Gtk.MenuItem [ #label := "create rule"];
+        delItem <- new Gtk.MenuItem [ #label := "delete rule"];
         actItem <- new Gtk.MenuItem [ #label := "activate"];
-        Gtk.containerAdd popmenu newTGItem
-        Gtk.containerAdd popmenu newHGItem
+        Gtk.containerAdd popmenu newItem
         Gtk.containerAdd popmenu delItem
         Gtk.containerAdd popmenu actItem
         -- connect menuItems
-        on newTGItem #activate $ newGraph 1
-        on newHGItem #activate $ newGraph 2
-        on delItem #activate rmvGraph
+        on newItem #activate createRule
+        on delItem #activate removeRule
         on actItem #activate activateTypeGraph
 
 
@@ -1256,10 +1268,10 @@ startGUI = do
     return False
 
   -- pressed the 'new' button on the treeview area
-  on btnNew #clicked $ newGraph 1
+  on createBtn #clicked createRule
 
   -- pressed the 'remove' button on the treeview area
-  on btnRmv #clicked rmvGraph
+  on btnRmv #clicked removeRule
 
   -- edited a graph name
   on treeRenderer #edited $ \pathStr newName -> do

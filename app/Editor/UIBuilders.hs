@@ -254,10 +254,10 @@ buildTreePanel = do
   renderer <- new Gtk.CellRendererText [#editable := True]
   Gtk.cellLayoutPackStart col renderer False
 
-  btnNew <- new Gtk.Button [#label := "New Graph"]
+  btnNew <- new Gtk.Button [#label := "New Rule"]
   Gtk.boxPackStart mainBox btnNew False False 0
 
-  btnRmv <- new Gtk.Button [#label := "Remove Graph"]
+  btnRmv <- new Gtk.Button [#label := "Remove Rule"]
   Gtk.boxPackStart mainBox btnRmv False False 0
 
   return (mainBox, treeview, renderer, btnNew, btnRmv)
