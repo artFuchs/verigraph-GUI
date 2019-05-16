@@ -146,6 +146,10 @@ startGUI = do
           storeSetGraphStore store rulesIter ("Rules", 0, 0, 0)
           fstRuleIter <- Gtk.treeStoreAppend store (Just rulesIter)
           storeSetGraphStore store fstRuleIter ("Rule0", 0, 2, 2)
+          path <- Gtk.treeModelGetPath store fstIter
+          Gtk.treeViewSetCursor treeview path (Nothing :: Maybe Gtk.TreeViewColumn) False
+          rulesPath <- Gtk.treeModelGetPath store rulesIter
+          Gtk.treeViewExpandRow treeview rulesPath True
   initStore
 
   projectCol <- Gtk.treeViewGetColumn treeview 0
