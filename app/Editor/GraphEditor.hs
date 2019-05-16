@@ -139,14 +139,13 @@ startGUI = do
   Gtk.treeViewSetModel treeview (Just store)
   let initStore = do
           fstIter <- Gtk.treeStoreAppend store Nothing
-          storeSetGraphStore store fstIter ("Type Graphs", 0, 0, 0)
-          fstTypeIter <- Gtk.treeStoreAppend store (Just fstIter)
-          storeSetGraphStore store fstTypeIter ("newTypeGraph", 0, 0, 1)
+          storeSetGraphStore store fstIter ("TypeGraph", 0, 0, 1)
           sndIter <- Gtk.treeStoreAppend store Nothing
-          storeSetGraphStore store sndIter ("Host Graphs", 0, 0, 0)
-          fstHostIter <- Gtk.treeStoreAppend store (Just sndIter)
-          storeSetGraphStore store fstHostIter ("newHostGraph", 0, 1, 2)
-
+          storeSetGraphStore store sndIter ("InitialGraph", 0, 1, 2)
+          rulesIter <- Gtk.treeStoreAppend store Nothing
+          storeSetGraphStore store rulesIter ("Rules", 0, 0, 0)
+          fstRuleIter <- Gtk.treeStoreAppend store (Just rulesIter)
+          storeSetGraphStore store fstRuleIter ("Rule0", 0, 2, 2)
   initStore
 
   projectCol <- Gtk.treeViewGetColumn treeview 0
@@ -223,12 +222,8 @@ startGUI = do
       0 -> return ()
       1 -> renderWithContext context $ drawGraph es sq
       2 -> do
-        pnt <- readIORef possibleNodeTypes
-        pet <- readIORef possibleEdgeTypes
         tg   <- readIORef activeTypeGraph
-        let pnt' = M.map (\(gi,i) -> gi) pnt
-            pet' = M.map (\(gi,i) -> gi) pet
-        renderWithContext context $ drawGraph' es sq pnt' pet' tg
+        renderWithContext context $ drawGraph' es sq tg
     return False
 
   -- mouse button pressed on canvas
@@ -831,22 +826,29 @@ startGUI = do
   hlp `on` #activate $ do
     #showAll helpWindow
 
+
+
   -- event bindings -- inspector panel -----------------------------------------
+
+  let setName = do  es <- readIORef st
+                    stackUndo undoStack redoStack es
+                    setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+                    name <- Gtk.entryGetText typeEntry >>= return . T.unpack
+                    context <- Gtk.widgetGetPangoContext canvas
+                    renameSelected st name context
+                    Gtk.widgetQueueDraw canvas
   -- pressed a key when editing the typeEntry
   on typeEntry #keyPressEvent $ \eventKey -> do
     k <- get eventKey #keyval >>= return . chr . fromIntegral
-    let setName = do es <- readIORef st
-                     stackUndo undoStack redoStack es
-                     setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-                     name <- Gtk.entryGetText typeEntry >>= return . T.unpack
-                     context <- Gtk.widgetGetPangoContext canvas
-                     renameSelected st name context
-                     Gtk.widgetQueueDraw canvas
-  -- if it's Return or Enter (Numpad), then change the name of the selected elements
+    --if it's Return or Enter (Numpad), then change the name of the selected elements
     case k of
        '\65293' -> setName
        '\65421' -> setName
        _       -> return ()
+    return False
+
+  on typeEntry #focusOutEvent $ \event -> do
+    setName
     return False
 
   -- select a fill color or line color
@@ -1421,14 +1423,14 @@ drawGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
         egi  = M.lookup (fromEnum . edgeId   $ e) eGI
         selected = (edgeId e) `elem` sEdges
     case (egi, srcN, dstN) of
-      (Just gi, Just src, Just dst) -> renderEdge gi (edgeInfo e) src dst selected selectColor
+      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabel $ edgeInfo e) src dst selected selectColor
       _ -> return ())
 
   -- draw the nodes
   forM (nodes g) (\n -> do
     let ngi = M.lookup (fromEnum . nodeId $ n) nGI
         selected = (nodeId n) `elem` (sNodes)
-        info = nodeInfo n
+        info = infoLabel $ nodeInfo n
     case (ngi) of
       Just gi -> renderNode gi info selected selectColor
       Nothing -> return ())
@@ -1445,8 +1447,8 @@ drawGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
     Nothing -> return ()
   return ()
 
-drawGraph' :: EditorState -> Maybe (Double,Double,Double,Double) -> M.Map String NodeGI -> M.Map String EdgeGI -> Graph String String -> Render ()
-drawGraph' (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq pnt pet tg = do
+drawGraph' :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph String String -> Render ()
+drawGraph' (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
   scale z z
   translate px py
 
@@ -1691,9 +1693,11 @@ createNode' :: IORef EditorState -> String -> GIPos -> NodeShape -> GIColor -> G
 createNode' st content pos nshape color lcolor context = do
   es <- readIORef st
   let nid = head $ newNodes (editorGetGraph es)
-      content' = infoLabel content
+      content' = if infoLabel content == "" then show nid else infoLabel content
+      nodeT = infoType content
+      info = if nodeT == "" then content' ++ "{" ++ nodeT ++ "}" else content'
   dim <- getStringDims content' context
-  writeIORef st $ createNode es pos dim content nshape color lcolor
+  writeIORef st $ createNode es pos dim info nshape color lcolor
 
 -- rename the selected itens
 renameSelected:: IORef EditorState -> String -> P.Context -> IO()
