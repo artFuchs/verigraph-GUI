@@ -131,15 +131,16 @@ createNode es pos dim content nshape color lcolor = editorSetGraph newGraph . ed
 
 
 -- create edges between the selected nodes and a target node
-createEdges:: EditorState -> NodeId -> EdgeStyle -> (Double,Double,Double) -> EditorState
-createEdges es dstNode estyle ecolor = editorSetGraph newGraph . editorSetGI (ngiM, newegiM) . editorSetSelected ([],createdEdges) $ es
+createEdges:: EditorState -> NodeId -> String -> EdgeStyle -> (Double,Double,Double) -> EditorState
+createEdges es dstNode content estyle ecolor = editorSetGraph newGraph . editorSetGI (ngiM, newegiM) . editorSetSelected ([],createdEdges) $ es
   where selectedNodes = fst $ editorGetSelected es
         graph = editorGetGraph es
         (ngiM,egiM) = editorGetGI es
         (newGraph, newegiM, createdEdges) = foldl create (graph, egiM, []) selectedNodes
         create = (\(g,giM,eids) nid -> let
                                     eid = head $ newEdges g
-                                    ng = insertEdgeWithPayload eid nid dstNode "" g
+                                    content' = if content == "" then show eid else content
+                                    ng = insertEdgeWithPayload eid nid dstNode content' g
                                     newPos = if (dstNode == nid) then newLoopPos nid (g,(ngiM,egiM)) else newEdgePos nid dstNode (g,(ngiM,egiM))
                                     negi = EdgeGI {cPosition = newPos, color = ecolor, style = estyle}
                                   in (ng, M.insert (fromEnum eid) negi giM, eid:eids))

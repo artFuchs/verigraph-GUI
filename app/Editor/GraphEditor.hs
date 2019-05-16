@@ -121,16 +121,22 @@ startGUI = do
   (treeBox, treeview, treeRenderer, createBtn, btnRmv) <- buildTreePanel
   Gtk.containerAdd treeFrame treeBox
   -- creates the inspector panel and add to the window
-  (typeInspBox, typeEntry, colorBtn, lineColorBtn, radioShapes, radioStyles, tPropBoxes) <- buildTypeInspector
+
+  (typeInspBox, typeNameBox, colorBtn, lineColorBtn, radioShapes, radioStyles, tPropBoxes) <- buildTypeInspector
+
+  nameEntry <- new Gtk.Entry []
+  Gtk.widgetSetCanFocus nameEntry True
+  Gtk.boxPackStart typeNameBox nameEntry True True 0
+
   Gtk.containerAdd inspectorFrame typeInspBox
   let
-    typeInspWidgets = (typeEntry, colorBtn, lineColorBtn, radioShapes, radioStyles)
+    typeInspWidgets = (nameEntry, colorBtn, lineColorBtn, radioShapes, radioStyles)
     [radioCircle, radioRect, radioQuad] = radioShapes
     [radioNormal, radioPointed, radioSlashed] = radioStyles
 
-  (hostInspBox, hostEntry, nodeTCBox, edgeTCBox, hostInspBoxes) <- buildHostInspector
+  (hostInspBox, hostNameBox, nodeTCBox, edgeTCBox, hostInspBoxes) <- buildHostInspector
   let
-    hostInspWidgets = (hostEntry, nodeTCBox, edgeTCBox)
+    hostInspWidgets = (nameEntry, nodeTCBox, edgeTCBox)
 
   #showAll window
 
@@ -251,7 +257,7 @@ startGUI = do
           let (n,e) = editorGetSelected es
           if null n && null e
             then return ()
-            else liftIO $ Gtk.widgetGrabFocus typeEntry
+            else liftIO $ Gtk.widgetGrabFocus nameEntry
         -- left button: select nodes and edges
         (1, False)  -> liftIO $ do
           let (oldSN,oldSE) = editorGetSelected es
@@ -321,11 +327,28 @@ startGUI = do
                   setChangeFlags window store changedProject changedGraph currentPath currentGraph True
 
               -- one node selected: create edges targeting this node
-            (False, Just nid) -> do
-              estyle <- readIORef currentStyle
-              color <- readIORef currentLC
-              modifyIORef st (\es -> createEdges es nid estyle color)
-              setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+            (False, Just nid) -> case typeG of
+              0 -> return ()
+              1 -> do
+                estyle <- readIORef currentStyle
+                color <- readIORef currentLC
+                modifyIORef st (\es -> createEdges es nid "" estyle color)
+                setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+              2 -> do
+                metype <- readIORef currentEdgeType
+                cEstyle <- readIORef currentStyle
+                cColor <- readIORef currentLC
+                (t,estyle,color) <- case metype of
+                  Nothing -> return ("", cEstyle, cColor)
+                  Just t -> do
+                    pet <- readIORef possibleEdgeTypes
+                    let pet' = M.map (\(gi,i) -> gi) pet
+                        megi = M.lookup t pet'
+                    case megi of
+                      Nothing -> return ("", cEstyle, cColor)
+                      Just gi -> return ("{" ++ t ++ "}", style gi, color gi)
+                modifyIORef st (\es -> createEdges es nid t estyle color)
+                setChangeFlags window store changedProject changedGraph currentPath currentGraph True
 
             -- ctrl pressed: middle mouse button emulation
             (True,_) -> return ()
@@ -367,6 +390,11 @@ startGUI = do
             writeIORef movingGI True
             stackUndo undoStack redoStack es
           else return ()
+        Gtk.widgetQueueDraw canvas
+      -- if middle button is pressed, then move the view
+      (False ,True, _, _) -> liftIO $ do
+        let (dx,dy) = (x'-ox,y'-oy)
+        modifyIORef st (editorSetPan (px+dx, py+dy))
         Gtk.widgetQueueDraw canvas
       _ -> return ()
     return True
@@ -422,7 +450,7 @@ startGUI = do
   --   ms <- get eventKey #state
   --   case (Gdk.ModifierTypeControlMask `elem` ms, Gdk.ModifierTypeShiftMask `elem` ms, toLower k) of
   --     -- F2 - rename selection
-  --     (False,False,'\65471') -> Gtk.widgetGrabFocus typeEntry
+  --     (False,False,'\65471') -> Gtk.widgetGrabFocus nameEntry
   --     _ -> return ()
   --   return True
   --     -- <delete> | <Ctrl> + D : delete selection
@@ -828,25 +856,26 @@ startGUI = do
 
   -- event bindings -- inspector panel -----------------------------------------
 
-  let setName = do  es <- readIORef st
+  let setLabel = do es <- readIORef st
+                    gType <- readIORef currentGraphType
                     stackUndo undoStack redoStack es
                     setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-                    name <- Gtk.entryGetText typeEntry >>= return . T.unpack
+                    name <- Gtk.entryGetText nameEntry >>= return . T.unpack
                     context <- Gtk.widgetGetPangoContext canvas
                     renameSelected st name context
                     Gtk.widgetQueueDraw canvas
-  -- pressed a key when editing the typeEntry
-  on typeEntry #keyPressEvent $ \eventKey -> do
+  -- pressed a key when editing the nameEntry
+  on nameEntry #keyPressEvent $ \eventKey -> do
     k <- get eventKey #keyval >>= return . chr . fromIntegral
     --if it's Return or Enter (Numpad), then change the name of the selected elements
     case k of
-       '\65293' -> setName
-       '\65421' -> setName
+       '\65293' -> setLabel
+       '\65421' -> setLabel
        _       -> return ()
     return False
 
-  on typeEntry #focusOutEvent $ \event -> do
-    setName
+  on nameEntry #focusOutEvent $ \event -> do
+    setLabel
     return False
 
   -- select a fill color or line color
@@ -1088,16 +1117,34 @@ startGUI = do
             child <- Gtk.containerGetChildren inspectorFrame >>= \a -> return (a!!0)
             Gtk.containerRemove inspectorFrame child
             Gtk.containerAdd inspectorFrame typeInspBox
+            entryParent <- Gtk.widgetGetParent nameEntry
+            case entryParent of
+              Nothing -> return ()
+              Just parent -> do
+                mp <- castTo Gtk.Box parent
+                case mp of
+                  Nothing -> return ()
+                  Just p -> Gtk.containerRemove p nameEntry
+            Gtk.boxPackStart typeNameBox nameEntry True True 0
             #showAll inspectorFrame
           2 -> do
             child <- Gtk.containerGetChildren inspectorFrame >>= \a -> return (a!!0)
             Gtk.containerRemove inspectorFrame child
             Gtk.containerAdd inspectorFrame hostInspBox
+            entryParent <- Gtk.widgetGetParent nameEntry
+            case entryParent of
+              Nothing -> return ()
+              Just parent -> do
+                mp <- castTo Gtk.Box parent
+                case mp of
+                  Nothing -> return ()
+                  Just p -> Gtk.containerRemove p nameEntry
+            Gtk.boxPackStart hostNameBox nameEntry True True 0
+            #showAll inspectorFrame
             writeIORef currentShape NCircle
             writeIORef currentStyle ENormal
             writeIORef currentC (1,1,1)
             writeIORef currentLC (0,0,0)
-            #showAll inspectorFrame
             -- update nodes and edges elements according to the active typeGraph
             pnt <- readIORef possibleNodeTypes
             pet <- readIORef possibleEdgeTypes
@@ -1209,7 +1256,8 @@ startGUI = do
                     allDiff l = case l of
                                   [] -> True
                                   x:xs -> (notElem x xs) && (allDiff xs)
-                    diffNames = (allDiff (map nodeInfo nds)) && (allDiff (map edgeInfo edgs))
+                    diffNames = (allDiff (map (infoLabel . nodeInfo) nds)) &&
+                                (allDiff (map (infoLabel . edgeInfo) edgs))
                 if diffNames
                   then do -- load the variables with the info from the typeGraph
                     writeIORef activeTypeGraph g
@@ -1218,13 +1266,13 @@ startGUI = do
                         zipWith (\i (k,gi) -> (k, (gi, i)) ) [0..] $
                         M.toList $
                         foldr (\(Node nid info) m -> let ngi = getNodeGI (fromEnum nid) (fst giM)
-                                                         in M.insert info ngi m) M.empty nds
+                                                         in M.insert (infoLabel info) ngi m) M.empty nds
                     writeIORef possibleEdgeTypes $
                         M.fromList $
                         zipWith (\i (k,gi) -> (k, (gi, i)) ) [0..] $
                         M.toList $
                         foldr (\(Edge eid _ _ info) m -> let egi = getEdgeGI (fromEnum eid) (snd giM)
-                                                             in M.insert info egi m) M.empty edgs
+                                                             in M.insert (infoLabel info) egi m) M.empty edgs
                     -- update the comboBoxes
                     possibleNT <- readIORef possibleNodeTypes
                     possibleET <- readIORef possibleEdgeTypes
@@ -1309,7 +1357,7 @@ startGUI = do
 
 -- update the inspector --------------------------------------------------------
 updateTypeInspector :: IORef EditorState -> IORef (Double,Double,Double) -> IORef (Double,Double,Double) -> (Gtk.Entry, Gtk.ColorButton, Gtk.ColorButton, [Gtk.RadioButton], [Gtk.RadioButton]) -> (Gtk.Box, Gtk.Frame, Gtk.Frame)-> IO ()
-updateTypeInspector st currentC currentLC (typeEntry, colorBtn, lcolorBtn, radioShapes, radioStyles) (hBoxColor, frameShape, frameStyle) = do
+updateTypeInspector st currentC currentLC (nameEntry, colorBtn, lcolorBtn, radioShapes, radioStyles) (hBoxColor, frameShape, frameStyle) = do
   emptyColor <- new Gdk.RGBA [#red := 0.5, #blue := 0.5, #green := 0.5, #alpha := 1.0]
   est <- readIORef st
   let g = editorGetGraph est
@@ -1321,7 +1369,7 @@ updateTypeInspector st currentC currentLC (typeEntry, colorBtn, lcolorBtn, radio
     (0,0) -> do
       (r, g, b)    <- readIORef currentC
       (r', g', b') <- readIORef currentLC
-      set typeEntry [#text := ""]
+      set nameEntry [#text := ""]
       color <- new Gdk.RGBA [#red := r, #green := g, #blue := b, #alpha:=1.0]
       lcolor <- new Gdk.RGBA [#red := r', #green := g', #blue := b', #alpha:=1.0]
       Gtk.colorChooserSetRgba colorBtn color
@@ -1331,14 +1379,14 @@ updateTypeInspector st currentC currentLC (typeEntry, colorBtn, lcolorBtn, radio
       set frameStyle [#visible := True]
     (n,0) -> do
       let nid = nodeId (ns!!0)
-          name = T.pack $ if n == 1 then nodeInfo $ (ns!!0) else unifyNames (map nodeInfo ns)
+          info = T.pack . unifyNames $ map (infoLabel . nodeInfo) ns
           gi = getNodeGI (fromEnum nid) ngiM
           (r,g,b) = fillColor gi
           (r',g',b') = lineColor gi
           nodeShape = shape gi
       color <- new Gdk.RGBA [#red := r, #green := g, #blue := b, #alpha := 1.0]
       lcolor <- new Gdk.RGBA [#red := r', #green := g', #blue := b', #alpha := 1.0]
-      set typeEntry [#text := name]
+      set nameEntry [#text := info]
       Gtk.colorChooserSetRgba colorBtn $ if n==1 then color else emptyColor
       Gtk.colorChooserSetRgba lcolorBtn $ if n==1 then lcolor else emptyColor
       case (n,nodeShape) of
@@ -1352,12 +1400,12 @@ updateTypeInspector st currentC currentLC (typeEntry, colorBtn, lcolorBtn, radio
       set frameStyle [#visible := False]
     (0,n) -> do
       let eid = edgeId (es!!0)
-          name = T.pack $ if n == 1 then edgeInfo (es!!0) else unifyNames (map edgeInfo es)
+          info = T.pack . unifyNames $ map (infoLabel . edgeInfo) es
           gi = getEdgeGI (fromEnum eid) egiM
           (r,g,b) = color gi
           edgeStyle = style gi
       edgeColor <- new Gdk.RGBA [#red := r, #green := g, #blue := b, #alpha := 1.0]
-      set typeEntry [#text := name]
+      set nameEntry [#text := info]
       Gtk.colorChooserSetRgba lcolorBtn $ if n == 1 then edgeColor else emptyColor
       case (n,edgeStyle) of
         (1,ENormal) -> Gtk.toggleButtonSetActive (radioStyles!!0) True
@@ -1369,7 +1417,8 @@ updateTypeInspector st currentC currentLC (typeEntry, colorBtn, lcolorBtn, radio
       set frameShape [#visible := False]
       set frameStyle [#visible := True]
     _ -> do
-      set typeEntry [#text := "----" ]
+      let info = T.pack . unifyNames $ concat [(map (infoLabel . edgeInfo) es), (map (infoLabel . nodeInfo) ns)]
+      set nameEntry [#text := info ]
       Gtk.colorChooserSetRgba colorBtn emptyColor
       Gtk.colorChooserSetRgba lcolorBtn emptyColor
       set hBoxColor [#visible := True]
@@ -1710,21 +1759,27 @@ createNode' st content pos nshape color lcolor context = do
   es <- readIORef st
   let nid = head $ newNodes (editorGetGraph es)
       content' = if infoLabel content == "" then show nid else infoLabel content
-      nodeT = infoType content
-      info = if nodeT == "" then content' ++ "{" ++ nodeT ++ "}" else content'
+      info = if infoType content == "" then content' else content' ++ "{" ++ infoType content ++ "}"
   dim <- getStringDims content' context
   writeIORef st $ createNode es pos dim info nshape color lcolor
 
 -- rename the selected itens
 renameSelected:: IORef EditorState -> String -> P.Context -> IO()
-renameSelected state name context = do
+renameSelected state content context = do
   es <- readIORef state
-  dim <- getStringDims name context
+  let contentL = infoLabel content
+      contentT = infoType content
+  dim <- getStringDims contentL context
   let graph = editorGetGraph es
       (nids,eids) = editorGetSelected es
       (ngiM,egiM) = editorGetGI es
-  let graph' = foldl (\g nid -> updateNodePayload nid g (\_ -> name)) graph nids
-      newGraph  = foldl (\g eid -> updateEdgePayload eid g (\_ -> name)) graph' eids
+  let rename oldInfo = if contentT /= ""
+                        then content
+                        else contentL ++ if infoType oldInfo == ""
+                          then ""
+                          else "{"++ infoType oldInfo ++ "}"
+  let graph' = foldl (\g nid -> updateNodePayload nid g rename) graph nids
+      newGraph  = foldl (\g eid -> updateEdgePayload eid g rename) graph' eids
       newNgiM = M.mapWithKey (\k gi -> if NodeId k `elem` nids then nodeGiSetDims dim gi else gi) ngiM
       newEs   = editorSetGI (newNgiM,egiM) . editorSetGraph newGraph $ es
   writeIORef state newEs

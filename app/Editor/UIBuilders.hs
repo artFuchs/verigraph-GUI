@@ -75,7 +75,7 @@ buildMainWindow = do
   return (window, canvas, mainBox, treeFrame, inspectorFrame, fileItems, editItems, viewItems, helpItems)
 
 -- creates the inspector for typed graphs
-buildTypeInspector :: IO (Gtk.Box, Gtk.Entry, Gtk.ColorButton, Gtk.ColorButton, [Gtk.RadioButton], [Gtk.RadioButton], (Gtk.Box, Gtk.Frame, Gtk.Frame))
+buildTypeInspector :: IO (Gtk.Box, Gtk.Box, Gtk.ColorButton, Gtk.ColorButton, [Gtk.RadioButton], [Gtk.RadioButton], (Gtk.Box, Gtk.Frame, Gtk.Frame))
 buildTypeInspector = do
   mainBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical
                          , #spacing := 8
@@ -91,9 +91,6 @@ buildTypeInspector = do
   Gtk.boxPackStart mainBox typeBox False False 0
   typeLabel <- new Gtk.Label [ #label := "Type: "]
   Gtk.boxPackStart typeBox typeLabel False False 0
-  typeEntry <- new Gtk.Entry []
-  Gtk.boxPackStart typeBox typeEntry True True 0
-  Gtk.widgetSetCanFocus typeEntry True
 
   -- creates a HBox containing a label and ColorButton to the user change the node color
   colorBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
@@ -142,10 +139,10 @@ buildTypeInspector = do
   Gtk.boxPackStart edgeStyleBox radioSlashed True True 0
   let radioStyles = [radioNormal, radioPointed, radioSlashed]
 
-  return (mainBox, typeEntry, colorButton, lineColorButton, radioShapes, radioStyles, (colorBox, frameShape, frameStyle))
+  return (mainBox, typeBox, colorButton, lineColorButton, radioShapes, radioStyles, (colorBox, frameShape, frameStyle))
 
 -- creates the inspector for the host graph
-buildHostInspector :: IO (Gtk.Box, Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, (Gtk.Box, Gtk.Box))
+buildHostInspector :: IO (Gtk.Box, Gtk.Box, Gtk.ComboBoxText, Gtk.ComboBoxText, (Gtk.Box, Gtk.Box))
 buildHostInspector = do
   mainBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical
                          , #spacing := 8
@@ -161,9 +158,6 @@ buildHostInspector = do
   Gtk.boxPackStart mainBox labelBox False False 0
   labelLabel <- new Gtk.Label [ #label := "Label: "]
   Gtk.boxPackStart labelBox labelLabel False False 0
-  labelEntry <- new Gtk.Entry []
-  Gtk.boxPackStart labelBox labelEntry True True 0
-  Gtk.widgetSetCanFocus labelEntry True
 
   -- creates a HBox containing a ComboBox for the user change the node type
   nodeTypeBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
@@ -184,7 +178,7 @@ buildHostInspector = do
   edgeTypeComboBox <- new Gtk.ComboBoxText []
   Gtk.boxPackStart edgeTypeBox edgeTypeComboBox True True 0
 
-  return (mainBox, labelEntry, nodeTypeComboBox, edgeTypeComboBox, (nodeTypeBox, edgeTypeBox))
+  return (mainBox, labelBox, nodeTypeComboBox, edgeTypeComboBox, (nodeTypeBox, edgeTypeBox))
 
 buildRuleInspector :: IO (Gtk.Frame, Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.ComboBoxText, (Gtk.Box, Gtk.Box))
 buildRuleInspector = do
