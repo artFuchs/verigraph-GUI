@@ -9,7 +9,6 @@ Tarefas ---------------------------------------------------------------------
   *Rule  - grafo em que elementos indicam transformações sobre grafos Host
 *Arrumar função para indicar mudanças - ela está indicando mudanças em nodos do tipo Topic
 *Adicionar coluna na treeview para atributo de ativação de ruleGraphs
-*Atualizar informações do typegraph ativado automaticamente durante a edição
 
 
 Progresso -------------------------------------------------------------------
@@ -60,4 +59,5 @@ Feito -----------------------------------------------------------------------
    - indicar erro caso o tipo do elemento não esteja especificado no typeGraph
 *Verificar se um elemento do hostGraph foi mapeado corretamente para TypedGraph
 *Adicionar coluna na treeView para indicar mudança
+*Atualizar informações do typegraph ativado automaticamente durante a edição
 -}

@@ -231,6 +231,50 @@ startGUI = do
         renderWithContext context $ drawGraph' es sq tg
     return False
 
+  let updateActiveTG = do
+        curr <- readIORef currentGraph
+        if curr /= 0 -- if the current graph is the active typeGraph, update
+          then return ()
+          else do
+            es <- readIORef st
+            -- check if all edges and nodes have different names
+            let g = editorGetGraph es
+                giM = editorGetGI es
+                nds = nodes g
+                edgs = edges g
+                allDiff l = case l of
+                              [] -> True
+                              x:xs -> (notElem x xs) && (allDiff xs)
+                diffNames = (allDiff (map (infoLabel . nodeInfo) nds)) &&
+                            (allDiff (map (infoLabel . edgeInfo) edgs))
+            if diffNames
+              then do -- load the variables with the info from the typeGraph
+                writeIORef activeTypeGraph g
+                writeIORef possibleNodeTypes $
+                    M.fromList $
+                    zipWith (\i (k,gi) -> (k, (gi, i)) ) [0..] $
+                    M.toList $
+                    foldr (\(Node nid info) m -> let ngi = getNodeGI (fromEnum nid) (fst giM)
+                                                     in M.insert (infoLabel info) ngi m) M.empty nds
+                writeIORef possibleEdgeTypes $
+                    M.fromList $
+                    zipWith (\i (k,gi) -> (k, (gi, i)) ) [0..] $
+                    M.toList $
+                    foldr (\(Edge eid _ _ info) m -> let egi = getEdgeGI (fromEnum eid) (snd giM)
+                                                         in M.insert (infoLabel info) egi m) M.empty edgs
+                -- update the comboBoxes
+                possibleNT <- readIORef possibleNodeTypes
+                possibleET <- readIORef possibleEdgeTypes
+                Gtk.comboBoxTextRemoveAll nodeTCBox
+                forM_ (M.keys possibleNT) $ \k -> Gtk.comboBoxTextAppendText nodeTCBox (T.pack k)
+                Gtk.comboBoxTextRemoveAll edgeTCBox
+                forM_ (M.keys possibleET) $ \k -> Gtk.comboBoxTextAppendText edgeTCBox (T.pack k)
+              else do
+                writeIORef activeTypeGraph (G.empty)
+                Gtk.comboBoxTextRemoveAll nodeTCBox
+                Gtk.comboBoxTextRemoveAll edgeTCBox
+
+
   -- mouse button pressed on canvas
   on canvas #buttonPressEvent $ \eventButton -> do
     b <- get eventButton #button
@@ -300,14 +344,15 @@ startGUI = do
           cShape <- readIORef currentShape
           cColor <- readIORef currentC
           cLColor <- readIORef currentLC
-          case (Gdk.ModifierTypeControlMask `elem` ms, dstNode) of
+          case (dstNode) of
             -- no selected node: create node
-            (False, Nothing) -> case typeG of
+            Nothing -> case typeG of
                 0 -> return ()
                 1 -> do
                   createNode' st "" (x',y') cShape cColor cLColor context
                   setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-                _ -> do
+                  updateActiveTG
+                2 -> do
                   mntype <- readIORef currentNodeType
                   (t, shape, c, lc) <- case mntype of
                     Nothing -> return ("", cShape, cColor, cLColor)
@@ -320,15 +365,18 @@ startGUI = do
                         Just gi -> return ("{" ++ t ++ "}", shape gi, fillColor gi, lineColor gi)
                   createNode' st t (x',y') shape c lc context
                   setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+                  updateActiveTG
+                _ -> return ()
 
               -- one node selected: create edges targeting this node
-            (False, Just nid) -> case typeG of
+            Just nid -> case typeG of
               0 -> return ()
               1 -> do
                 estyle <- readIORef currentStyle
                 color <- readIORef currentLC
                 modifyIORef st (\es -> createEdges es nid "" estyle color)
                 setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+                updateActiveTG
               2 -> do
                 metype <- readIORef currentEdgeType
                 cEstyle <- readIORef currentStyle
@@ -344,9 +392,8 @@ startGUI = do
                       Just gi -> return ("{" ++ t ++ "}", style gi, color gi)
                 modifyIORef st (\es -> createEdges es nid t estyle color)
                 setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-
-            -- ctrl pressed: middle mouse button emulation
-            (True,_) -> return ()
+                updateActiveTG
+              _ -> return ()
           Gtk.widgetQueueDraw canvas
           updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
           updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
@@ -727,6 +774,7 @@ startGUI = do
     stackUndo undoStack redoStack es
     modifyIORef st (\es -> deleteSelected es)
     setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+    updateActiveTG
     Gtk.widgetQueueDraw canvas
 
 
@@ -894,6 +942,7 @@ startGUI = do
         setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> editorSetGI (newngiM, egiM) es)
         Gtk.widgetQueueDraw canvas
+        updateActiveTG
 
   on lineColorBtn #colorSet $ do
     gtkcolor <- Gtk.colorChooserGetRgba lineColorBtn
@@ -914,6 +963,7 @@ startGUI = do
         setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> editorSetGI (newngiM, newegiM) es)
         Gtk.widgetQueueDraw canvas
+        updateActiveTG
 
   -- toogle the radio buttons for node shapes
   -- change the shape of the selected nodes and set the current shape for new nodes
@@ -930,6 +980,7 @@ startGUI = do
         setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> changeNodeShape es NCircle)
         Gtk.widgetQueueDraw canvas
+        updateActiveTG
 
   radioRect `on` #toggled $ do
     writeIORef currentShape NRect
@@ -944,6 +995,7 @@ startGUI = do
         setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> changeNodeShape es NRect)
         Gtk.widgetQueueDraw canvas
+        updateActiveTG
 
   radioQuad `on` #toggled $ do
     writeIORef currentShape NSquare
@@ -958,6 +1010,7 @@ startGUI = do
         setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> changeNodeShape es NSquare)
         Gtk.widgetQueueDraw canvas
+        updateActiveTG
 
   -- toogle the radio buttons for edge styles
   -- change the style of the selected edges and set the current style for new edges
@@ -974,6 +1027,7 @@ startGUI = do
         setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> changeEdgeStyle es ENormal)
         Gtk.widgetQueueDraw canvas
+        updateActiveTG
 
   radioPointed `on` #toggled $ do
     writeIORef currentStyle EPointed
@@ -988,6 +1042,7 @@ startGUI = do
         setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> changeEdgeStyle es EPointed)
         Gtk.widgetQueueDraw canvas
+        updateActiveTG
 
   radioSlashed `on` #toggled $ do
     writeIORef currentStyle ESlashed
@@ -1002,6 +1057,7 @@ startGUI = do
         setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> changeEdgeStyle es ESlashed)
         Gtk.widgetQueueDraw canvas
+        updateActiveTG
 
 
   -- for the hostGraph
@@ -1225,61 +1281,59 @@ startGUI = do
                 Gtk.treeStoreRemove store iter
                 modifyIORef graphStates $ M.delete index
 
-  let activateTypeGraph = do
-        selection <- Gtk.treeViewGetSelection treeview
-        (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
-        case sel of
-          False -> return ()
-          True -> do
-            typeG <- (Gtk.treeModelGetValue store iter 3 >>= fromGValue ) :: IO Int32
-            index <- (Gtk.treeModelGetValue store iter 2 >>= fromGValue) :: IO Int32
-            cindex <- readIORef currentGraph
-            selState <- if index /= cindex
-              then do states <- readIORef graphStates
-                      return $ M.lookup index states
-              else do es <- readIORef st
-                      return $ Just (es,[],[])
-            case (typeG, selState) of
-              (0, _) -> return ()
-              (1,Nothing) -> return ()
-              (1,Just (es,_,_)) -> do
-                -- check if all edges and nodes have different names
-                let g = editorGetGraph es
-                    giM = editorGetGI es
-                    nds = nodes g
-                    edgs = edges g
-                    allDiff l = case l of
-                                  [] -> True
-                                  x:xs -> (notElem x xs) && (allDiff xs)
-                    diffNames = (allDiff (map (infoLabel . nodeInfo) nds)) &&
-                                (allDiff (map (infoLabel . edgeInfo) edgs))
-                if diffNames
-                  then do -- load the variables with the info from the typeGraph
-                    writeIORef activeTypeGraph g
-                    writeIORef possibleNodeTypes $
-                        M.fromList $
-                        zipWith (\i (k,gi) -> (k, (gi, i)) ) [0..] $
-                        M.toList $
-                        foldr (\(Node nid info) m -> let ngi = getNodeGI (fromEnum nid) (fst giM)
-                                                         in M.insert (infoLabel info) ngi m) M.empty nds
-                    writeIORef possibleEdgeTypes $
-                        M.fromList $
-                        zipWith (\i (k,gi) -> (k, (gi, i)) ) [0..] $
-                        M.toList $
-                        foldr (\(Edge eid _ _ info) m -> let egi = getEdgeGI (fromEnum eid) (snd giM)
-                                                             in M.insert (infoLabel info) egi m) M.empty edgs
-                    -- update the comboBoxes
-                    possibleNT <- readIORef possibleNodeTypes
-                    possibleET <- readIORef possibleEdgeTypes
-                    putStrLn $ "possibleNodeTypes: " ++ show possibleNT
-                    putStrLn $ "possibleEdgeTypes: " ++ show possibleET
-                    Gtk.comboBoxTextRemoveAll nodeTCBox
-                    forM (M.keys possibleNT) $ \k -> Gtk.comboBoxTextAppendText nodeTCBox (T.pack k)
-                    Gtk.comboBoxTextRemoveAll edgeTCBox
-                    forM (M.keys possibleET) $ \k -> Gtk.comboBoxTextAppendText edgeTCBox (T.pack k)
-                    return ()
-                  else showError window "There are conflicting definitions of elements in the typeGraph. \n The conflicts must be fixed before activating the typeGraph."
-              (_,_) -> showError window "The choosen graph is not a typeGraph"
+  -- let activateTypeGraph = do
+  --       selection <- Gtk.treeViewGetSelection treeview
+  --       (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
+  --       case sel of
+  --         False -> return ()
+  --         True -> do
+  --           typeG <- (Gtk.treeModelGetValue store iter 3 >>= fromGValue ) :: IO Int32
+  --           index <- (Gtk.treeModelGetValue store iter 2 >>= fromGValue) :: IO Int32
+  --           cindex <- readIORef currentGraph
+  --           selState <- if index /= cindex
+  --             then do states <- readIORef graphStates
+  --                     return $ M.lookup index states
+  --             else do es <- readIORef st
+  --                     return $ Just (es,[],[])
+  --           case (typeG, selState) of
+  --             (0, _) -> return ()
+  --             (1,Nothing) -> return ()
+  --             (1,Just (es,_,_)) -> do
+  --               -- check if all edges and nodes have different names
+  --               let g = editorGetGraph es
+  --                   giM = editorGetGI es
+  --                   nds = nodes g
+  --                   edgs = edges g
+  --                   allDiff l = case l of
+  --                                 [] -> True
+  --                                 x:xs -> (notElem x xs) && (allDiff xs)
+  --                   diffNames = (allDiff (map (infoLabel . nodeInfo) nds)) &&
+  --                               (allDiff (map (infoLabel . edgeInfo) edgs))
+  --               if diffNames
+  --                 then do -- load the variables with the info from the typeGraph
+  --                   writeIORef activeTypeGraph g
+  --                   writeIORef possibleNodeTypes $
+  --                       M.fromList $
+  --                       zipWith (\i (k,gi) -> (k, (gi, i)) ) [0..] $
+  --                       M.toList $
+  --                       foldr (\(Node nid info) m -> let ngi = getNodeGI (fromEnum nid) (fst giM)
+  --                                                        in M.insert (infoLabel info) ngi m) M.empty nds
+  --                   writeIORef possibleEdgeTypes $
+  --                       M.fromList $
+  --                       zipWith (\i (k,gi) -> (k, (gi, i)) ) [0..] $
+  --                       M.toList $
+  --                       foldr (\(Edge eid _ _ info) m -> let egi = getEdgeGI (fromEnum eid) (snd giM)
+  --                                                            in M.insert (infoLabel info) egi m) M.empty edgs
+  --                   -- update the comboBoxes
+  --                   possibleNT <- readIORef possibleNodeTypes
+  --                   possibleET <- readIORef possibleEdgeTypes
+  --                   Gtk.comboBoxTextRemoveAll nodeTCBox
+  --                   forM (M.keys possibleNT) $ \k -> Gtk.comboBoxTextAppendText nodeTCBox (T.pack k)
+  --                   Gtk.comboBoxTextRemoveAll edgeTCBox
+  --                   forM (M.keys possibleET) $ \k -> Gtk.comboBoxTextAppendText edgeTCBox (T.pack k)
+  --                   return ()
+  --                 else showError window "There are conflicting definitions of elements in the typeGraph. \n The conflicts must be fixed before activating the typeGraph."
+  --             (_,_) -> showError window "The choosen graph is not a typeGraph"
 
 
 
@@ -1305,7 +1359,7 @@ startGUI = do
         -- connect menuItems
         on newItem #activate createRule
         on delItem #activate removeRule
-        on actItem #activate activateTypeGraph
+        on actItem #activate $ return ()-- activateTypeGraph
 
 
 
@@ -1571,7 +1625,6 @@ drawGraph' (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
       stroke
     Nothing -> return ()
   return ()
-
 
 validationGraph :: Graph String String -> Graph String String -> Graph Bool Bool
 validationGraph g tg = fromNodesAndEdges vn ve
