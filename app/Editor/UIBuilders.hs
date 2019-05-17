@@ -242,11 +242,15 @@ buildTreePanel = do
   treeview <- new Gtk.TreeView [#headersVisible := True]
   Gtk.containerAdd scrolledwin treeview
 
-  col <- new Gtk.TreeViewColumn [#title := "project"]
-  Gtk.treeViewAppendColumn treeview col
+  colChanges <- new Gtk.TreeViewColumn []
+  Gtk.treeViewAppendColumn treeview colChanges
+  rendererChanges <- new Gtk.CellRendererText [#editable := False]
+  Gtk.cellLayoutPackStart colChanges rendererChanges False
 
-  renderer <- new Gtk.CellRendererText [#editable := True]
-  Gtk.cellLayoutPackStart col renderer False
+  colProj <- new Gtk.TreeViewColumn [#title := "project"]
+  Gtk.treeViewAppendColumn treeview colProj
+  rendererProj <- new Gtk.CellRendererText [#editable := True]
+  Gtk.cellLayoutPackStart colProj rendererProj False
 
   btnNew <- new Gtk.Button [#label := "New Rule"]
   Gtk.boxPackStart mainBox btnNew False False 0
@@ -254,7 +258,7 @@ buildTreePanel = do
   btnRmv <- new Gtk.Button [#label := "Remove Rule"]
   Gtk.boxPackStart mainBox btnRmv False False 0
 
-  return (mainBox, treeview, renderer, btnNew, btnRmv)
+  return (mainBox, treeview, rendererChanges, rendererProj, btnNew, btnRmv)
 
 
 

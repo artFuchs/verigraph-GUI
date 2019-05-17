@@ -8,11 +8,11 @@ Tarefas ---------------------------------------------------------------------
 *Adicionar diferentes tipos de grafos, mudando o inspector (painel a direita) quando o usuario clicar nele
   *Rule  - grafo em que elementos indicam transformações sobre grafos Host
 *Arrumar função para indicar mudanças - ela está indicando mudanças em nodos do tipo Topic
-*Adicinar coluna na treeview para atributo de ativação de typeGraphs
-*Atualizar informações do typegraph ativado automaticamente
+*Adicionar coluna na treeview para atributo de ativação de ruleGraphs
+*Atualizar informações do typegraph ativado automaticamente durante a edição
+
 
 Progresso -------------------------------------------------------------------
-*Verificar se um elemento do hostGraph foi mapeado corretamente para TypedGraph
 
 
 
@@ -58,4 +58,6 @@ Feito -----------------------------------------------------------------------
    - mudar a aparência dos elementos do diagrama conforme seus tipos
    - fazer atualização do hostInspector com a função updateInspector
    - indicar erro caso o tipo do elemento não esteja especificado no typeGraph
+*Verificar se um elemento do hostGraph foi mapeado corretamente para TypedGraph
+*Adicionar coluna na treeView para indicar mudança
 -}

@@ -118,7 +118,7 @@ startGUI = do
       (zin,zut,z50,zdf,z150,z200,vdf) = viewItems
       (hlp,abt) = helpItems
   -- creates the tree panel
-  (treeBox, treeview, treeRenderer, createBtn, btnRmv) <- buildTreePanel
+  (treeBox, treeview, changesRenderer, nameRenderer, createBtn, btnRmv) <- buildTreePanel
   Gtk.containerAdd treeFrame treeBox
   -- creates the inspector panel and add to the window
 
@@ -158,31 +158,26 @@ startGUI = do
           Gtk.treeViewExpandRow treeview rulesPath True
   initStore
 
-  projectCol <- Gtk.treeViewGetColumn treeview 0
+  changesCol <- Gtk.treeViewGetColumn treeview 0
+  namesCol <- Gtk.treeViewGetColumn treeview 1
 
-  case projectCol of
+  case changesCol of
+    Nothing -> return ()
+    Just col -> Gtk.treeViewColumnSetCellDataFunc col changesRenderer $ Just (\column renderer model iter -> do
+      changed <- Gtk.treeModelGetValue model iter 1 >>= \gv -> (fromGValue gv :: IO Int32)
+      renderer' <- castTo Gtk.CellRendererText renderer
+      case (renderer', changed) of
+        (Just r, 0) -> set r [#text := ""]
+        (Just r, 1) -> set r [#text := "*"]
+        (Just r, 2) -> set r [#text := "n"]
+        _ -> return ()
+
+      )
+
+  case namesCol of
     Nothing -> return ()
     Just col -> do
-      #addAttribute col treeRenderer "text" 0
-      Gtk.treeViewColumnSetCellDataFunc col treeRenderer $ Just (\column renderer model iter -> do
-        -- render the cellBackground with different colors if there is was a change of some kind
-        -- and render the foreground with black to ensure that the user theme will not cause problems
-        changed <- Gtk.treeModelGetValue model iter 1 >>= \gv -> (fromGValue gv :: IO Int32)
-        renderer' <- castTo Gtk.CellRendererText renderer
-        case (renderer', changed) of
-          (Just r,1) -> do
-            color <- new Gdk.RGBA [#red:=1, #green:=0.5, #blue:=0.1, #alpha:=1]
-            set r [ #cellBackgroundRgba := color, #foreground := "black"]
-          (Just r,2) -> do
-            color <- new Gdk.RGBA [#red:=0, #green:=1, #blue:=0, #alpha:=1]
-            set r [ #cellBackgroundRgba := color, #foreground := "black" ]
-          (Just r,_) -> do
-            -- color <- new Gdk.RGBA [#alpha:=0]
-            -- set r [ #cellBackgroundRgba := color ]
-            Gtk.clearCellRendererCellBackground r
-            Gtk.clearCellRendererTextForeground r
-          (Nothing,_) -> return ()
-        )
+      #addAttribute col nameRenderer "text" 0
       path <- Gtk.treePathNewFromIndices [0,0]
       Gtk.treeViewExpandToPath treeview path
       Gtk.treeViewSetCursor treeview path (Nothing :: Maybe Gtk.TreeViewColumn) False
@@ -201,7 +196,7 @@ startGUI = do
   fileName        <- newIORef (Nothing :: Maybe String) -- name of the opened file
   currentPath     <- newIORef [0,0] -- indices of path to current graph being edited
   currentGraph    <- newIORef 0 -- current graph being edited
-  graphStates     <- newIORef $ M.fromList [(0, (emptyES,[],[])), (1, (emptyES, [], []))] -- map of states foreach graph in the editor
+  graphStates     <- newIORef $ M.fromList [(0, (emptyES,[],[])), (1, (emptyES, [], [])), (2, (emptyES, [], []))] -- map of states foreach graph in the editor
   changedProject  <- newIORef False -- set this flag as True when the graph is changed somehow
   changedGraph    <- newIORef [False] -- when modify a graph, set the flag in the 'currentGraph' to True
   lastSavedState  <- newIORef (M.empty :: M.Map Int32 DiaGraph)
@@ -665,7 +660,7 @@ startGUI = do
                 set window [#title := T.pack ("Graph Editor - " ++ fn)]
                 p <- Gtk.treePathNewFromIndices pindices
                 Gtk.treeViewExpandToPath treeview p
-                Gtk.treeViewSetCursor treeview p projectCol False
+                Gtk.treeViewSetCursor treeview p namesCol False
                 Gtk.widgetQueueDraw canvas
       else return ()
 
@@ -1326,7 +1321,7 @@ startGUI = do
   on btnRmv #clicked removeRule
 
   -- edited a graph name
-  on treeRenderer #edited $ \pathStr newName -> do
+  on nameRenderer #edited $ \pathStr newName -> do
     path <- Gtk.treePathNewFromString pathStr
     (v,iter) <- Gtk.treeModelGetIter store path
     if v
@@ -1520,6 +1515,7 @@ drawGraph' (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
   -- specify colors for select and error
   let selectColor = (0.29,0.56,0.85)
       errorColor = (0.9,0.2,0.2)
+      bothColor = (0.47,0.13,0.87)
 
   let vg = validationGraph g tg
   -- draw the edges
@@ -1534,7 +1530,8 @@ drawGraph' (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
         color = case (selected,typeError) of
                  (False,False) -> (0,0,0)
                  (False,True) -> errorColor
-                 (True,_) -> selectColor
+                 (True,False) -> selectColor
+                 (True,True) -> bothColor
     case (egi, srcN, dstN) of
       (Just gi, Just src, Just dst) -> renderEdge gi (infoLabel (edgeInfo e)) src dst (selected || typeError) color
       _ -> return ())
@@ -1551,7 +1548,8 @@ drawGraph' (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
         color = case (selected,typeError) of
                   (False,False) -> (0,0,0)
                   (False,True) -> errorColor
-                  (True,_) -> selectColor
+                  (True,False) -> selectColor
+                  (True,True) -> bothColor
     case (ngi) of
       Just gi -> renderNode gi label (selected || typeError) color
       Nothing -> return ())
