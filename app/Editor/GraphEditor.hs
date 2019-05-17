@@ -791,6 +791,7 @@ startGUI = do
               Nothing -> DG.empty
     setChangeFlags window store changedProject changedGraph currentPath currentGraph $ not (isDiaGraphEqual (g,gi) x)
     Gtk.widgetQueueDraw canvas
+    updateActiveTG
 
   -- redo
   on rdo #activate $ do
@@ -805,6 +806,7 @@ startGUI = do
               Nothing -> DG.empty
     setChangeFlags window store changedProject changedGraph currentPath currentGraph $ not (isDiaGraphEqual (g,gi) x)
     Gtk.widgetQueueDraw canvas
+    updateActiveTG
 
   -- copy
   on cpy #activate $ do
@@ -821,6 +823,7 @@ startGUI = do
     setChangeFlags window store changedProject changedGraph currentPath currentGraph True
     modifyIORef st (pasteClipBoard clip)
     Gtk.widgetQueueDraw canvas
+    updateActiveTG
 
   -- cut
   on cut #activate $ do
@@ -830,6 +833,7 @@ startGUI = do
     stackUndo undoStack redoStack es
     setChangeFlags window store changedProject changedGraph currentPath currentGraph  True
     Gtk.widgetQueueDraw canvas
+    updateActiveTG
 
   -- select all
   on sla #activate $ do
