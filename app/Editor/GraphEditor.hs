@@ -1539,6 +1539,11 @@ drawGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
   translate px py
 
   let selectColor = (0.29,0.56,0.85)
+      errorColor = (0.9,0.2,0.2)
+      bothColor = (0.47,0.13,0.87)
+
+  let cg = nameConflictGraph g
+
 
   -- draw the edges
   forM (edges g) (\e -> do
@@ -1546,17 +1551,33 @@ drawGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
         srcN = M.lookup (fromEnum . sourceId $ e) nGI
         egi  = M.lookup (fromEnum . edgeId   $ e) eGI
         selected = (edgeId e) `elem` sEdges
+        conflict = case lookupEdge (edgeId e) cg of
+          Just e' -> not $ edgeInfo e'
+          Nothing -> True
+        shadowColor = case (selected, conflict) of
+          (False,False) -> (0,0,0)
+          (False,True) -> errorColor
+          (True,False) -> selectColor
+          (True,True) -> bothColor
     case (egi, srcN, dstN) of
-      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabel $ edgeInfo e) src dst selected selectColor
+      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabel $ edgeInfo e) src dst (selected || conflict) shadowColor
       _ -> return ())
 
   -- draw the nodes
   forM (nodes g) (\n -> do
     let ngi = M.lookup (fromEnum . nodeId $ n) nGI
         selected = (nodeId n) `elem` (sNodes)
+        conflict = case lookupNode (nodeId n) cg of
+          Just n' -> not $ nodeInfo n'
+          Nothing -> True
+        shadowColor = case (selected, conflict) of
+          (False,False) -> (0,0,0)
+          (False,True) -> errorColor
+          (True,False) -> selectColor
+          (True,True) -> bothColor
         info = infoLabel $ nodeInfo n
     case (ngi) of
-      Just gi -> renderNode gi info selected selectColor
+      Just gi -> renderNode gi info (selected || conflict) shadowColor
       Nothing -> return ())
 
   -- draw the selectionBox
@@ -1630,6 +1651,21 @@ drawGraph' (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
     Nothing -> return ()
   return ()
 
+-- generate a mask graph that highlights that informs if a node/edge has a unique name
+nameConflictGraph :: Graph String String -> Graph Bool Bool
+nameConflictGraph g = fromNodesAndEdges vn ve
+  where
+    vn = map uniqueN ns
+    ve = map uniqueE es
+    ns = nodes g
+    es = edges g
+    uniqueN n = Node (nodeId n) $ notElem (nodeInfo n) $ map nodeInfo . filter (\n' -> nodeId n' /= nodeId n) $ ns
+    uniqueE e = Edge (edgeId e) (sourceId e) (targetId e) $ notElem (edgeInfo e) $ map edgeInfo . filter (\e' -> edgeId e' /= edgeId e) $ es
+    allDiff l = case l of
+      [] -> True
+      x:xs -> (notElem x xs) && (allDiff xs)
+
+-- generate a mask graph that says if a node/edge is valid according to a typeGraph or not
 validationGraph :: Graph String String -> Graph String String -> Graph Bool Bool
 validationGraph g tg = fromNodesAndEdges vn ve
   where
