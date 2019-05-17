@@ -392,7 +392,6 @@ startGUI = do
                       Just gi -> return ("{" ++ t ++ "}", style gi, color gi)
                 modifyIORef st (\es -> createEdges es nid t estyle color)
                 setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-                updateActiveTG
               _ -> return ()
           Gtk.widgetQueueDraw canvas
           updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
@@ -911,6 +910,7 @@ startGUI = do
                     context <- Gtk.widgetGetPangoContext canvas
                     renameSelected st name context
                     Gtk.widgetQueueDraw canvas
+                    updateActiveTG
   -- pressed a key when editing the nameEntry
   on nameEntry #keyPressEvent $ \eventKey -> do
     k <- get eventKey #keyval >>= return . chr . fromIntegral
