@@ -194,7 +194,7 @@ startGUI = do
   movingGI        <- newIORef False -- if the user started moving some object - necessary to add a position to the undoStack
   clipboard       <- newIORef DG.empty -- clipboard - DiaGraph
   fileName        <- newIORef (Nothing :: Maybe String) -- name of the opened file
-  currentPath     <- newIORef [0,0] -- indices of path to current graph being edited
+  currentPath     <- newIORef [0] -- indices of path to current graph being edited
   currentGraph    <- newIORef 0 -- current graph being edited
   graphStates     <- newIORef $ M.fromList [(0, (emptyES,[],[])), (1, (emptyES, [], [])), (2, (emptyES, [], []))] -- map of states foreach graph in the editor
   changedProject  <- newIORef False -- set this flag as True when the graph is changed somehow
@@ -289,7 +289,7 @@ startGUI = do
               modifyIORef st (editorSetGraph graph . editorSetSelected (jointSN,jointSE))
           Gtk.widgetQueueDraw canvas
           updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
-          updateHostInspector st possibleNodeTypes possibleEdgeTypes hostInspWidgets hostInspBoxes
+          updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
         -- right button click: create nodes and insert edges
         (3, False) -> liftIO $ do
           let g = editorGetGraph es
@@ -349,7 +349,7 @@ startGUI = do
             (True,_) -> return ()
           Gtk.widgetQueueDraw canvas
           updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
-          updateHostInspector st possibleNodeTypes possibleEdgeTypes hostInspWidgets hostInspBoxes
+          updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
         _           -> return ()
       return True
 
@@ -417,7 +417,7 @@ startGUI = do
                 newEs = editorSetSelected (sNodes, sEdges) $ es
             writeIORef st newEs
             updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
-            updateHostInspector st possibleNodeTypes possibleEdgeTypes hostInspWidgets hostInspBoxes
+            updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
           ((n,e), Nothing) -> return ()
           _ -> return ()
       _ -> return ()
@@ -1351,7 +1351,9 @@ startGUI = do
 --------------------------------------------------------------------------------
 
 -- update the inspector --------------------------------------------------------
-updateTypeInspector :: IORef EditorState -> IORef (Double,Double,Double) -> IORef (Double,Double,Double) -> (Gtk.Entry, Gtk.ColorButton, Gtk.ColorButton, [Gtk.RadioButton], [Gtk.RadioButton]) -> (Gtk.Box, Gtk.Frame, Gtk.Frame)-> IO ()
+updateTypeInspector :: IORef EditorState -> IORef (Double,Double,Double) -> IORef (Double,Double,Double) ->
+                      (Gtk.Entry, Gtk.ColorButton, Gtk.ColorButton, [Gtk.RadioButton], [Gtk.RadioButton]) ->
+                      (Gtk.Box, Gtk.Frame, Gtk.Frame)-> IO ()
 updateTypeInspector st currentC currentLC (nameEntry, colorBtn, lcolorBtn, radioShapes, radioStyles) (hBoxColor, frameShape, frameStyle) = do
   emptyColor <- new Gdk.RGBA [#red := 0.5, #blue := 0.5, #green := 0.5, #alpha := 1.0]
   est <- readIORef st
@@ -1420,11 +1422,15 @@ updateTypeInspector st currentC currentLC (nameEntry, colorBtn, lcolorBtn, radio
       set frameShape [#visible := True]
       set frameStyle [#visible := True]
 
-updateHostInspector :: IORef EditorState -> IORef (M.Map String (NodeGI, Int32)) -> IORef (M.Map String (EdgeGI, Int32)) -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText) -> (Gtk.Box, Gtk.Box) -> IO()
-updateHostInspector st possibleNT possibleET (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox) = do
+updateHostInspector :: IORef EditorState -> IORef (M.Map String (NodeGI, Int32)) -> IORef (M.Map String (EdgeGI, Int32)) ->
+                       IORef (Maybe String) -> IORef (Maybe String) -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText) ->
+                       (Gtk.Box, Gtk.Box) -> IO()
+updateHostInspector st possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox) = do
   est <- readIORef st
   pNT <- readIORef possibleNT
   pET <- readIORef possibleET
+  cNT <- readIORef currentNodeType >>= \x -> return $ fromMaybe "" x
+  cET <- readIORef currentEdgeType >>= \x -> return $ fromMaybe "" x
   let g = editorGetGraph est
       ns = filter (\n -> elem (nodeId n) $ fst $ editorGetSelected est) $ nodes g
       es = filter (\e -> elem (edgeId e) $ snd $ editorGetSelected est) $ edges g
@@ -1432,8 +1438,8 @@ updateHostInspector st possibleNT possibleET (entry, nodeTCBox, edgeTCBox) (node
       unifyNames (x:xs) = if all (==x) xs then x else "----"
   case (length ns, length es) of
     (0,0) -> do
-      Gtk.comboBoxSetActive nodeTCBox (-1)
-      Gtk.comboBoxSetActive edgeTCBox (-1)
+      Gtk.comboBoxSetActive nodeTCBox $ fromMaybe (-1) (Just snd <*> (M.lookup cNT pNT))
+      Gtk.comboBoxSetActive edgeTCBox $ fromMaybe (-1) (Just snd <*> (M.lookup cET pET))
       set nodeTBox [#visible := True]
       set edgeTBox [#visible := True]
     (n,0) -> do
@@ -1882,8 +1888,12 @@ indicateProjChanged window False = do
 -- write in the treestore that the current graph was modified
 indicateGraphChanged :: Gtk.TreeStore -> Gtk.TreeIter -> Bool -> IO ()
 indicateGraphChanged store iter True = do
-  gvchanged <- toGValue (1::Int32)
-  Gtk.treeStoreSetValue store iter 1 gvchanged
+  gtype <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
+  if gtype == 0
+    then return ()
+    else do
+      gvchanged <- toGValue (1::Int32)
+      Gtk.treeStoreSetValue store iter 1 gvchanged
 
 indicateGraphChanged store iter False = do
   gvchanged <- toGValue (0::Int32)
