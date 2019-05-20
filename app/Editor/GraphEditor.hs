@@ -231,6 +231,7 @@ startGUI = do
         renderWithContext context $ drawGraph' es sq tg
     return False
 
+  -- auxiliar function to update the active type graph
   let updateActiveTG = do
         curr <- readIORef currentGraph
         if curr /= 0 -- if the current graph is the active typeGraph, update
@@ -368,7 +369,7 @@ startGUI = do
                   updateActiveTG
                 _ -> return ()
 
-              -- one node selected: create edges targeting this node
+            -- one node selected: create edges targeting this node
             Just nid -> case typeG of
               0 -> return ()
               1 -> do
@@ -486,14 +487,14 @@ startGUI = do
     return True
 
   -- keyboard
-  -- on canvas #keyPressEvent $ \eventKey -> do
-  --   k <- get eventKey #keyval >>= return . chr . fromIntegral
-  --   ms <- get eventKey #state
-  --   case (Gdk.ModifierTypeControlMask `elem` ms, Gdk.ModifierTypeShiftMask `elem` ms, toLower k) of
-  --     -- F2 - rename selection
-  --     (False,False,'\65471') -> Gtk.widgetGrabFocus nameEntry
-  --     _ -> return ()
-  --   return True
+  on canvas #keyPressEvent $ \eventKey -> do
+    k <- get eventKey #keyval >>= return . chr . fromIntegral
+    ms <- get eventKey #state
+    case (Gdk.ModifierTypeControlMask `elem` ms, Gdk.ModifierTypeShiftMask `elem` ms, toLower k) of
+      -- F2 - rename selection
+      (False,False,'\65471') -> Gtk.widgetGrabFocus nameEntry
+      _ -> return ()
+    return True
   --     -- <delete> | <Ctrl> + D : delete selection
   --     (False,False,'\65535') -> do
   --       es <- readIORef st
@@ -906,6 +907,7 @@ startGUI = do
 
   -- event bindings -- inspector panel -----------------------------------------
 
+  -- auxiliar function to set the label of the select element
   let setLabel = do es <- readIORef st
                     gType <- readIORef currentGraphType
                     stackUndo undoStack redoStack es
@@ -915,6 +917,7 @@ startGUI = do
                     renameSelected st name context
                     Gtk.widgetQueueDraw canvas
                     updateActiveTG
+
   -- pressed a key when editing the nameEntry
   on nameEntry #keyPressEvent $ \eventKey -> do
     k <- get eventKey #keyval >>= return . chr . fromIntegral
@@ -925,13 +928,14 @@ startGUI = do
        _       -> return ()
     return False
 
+  -- when the entry lose focus
   on nameEntry #focusOutEvent $ \event -> do
     setLabel
     return False
 
-  -- select a fill color or line color
-  -- change the selection fill color or line color and
-  -- set the current fill or line color as the selected color
+  -- select a fill color
+  -- change the selection fill color and
+  -- set the current fill color as the selected color
   on colorBtn #colorSet $ do
     gtkcolor <- Gtk.colorChooserGetRgba colorBtn
     es <- readIORef st
@@ -952,6 +956,8 @@ startGUI = do
         Gtk.widgetQueueDraw canvas
         updateActiveTG
 
+  -- select a line color
+  -- same as above, except it's for the line color
   on lineColorBtn #colorSet $ do
     gtkcolor <- Gtk.colorChooserGetRgba lineColorBtn
     es <- readIORef st
@@ -1068,14 +1074,9 @@ startGUI = do
         updateActiveTG
 
 
-  -- for the hostGraph
+  -- choose a type in the type comboBox for nodes
   on nodeTCBox #changed $ do
-    -- check if the current graph is a typeGraph
-    path <- readIORef currentPath >>= Gtk.treePathNewFromIndices
-    (valid, iter) <- Gtk.treeModelGetIter store path
-    t <- if valid
-      then Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
-      else return 0
+    t <- readIORef currentGraphType
     if t < 2
       then return ()
       else do
@@ -1096,13 +1097,9 @@ startGUI = do
             writeIORef currentNodeType $ Just typeInfo
             Gtk.widgetQueueDraw canvas
 
+  -- choose a type in the type comboBox for edges
   on edgeTCBox #changed $ do
-    -- check if the current graph is a typeGraph
-    path <- readIORef currentPath >>= Gtk.treePathNewFromIndices
-    (valid, iter) <- Gtk.treeModelGetIter store path
-    t <- if valid
-      then Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
-      else return 0
+    t <- readIORef currentGraphType
     if t < 2
       then return ()
       else do
@@ -1294,68 +1291,6 @@ startGUI = do
                 Gtk.treeStoreRemove store iter
                 modifyIORef graphStates $ M.delete index
 
-  -- let activateTypeGraph = do
-  --       selection <- Gtk.treeViewGetSelection treeview
-  --       (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
-  --       case sel of
-  --         False -> return ()
-  --         True -> do
-  --           typeG <- (Gtk.treeModelGetValue store iter 3 >>= fromGValue ) :: IO Int32
-  --           index <- (Gtk.treeModelGetValue store iter 2 >>= fromGValue) :: IO Int32
-  --           cindex <- readIORef currentGraph
-  --           selState <- if index /= cindex
-  --             then do states <- readIORef graphStates
-  --                     return $ M.lookup index states
-  --             else do es <- readIORef st
-  --                     return $ Just (es,[],[])
-  --           case (typeG, selState) of
-  --             (0, _) -> return ()
-  --             (1,Nothing) -> return ()
-  --             (1,Just (es,_,_)) -> do
-  --               -- check if all edges and nodes have different names
-  --               let g = editorGetGraph es
-  --                   giM = editorGetGI es
-  --                   nds = nodes g
-  --                   edgs = edges g
-  --                   allDiff l = case l of
-  --                                 [] -> True
-  --                                 x:xs -> (notElem x xs) && (allDiff xs)
-  --                   diffNames = (allDiff (map (infoLabel . nodeInfo) nds)) &&
-  --                               (allDiff (map (infoLabel . edgeInfo) edgs))
-  --               if diffNames
-  --                 then do -- load the variables with the info from the typeGraph
-  --                   writeIORef activeTypeGraph g
-  --                   writeIORef possibleNodeTypes $
-  --                       M.fromList $
-  --                       zipWith (\i (k,gi) -> (k, (gi, i)) ) [0..] $
-  --                       M.toList $
-  --                       foldr (\(Node nid info) m -> let ngi = getNodeGI (fromEnum nid) (fst giM)
-  --                                                        in M.insert (infoLabel info) ngi m) M.empty nds
-  --                   writeIORef possibleEdgeTypes $
-  --                       M.fromList $
-  --                       zipWith (\i (k,gi) -> (k, (gi, i)) ) [0..] $
-  --                       M.toList $
-  --                       foldr (\(Edge eid _ _ info) m -> let egi = getEdgeGI (fromEnum eid) (snd giM)
-  --                                                            in M.insert (infoLabel info) egi m) M.empty edgs
-  --                   -- update the comboBoxes
-  --                   possibleNT <- readIORef possibleNodeTypes
-  --                   possibleET <- readIORef possibleEdgeTypes
-  --                   Gtk.comboBoxTextRemoveAll nodeTCBox
-  --                   forM (M.keys possibleNT) $ \k -> Gtk.comboBoxTextAppendText nodeTCBox (T.pack k)
-  --                   Gtk.comboBoxTextRemoveAll edgeTCBox
-  --                   forM (M.keys possibleET) $ \k -> Gtk.comboBoxTextAppendText edgeTCBox (T.pack k)
-  --                   return ()
-  --                 else showError window "There are conflicting definitions of elements in the typeGraph. \n The conflicts must be fixed before activating the typeGraph."
-  --             (_,_) -> showError window "The choosen graph is not a typeGraph"
-
-
-
-
-
-
-
-
-
   -- when the user select a item
   on treeview #buttonPressEvent $ \eventButton -> do
     b <- get eventButton #button
@@ -1372,9 +1307,7 @@ startGUI = do
         -- connect menuItems
         on newItem #activate createRule
         on delItem #activate removeRule
-        on actItem #activate $ return ()-- activateTypeGraph
-
-
+        on actItem #activate $ return () -- activateTypeGraph
 
         #showAll popmenu
         Gtk.menuPopupAtPointer popmenu Nothing
