@@ -7,7 +7,6 @@ main = startGUI
 Tarefas ---------------------------------------------------------------------
 *Adicionar diferentes tipos de grafos, mudando o inspector (painel a direita) quando o usuario clicar nele
   *Rule  - grafo em que elementos indicam transformações sobre grafos Host
-*Arrumar função para indicar mudanças - ela está indicando mudanças em nodos do tipo Topic
 *Adicionar coluna na treeview para atributo de ativação de ruleGraphs
 
 
@@ -60,4 +59,5 @@ Feito -----------------------------------------------------------------------
 *Verificar se um elemento do hostGraph foi mapeado corretamente para TypedGraph
 *Adicionar coluna na treeView para indicar mudança
 *Atualizar informações do typegraph ativado automaticamente durante a edição
+*Arrumar função para indicar mudanças - ela está indicando mudanças em nodos do tipo Topic
 -}

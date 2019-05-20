@@ -195,7 +195,7 @@ startGUI = do
   clipboard       <- newIORef DG.empty -- clipboard - DiaGraph
   fileName        <- newIORef (Nothing :: Maybe String) -- name of the opened file
   currentPath     <- newIORef [0] -- indices of path to current graph being edited
-  currentGraph    <- newIORef 0 -- current graph being edited
+  currentGraph    <- newIORef 0 -- indice of the current graph being edited
   graphStates     <- newIORef $ M.fromList [(0, (emptyES,[],[])), (1, (emptyES, [], [])), (2, (emptyES, [], []))] -- map of states foreach graph in the editor
   changedProject  <- newIORef False -- set this flag as True when the graph is changed somehow
   changedGraph    <- newIORef [False] -- when modify a graph, set the flag in the 'currentGraph' to True
@@ -699,7 +699,7 @@ startGUI = do
                 writeIORef currentGraphType 1
                 writeIORef currentGraph i
                 writeIORef graphStates $ M.fromList statesList
-
+                writeIORef lastSavedState M.empty
                 writeIORef changedProject False
                 writeIORef changedGraph [False]
                 set window [#title := T.pack ("Graph Editor - " ++ fn)]
@@ -1150,18 +1150,23 @@ startGUI = do
     case sel of
       False -> return ()
       True -> do
+        -- get the current path for update
         mpath <- Gtk.treeModelGetPath model iter >>= Gtk.treePathGetIndices
         path <- case mpath of
           Nothing -> return [0,0]
           Just p -> return p
-        writeIORef currentPath path
+        -- compare the selected graph with the current one
         cIndex <- readIORef currentGraph
         index <- Gtk.treeModelGetValue model iter 2 >>= fromGValue  :: IO Int32
         typeG <- Gtk.treeModelGetValue model iter 3 >>= fromGValue  :: IO Int32
         case (cIndex == index, typeG) of
-          (True, _)  -> return ()
+          (True, _)  -> do
+            -- just update the current path
+            writeIORef currentPath path
           (False, 0) -> return ()
           (False, _) -> do
+            -- update the current path
+            writeIORef currentPath path
             -- update the current graph in the tree
             currentES <- readIORef st
             u <- readIORef undoStack
@@ -1991,10 +1996,18 @@ indicateGraphChanged store iter True = do
     else do
       gvchanged <- toGValue (1::Int32)
       Gtk.treeStoreSetValue store iter 1 gvchanged
+      (valid, parentIter) <- Gtk.treeModelIterParent store iter
+      if valid
+        then Gtk.treeStoreSetValue store parentIter 1 gvchanged
+        else return ()
 
 indicateGraphChanged store iter False = do
   gvchanged <- toGValue (0::Int32)
   Gtk.treeStoreSetValue store iter 1 gvchanged
+  (valid, parentIter) <- Gtk.treeModelIterParent store iter
+  if valid
+    then Gtk.treeStoreSetValue store parentIter 1 gvchanged
+    else return ()
 
 -- change the flags that inform if the graphs and project were changed and indicate the changes
 setChangeFlags :: Gtk.Window -> Gtk.TreeStore -> IORef Bool -> IORef [Bool] -> IORef [Int32] -> IORef Int32 -> Bool -> IO ()
