@@ -188,10 +188,11 @@ startGUI = do
     t <- readIORef currentGraphType
     case t of
       0 -> return ()
-      1 -> renderWithContext context $ drawGraph es sq
-      _ -> do
+      1 -> renderWithContext context $ drawTypeGraph es sq
+      2 -> do
         tg   <- readIORef activeTypeGraph
-        renderWithContext context $ drawGraph' es sq tg
+        renderWithContext context $ drawHostGraph es sq tg
+      _ -> return ()
     return False
 
   -- auxiliar function to update the active type graph
@@ -591,10 +592,11 @@ startGUI = do
           Nothing -> return ()
           Just (forest,fn) -> do
                 Gtk.treeStoreClear store
+                let emptyGSt = (emptyES, [], [])
                 let toGSandStates n i = case n of
-                              Topic name -> ((name,0,0,0), (0,(i,(emptyES, [], []))))
-                              TypeGraph name es -> ((name,0,i,1), (1, (i,(es, [], []))))
-                              HostGraph name es -> ((name,0,i,2), (2, (i,(es, [], []))))
+                              Topic name -> ((name,0,0,0), (0,(i,emptyGSt)))
+                              TypeGraph name es -> ((name,0,i,1), (1, (i,emptyGSt)))
+                              HostGraph name es -> ((name,0,i,2), (2, (i,emptyGSt)))
                     idForest = genForestIds forest 0
                     infoForest = zipWith (mzipWith toGSandStates) forest idForest
                     nameForest = map (fmap fst) infoForest
@@ -1304,7 +1306,6 @@ getStructsToSave store graphStates = do
                                      in TypeGraph name es
                                 2 -> let (es,_,_) = fromJust $ M.lookup nid states
                                      in HostGraph name es
-                                _ -> Topic name
                     )) treeNodeList
       return structs
 
@@ -1435,8 +1436,8 @@ updateHostInspector st possibleNT possibleET currentNodeType currentEdgeType (en
 
 
 -- draw a graph in the canvas --------------------------------------------------
-drawGraph :: EditorState -> Maybe (Double,Double,Double,Double)-> Render ()
-drawGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
+drawTypeGraph :: EditorState -> Maybe (Double,Double,Double,Double)-> Render ()
+drawTypeGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
   scale z z
   translate px py
 
@@ -1494,8 +1495,8 @@ drawGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
     Nothing -> return ()
   return ()
 
-drawGraph' :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph String String -> Render ()
-drawGraph' (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
+drawHostGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph String String -> Render ()
+drawHostGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
   scale z z
   translate px py
 
@@ -1606,12 +1607,6 @@ validationGraph g tg = fromNodesAndEdges vn ve
                                   tgte' = nodeId . fromJust . lookupNode (targetId e') $ tg
                                   srce' = nodeId . fromJust . lookupNode (sourceId e') $ tg
                               _ -> False
-
-
-
-
-
-
 
 -- general save function -------------------------------------------------------
 saveFile :: a -> (a -> String -> IO Bool) -> IORef (Maybe String) -> Gtk.Window -> Bool -> IO Bool
