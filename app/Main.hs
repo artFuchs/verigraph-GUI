@@ -11,7 +11,6 @@ Tarefas ---------------------------------------------------------------------
 
 
 Progresso -------------------------------------------------------------------
-*Indicar conflitos no typeGraph
 
 
 
@@ -60,4 +59,5 @@ Feito -----------------------------------------------------------------------
 *Adicionar coluna na treeView para indicar mudança
 *Atualizar informações do typegraph ativado automaticamente durante a edição
 *Arrumar função para indicar mudanças - ela está indicando mudanças em nodos do tipo Topic
+*Indicar conflitos no typeGraph
 -}
