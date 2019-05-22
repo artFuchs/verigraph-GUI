@@ -909,7 +909,6 @@ startGUI = do
 
   -- auxiliar function to set the label of the select element
   let setLabel = do es <- readIORef st
-                    gType <- readIORef currentGraphType
                     stackUndo undoStack redoStack es
                     setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                     name <- Gtk.entryGetText nameEntry >>= return . T.unpack
@@ -930,7 +929,7 @@ startGUI = do
 
   -- when the entry lose focus
   on nameEntry #focusOutEvent $ \event -> do
-    setLabel
+    Gtk.widgetGrabFocus canvas
     return False
 
   -- select a fill color
