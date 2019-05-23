@@ -252,13 +252,19 @@ buildTreePanel = do
   rendererProj <- new Gtk.CellRendererText [#editable := True]
   Gtk.cellLayoutPackStart colProj rendererProj False
 
+  colActive <- new Gtk.TreeViewColumn [#title := "actived"]
+  Gtk.treeViewAppendColumn treeview colActive
+  rendererActive <- new Gtk.CellRendererToggle [#activatable := True, #radio := False]
+  Gtk.cellLayoutPackStart colActive rendererActive False
+
+
   btnNew <- new Gtk.Button [#label := "New Rule"]
   Gtk.boxPackStart mainBox btnNew False False 0
 
   btnRmv <- new Gtk.Button [#label := "Remove Rule"]
   Gtk.boxPackStart mainBox btnRmv False False 0
 
-  return (mainBox, treeview, rendererChanges, rendererProj, btnNew, btnRmv)
+  return (mainBox, treeview, rendererChanges, rendererProj, rendererActive, btnNew, btnRmv)
 
 
 

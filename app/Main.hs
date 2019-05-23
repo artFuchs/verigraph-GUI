@@ -7,10 +7,11 @@ main = startGUI
 Tarefas ---------------------------------------------------------------------
 *Adicionar diferentes tipos de grafos, mudando o inspector (painel a direita) quando o usuario clicar nele
   *Rule  - grafo em que elementos indicam transformações sobre grafos Host
-*Adicionar coluna na treeview para atributo de ativação de ruleGraphs
+* Informar em tempo real quando erros nos host e rulesGraph se o typeGraph for modificado
 
 
 Progresso -------------------------------------------------------------------
+*Adicionar coluna na treeview para atributo de ativação de ruleGraphs
 
 
 

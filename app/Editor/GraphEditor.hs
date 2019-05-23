@@ -41,8 +41,8 @@ import Editor.EditorState
 --------------------------------------------------------------------------------
 -- |GraphStore
 -- A tuple representing what is showed in each node of the tree in the treeview
--- It contains the informations: name, graph changed (0 - no, 1 - yes, 2 - is new), graph id, and type (0 - topic, 1 - typeGraph, 2 - hostGraph)
-type GraphStore = (String, Int32, Int32, Int32)
+-- It contains the informations: name, graph changed (0 - no, 1 - yes, 2 - is new), graph id, type (0 - topic, 1 - typeGraph, 2 - hostGraph) and active (valid for rules only)
+type GraphStore = (String, Int32, Int32, Int32, Bool)
 
 -- An info is a string in the format "label{type}"
 type Info = String
@@ -50,10 +50,11 @@ type Info = String
 -- structs to save
 type NList = [(Int,String)]
 type EList = [(Int,Int,Int,String)]
-data SaveInfo = Topic String | TypeGraph String EditorState | HostGraph String EditorState
+data SaveInfo = Topic String | TypeGraph String EditorState | HostGraph String EditorState | RuleGraph String EditorState Bool deriving (Show)
 data UncompressedSaveInfo = T String
                           | TG String NList EList GraphicalInfo
                           | HG String NList EList GraphicalInfo
+                          | RG String NList EList GraphicalInfo Bool
                           deriving (Show, Read)
 
 
@@ -82,7 +83,7 @@ startGUI = do
       (zin,zut,z50,zdf,z150,z200,vdf) = viewItems
       (hlp,abt) = helpItems
   -- creates the tree panel
-  (treeBox, treeview, changesRenderer, nameRenderer, createBtn, btnRmv) <- buildTreePanel
+  (treeBox, treeview, changesRenderer, nameRenderer, activeRenderer, createBtn, btnRmv) <- buildTreePanel
   Gtk.containerAdd treeFrame treeBox
   -- creates the inspector panel and add to the window
 
@@ -105,17 +106,17 @@ startGUI = do
   #showAll window
 
   -- init an model to display in the tree panel --------------------------------
-  store <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt]
+  store <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt, gtypeBoolean]
   Gtk.treeViewSetModel treeview (Just store)
   let initStore = do
           fstIter <- Gtk.treeStoreAppend store Nothing
-          storeSetGraphStore store fstIter ("TypeGraph", 0, 0, 1)
+          storeSetGraphStore store fstIter ("TypeGraph", 0, 0, 1, False)
           sndIter <- Gtk.treeStoreAppend store Nothing
-          storeSetGraphStore store sndIter ("InitialGraph", 0, 1, 2)
+          storeSetGraphStore store sndIter ("InitialGraph", 0, 1, 2, False)
           rulesIter <- Gtk.treeStoreAppend store Nothing
-          storeSetGraphStore store rulesIter ("Rules", 0, 0, 0)
+          storeSetGraphStore store rulesIter ("Rules", 0, 0, 0, False)
           fstRuleIter <- Gtk.treeStoreAppend store (Just rulesIter)
-          storeSetGraphStore store fstRuleIter ("Rule0", 0, 2, 2)
+          storeSetGraphStore store fstRuleIter ("Rule0", 0, 2, 3, True)
           path <- Gtk.treeModelGetPath store fstIter
           Gtk.treeViewSetCursor treeview path (Nothing :: Maybe Gtk.TreeViewColumn) False
           rulesPath <- Gtk.treeModelGetPath store rulesIter
@@ -124,6 +125,7 @@ startGUI = do
 
   changesCol <- Gtk.treeViewGetColumn treeview 0
   namesCol <- Gtk.treeViewGetColumn treeview 1
+  activeCol <- Gtk.treeViewGetColumn treeview 2
 
   case changesCol of
     Nothing -> return ()
@@ -146,6 +148,17 @@ startGUI = do
       Gtk.treeViewExpandToPath treeview path
       Gtk.treeViewSetCursor treeview path (Nothing :: Maybe Gtk.TreeViewColumn) False
 
+  case activeCol of
+    Nothing -> return ()
+    Just col -> Gtk.treeViewColumnSetCellDataFunc col activeRenderer $ Just (\column renderer model iter -> do
+      gType <- Gtk.treeModelGetValue model iter 3 >>= \gv -> (fromGValue gv :: IO Int32)
+      active <- Gtk.treeModelGetValue model iter 4 >>= \gv -> (fromGValue gv :: IO Bool)
+      renderer' <- castTo Gtk.CellRendererToggle renderer
+      case (renderer', gType) of
+        (Just r, 3) -> set r [#visible := True, #radio := False, #active := active, #activatable:=True]
+        (Just r, _) -> set r [#visible := False]
+        _ -> return ()
+      )
 
   ------------------------------------------------------------------------------
   -- init the editor variables  ------------------------------------------------
@@ -190,7 +203,10 @@ startGUI = do
       0 -> return ()
       1 -> renderWithContext context $ drawTypeGraph es sq
       2 -> do
-        tg   <- readIORef activeTypeGraph
+        tg <- readIORef activeTypeGraph
+        renderWithContext context $ drawHostGraph es sq tg
+      3 -> do
+        tg <- readIORef activeTypeGraph
         renderWithContext context $ drawHostGraph es sq tg
       _ -> return ()
     return False
@@ -317,7 +333,7 @@ startGUI = do
                   createNode' st "" (x',y') cShape cColor cLColor context
                   setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                   updateActiveTG
-                2 -> do
+                _ -> do
                   mntype <- readIORef currentNodeType
                   (t, shape, c, lc) <- case mntype of
                     Nothing -> return ("", cShape, cColor, cLColor)
@@ -331,7 +347,6 @@ startGUI = do
                   createNode' st t (x',y') shape c lc context
                   setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                   updateActiveTG
-                _ -> return ()
 
             -- one node selected: create edges targeting this node
             Just nid -> case gType of
@@ -342,7 +357,7 @@ startGUI = do
                 modifyIORef st (\es -> createEdges es nid "" estyle color)
                 setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                 updateActiveTG
-              2 -> do
+              _ -> do
                 metype <- readIORef currentEdgeType
                 cEstyle <- readIORef currentStyle
                 cColor <- readIORef currentLC
@@ -357,7 +372,6 @@ startGUI = do
                       Just gi -> return ("{" ++ t ++ "}", style gi, color gi)
                 modifyIORef st (\es -> createEdges es nid t estyle color)
                 setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-              _ -> return ()
           Gtk.widgetQueueDraw canvas
           updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
           updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
@@ -594,23 +608,24 @@ startGUI = do
                 Gtk.treeStoreClear store
                 let emptyGSt = (emptyES, [], [])
                 let toGSandStates n i = case n of
-                              Topic name -> ((name,0,0,0), (0,(i,emptyGSt)))
-                              TypeGraph name es -> ((name,0,i,1), (1, (i,emptyGSt)))
-                              HostGraph name es -> ((name,0,i,2), (2, (i,emptyGSt)))
+                              Topic name -> ((name,0,0,0,False), (0,(i,emptyGSt)))
+                              TypeGraph name es -> ((name,0,i,1,True), (1, (i,(es,[],[]))))
+                              HostGraph name es -> ((name,0,i,2,True), (2, (i,(es,[],[]))))
+                              RuleGraph name es a -> ((name,0,i,3,a), (3, (i,(es,[],[]))))
                     idForest = genForestIds forest 0
                     infoForest = zipWith (mzipWith toGSandStates) forest idForest
                     nameForest = map (fmap fst) infoForest
                     statesForest = map (fmap snd) infoForest
                     statesList = map snd . filter (\st -> fst st /= 0) . concat . map Tree.flatten $ statesForest
 
-                let putInStore (Tree.Node (name,c,i,t) fs) mparent =
+                let putInStore (Tree.Node (name,c,i,t,a) fs) mparent =
                         case t of
                           0 -> do iter <- Gtk.treeStoreAppend store mparent
-                                  storeSetGraphStore store iter (name,c,i,t)
+                                  storeSetGraphStore store iter (name,c,i,t,a)
                                   mapM (\n -> putInStore n (Just iter)) fs
                                   return ()
                           _ -> do iter <- Gtk.treeStoreAppend store mparent
-                                  storeSetGraphStore store iter (name,c,i,t)
+                                  storeSetGraphStore store iter (name,c,i,t,a)
                                   return ()
                 mapM (\n -> putInStore n Nothing) nameForest
                 let (i,(es, _,_)) = if length statesList > 0 then statesList!!0 else (0,(emptyES,[],[]))
@@ -671,7 +686,7 @@ startGUI = do
           then return ()
           else do
             iter <- Gtk.treeStoreAppend store (Just parentIter)
-            storeSetGraphStore store iter (getName . getLastPart $ path, 2, newKey, 2)
+            storeSetGraphStore store iter (getName . getLastPart $ path, 2, newKey, 2, True)
             path <- Gtk.treeModelGetPath store iter
             Gtk.treeViewExpandToPath treeview path
             Gtk.treeViewSetCursor treeview path (Nothing :: Maybe Gtk.TreeViewColumn) False
@@ -1044,6 +1059,22 @@ startGUI = do
 
   -- event bindings for the graphs' tree ---------------------------------------
   -- changed the selected graph
+  let changeInspector inspectorBox nameBox = do
+        child <- Gtk.containerGetChildren inspectorFrame >>= \a -> return (a!!0)
+        Gtk.containerRemove inspectorFrame child
+        Gtk.containerAdd inspectorFrame inspectorBox
+        entryParent <- Gtk.widgetGetParent nameEntry
+        case entryParent of
+          Nothing -> return ()
+          Just parent -> do
+            mp <- castTo Gtk.Box parent
+            case mp of
+              Nothing -> return ()
+              Just p -> Gtk.containerRemove p nameEntry
+        Gtk.boxPackStart nameBox nameEntry True True 0
+        #showAll inspectorFrame
+
+
   on treeview #cursorChanged $ do
     selection <- Gtk.treeViewGetSelection treeview
     (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
@@ -1085,34 +1116,9 @@ startGUI = do
               Nothing -> return ()
         case (gType) of
           0 -> return ()
-          1 -> do
-            child <- Gtk.containerGetChildren inspectorFrame >>= \a -> return (a!!0)
-            Gtk.containerRemove inspectorFrame child
-            Gtk.containerAdd inspectorFrame typeInspBox
-            entryParent <- Gtk.widgetGetParent nameEntry
-            case entryParent of
-              Nothing -> return ()
-              Just parent -> do
-                mp <- castTo Gtk.Box parent
-                case mp of
-                  Nothing -> return ()
-                  Just p -> Gtk.containerRemove p nameEntry
-            Gtk.boxPackStart typeNameBox nameEntry True True 0
-            #showAll inspectorFrame
-          2 -> do
-            child <- Gtk.containerGetChildren inspectorFrame >>= \a -> return (a!!0)
-            Gtk.containerRemove inspectorFrame child
-            Gtk.containerAdd inspectorFrame hostInspBox
-            entryParent <- Gtk.widgetGetParent nameEntry
-            case entryParent of
-              Nothing -> return ()
-              Just parent -> do
-                mp <- castTo Gtk.Box parent
-                case mp of
-                  Nothing -> return ()
-                  Just p -> Gtk.containerRemove p nameEntry
-            Gtk.boxPackStart hostNameBox nameEntry True True 0
-            #showAll inspectorFrame
+          1 -> changeInspector typeInspBox typeNameBox
+          _ -> do
+            changeInspector hostInspBox hostNameBox
             writeIORef currentShape NCircle
             writeIORef currentStyle ENormal
             writeIORef currentC (1,1,1)
@@ -1209,7 +1215,7 @@ startGUI = do
       else do
         n <- Gtk.treeModelIterNChildren store (Just parent)
         iter <- Gtk.treeStoreAppend store (Just parent)
-        storeSetGraphStore store iter ("Rule" ++ (show n),0,newKey,2)
+        storeSetGraphStore store iter ("Rule" ++ (show n), 0, newKey, 3, True)
         modifyIORef graphStates (M.insert newKey (emptyES,[],[]))
 
   -- pressed the 'remove' button on the treeview area
@@ -1240,6 +1246,20 @@ startGUI = do
         indicateProjChanged window True
       else return ()
 
+  on activeRenderer #toggled $ \pathRepr -> do
+    path <- Gtk.treePathNewFromString pathRepr
+    (valid, iter) <- Gtk.treeModelGetIter store path
+    if valid
+      then do
+        gType <- Gtk.treeModelGetValue store iter 3 >>= \gv -> (fromGValue gv :: IO Int32)
+        active <- Gtk.treeModelGetValue store iter 4 >>= \gv -> (fromGValue gv :: IO Bool)
+        notActive <- toGValue (not active)
+        case gType of
+          3 -> do Gtk.treeStoreSetValue store iter 4 notActive
+                  #showAll window
+          _ -> return ()
+      else return ()
+
   -- event bindings for the main window ----------------------------------------
   -- when click in the close button, the application must close
   on window #deleteEvent $ return $ do
@@ -1259,18 +1279,20 @@ startGUI = do
 
 -- Gtk.treeStore manipulation
 storeSetGraphStore :: Gtk.TreeStore -> Gtk.TreeIter -> GraphStore -> IO ()
-storeSetGraphStore store iter (n,c,i,t) = do
+storeSetGraphStore store iter (n,c,i,t,a) = do
   gv0 <- toGValue (Just n)
   gv1 <- toGValue c
   gv2 <- toGValue i
   gv3 <- toGValue t
-  #set store iter [0,1,2,3] [gv0,gv1,gv2,gv3]
+  gv4 <- toGValue a
+  #set store iter [0,1,2,3,4] [gv0,gv1,gv2,gv3,gv4]
 
-getTreeStoreValues :: Gtk.TreeStore -> Gtk.TreeIter -> IO (Tree.Forest (Int32,(String,Int32)))
+getTreeStoreValues :: Gtk.TreeStore -> Gtk.TreeIter -> IO (Tree.Forest (Int32,(String,Int32,Bool)))
 getTreeStoreValues store iter = do
   valT <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
   valN <- Gtk.treeModelGetValue store iter 0 >>= (\n -> fromGValue n :: IO (Maybe String)) >>= return . fromJust
   valI <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
+  valA <- Gtk.treeModelGetValue store iter 4 >>= fromGValue :: IO Bool
   case valT of
     -- Topic
     0 -> do (valid, childIter) <- Gtk.treeModelIterChildren store (Just iter)
@@ -1281,15 +1303,15 @@ getTreeStoreValues store iter = do
             if continue
               then do
                 newVals <- getTreeStoreValues store iter
-                return $ (Tree.Node (valT, (valN, valI)) subForest) : newVals
-              else return $ (Tree.Node (valT, (valN, valI)) subForest) : []
+                return $ (Tree.Node (valT, (valN, valI, valA)) subForest) : newVals
+              else return $ (Tree.Node (valT, (valN, valI, valA)) subForest) : []
     -- Graphs
     _ -> do continue <- Gtk.treeModelIterNext store iter
             if continue
               then do
                 newVals <- getTreeStoreValues store iter
-                return $ (Tree.Node (valT, (valN, valI)) []) : newVals
-              else return $ (Tree.Node (valT, (valN, valI)) []) : []
+                return $ (Tree.Node (valT, (valN, valI, valA)) []) : newVals
+              else return $ (Tree.Node (valT, (valN, valI, valA)) []) : []
 
 getStructsToSave :: Gtk.TreeStore -> IORef (M.Map Int32 (EditorState, [DiaGraph], [DiaGraph]))-> IO (Tree.Forest SaveInfo)
 getStructsToSave store graphStates = do
@@ -1297,18 +1319,19 @@ getStructsToSave store graphStates = do
   if not valid
     then return []
     else do
-      treeNodeList <- getTreeStoreValues store fstIter :: IO (Tree.Forest (Int32,(String,Int32)))
+      treeNodeList <- getTreeStoreValues store fstIter
       states <- readIORef graphStates
       let structs = map
-                    (fmap (\(t, (name, nid)) -> case t of
+                    (fmap (\(t, (name, nid, active)) -> case t of
                                 0 -> Topic name
                                 1 -> let (es,_,_) = fromJust $ M.lookup nid states
                                      in TypeGraph name es
                                 2 -> let (es,_,_) = fromJust $ M.lookup nid states
                                      in HostGraph name es
+                                3 -> let (es,_,_) = fromJust $ M.lookup nid states
+                                     in RuleGraph name es active
                     )) treeNodeList
       return structs
-
 
 
 -- update the inspector --------------------------------------------------------
@@ -1663,7 +1686,8 @@ saveProject saveInfo path = do
                   (fmap (\node -> case node of
                                       Topic name -> T name
                                       TypeGraph name es -> TG name (nodeContents es) (edgeContents es) (editorGetGI es)
-                                      HostGraph name es -> HG name (nodeContents es) (edgeContents es) (editorGetGI es) ) )
+                                      HostGraph name es -> HG name (nodeContents es) (edgeContents es) (editorGetGI es)
+                                      RuleGraph name es a -> RG name (nodeContents es) (edgeContents es) (editorGetGI es) a))
                   saveInfo
       writeProject = writeFile path $ show contents
   saveTry <- E.try (writeProject)  :: IO (Either E.IOException ())
@@ -1731,6 +1755,9 @@ loadProject content = loadedTree
                               HG name nlist elist gi -> let g = fromNodesAndEdges (genNodes nlist) (genEdges elist)
                                                             es = editorSetGI gi . editorSetGraph g $ emptyES
                                                         in HostGraph name es
+                              RG name nlist elist gi a -> let g = fromNodesAndEdges (genNodes nlist) (genEdges elist)
+                                                              es = editorSetGI gi . editorSetGraph g $ emptyES
+                                                          in RuleGraph name es a
                   ) )
 
 
