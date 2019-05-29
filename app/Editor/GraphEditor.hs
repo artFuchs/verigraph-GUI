@@ -220,8 +220,23 @@ startGUI = do
       _ -> return ()
     return False
 
+  let isGraphValid graph = do
+        tg <- readIORef activeTypeGraph
+        let validG = validationGraph graph tg
+        let valid = and $ concat [map nodeInfo $ nodes validG, map edgeInfo $ edges validG]
+        return valid
 
-
+  let setInvalid iter = do
+        index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
+        states <- readIORef graphStates
+        mst <- return $ M.lookup index states
+        es <- case mst of
+          Nothing -> return emptyES
+          Just (es, u, r) -> return es
+        let g = editorGetGraph es
+        valid <- isGraphValid g
+        gvValid <- toGValue valid
+        Gtk.treeStoreSetValue store iter 5 gvValid
 
   let setInvalids = do
         (fstValid, fstIter) <- Gtk.treeModelGetIterFirst store
@@ -232,7 +247,6 @@ startGUI = do
           setInvalidsRec :: Gtk.TreeIter -> IO ()
           setInvalidsRec iter = do
             t <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
-            print t
             case t of
               0 -> do
                 (childValid, childIter) <- Gtk.treeModelIterChildren store (Just iter)
@@ -240,34 +254,22 @@ startGUI = do
                   then setInvalidsRec childIter
                   else return ()
               1 -> return ()
-              _ -> do
-                index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
-                states <- readIORef graphStates
-                mst <- return $ M.lookup index states
-                es <- case mst of
-                  Nothing -> return emptyES
-                  Just (es, u, r) -> return es
-                tg <- readIORef activeTypeGraph
-                let g = editorGetGraph es
-                let validG = validationGraph g tg
-                let valid = and $ concat [map nodeInfo $ nodes validG, map edgeInfo $ edges validG]
-                gvValid <- toGValue valid
-                Gtk.treeStoreSetValue store iter 5 gvValid
+              2 -> setInvalid iter
+              3 -> setInvalid iter
             nextValid <- Gtk.treeModelIterNext store iter
             if nextValid
               then setInvalidsRec iter
               else return ()
 
-
-
-
-
-
-          -- if the type is 0 or 1, ignore
-          -- if the type is 2 or 3,
-          --   if it's invalid, add 2 to changes
-          --   else do changes = changes mod 2
-
+  let setCurrentInvalid = do
+        es <- readIORef st
+        valid <- isGraphValid (editorGetGraph es)
+        gvValid <- toGValue valid
+        cpath <- readIORef currentPath >>= Gtk.treePathNewFromIndices
+        (validIter, iter) <- Gtk.treeModelGetIter store cpath
+        if validIter
+          then Gtk.treeStoreSetValue store iter 5 gvValid
+          else return ()
 
   -- auxiliar function to update the active type graph
   let updateActiveTG = do
@@ -406,7 +408,8 @@ startGUI = do
                         Just gi -> return ("{" ++ t ++ "}", shape gi, fillColor gi, lineColor gi)
                   createNode' st t (x',y') shape c lc context
                   setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-                  updateActiveTG
+                  setCurrentInvalid
+
 
             -- one node selected: create edges targeting this node
             Just nid -> case gType of
@@ -432,6 +435,8 @@ startGUI = do
                       Just gi -> return ("{" ++ t ++ "}", style gi, color gi)
                 modifyIORef st (\es -> createEdges es nid t estyle color)
                 setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+                setCurrentInvalid
+
           Gtk.widgetQueueDraw canvas
           updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
           updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
@@ -777,6 +782,7 @@ startGUI = do
     modifyIORef st (\es -> deleteSelected es)
     setChangeFlags window store changedProject changedGraph currentPath currentGraph True
     updateActiveTG
+    setCurrentInvalid
     Gtk.widgetQueueDraw canvas
 
 
@@ -793,7 +799,12 @@ startGUI = do
               Nothing -> DG.empty
     setChangeFlags window store changedProject changedGraph currentPath currentGraph $ not (isDiaGraphEqual (g,gi) x)
     Gtk.widgetQueueDraw canvas
-    updateActiveTG
+    gt <- readIORef currentGraphType
+    case gt of
+      0 -> return ()
+      1 -> updateActiveTG
+      2 -> setCurrentInvalid
+      3 -> setCurrentInvalid
 
   -- redo
   on rdo #activate $ do
@@ -808,7 +819,13 @@ startGUI = do
               Nothing -> DG.empty
     setChangeFlags window store changedProject changedGraph currentPath currentGraph $ not (isDiaGraphEqual (g,gi) x)
     Gtk.widgetQueueDraw canvas
-    updateActiveTG
+    gt <- readIORef currentGraphType
+    case gt of
+      0 -> return ()
+      1 -> updateActiveTG
+      2 -> setCurrentInvalid
+      3 -> setCurrentInvalid
+
 
   -- copy
   on cpy #activate $ do
@@ -825,7 +842,13 @@ startGUI = do
     setChangeFlags window store changedProject changedGraph currentPath currentGraph True
     modifyIORef st (pasteClipBoard clip)
     Gtk.widgetQueueDraw canvas
-    updateActiveTG
+    gt <- readIORef currentGraphType
+    case gt of
+      0 -> return ()
+      1 -> updateActiveTG
+      2 -> setCurrentInvalid
+      3 -> setCurrentInvalid
+
 
   -- cut
   on cut #activate $ do
@@ -835,7 +858,12 @@ startGUI = do
     stackUndo undoStack redoStack es
     setChangeFlags window store changedProject changedGraph currentPath currentGraph  True
     Gtk.widgetQueueDraw canvas
-    updateActiveTG
+    gt <- readIORef currentGraphType
+    case gt of
+      0 -> return ()
+      1 -> updateActiveTG
+      2 -> setCurrentInvalid
+      3 -> setCurrentInvalid
 
   -- select all
   on sla #activate $ do
@@ -923,7 +951,12 @@ startGUI = do
     context <- Gtk.widgetGetPangoContext canvas
     renameSelected st name context
     Gtk.widgetQueueDraw canvas
-    updateActiveTG
+    gt <- readIORef currentGraphType
+    case gt of
+      0 -> return ()
+      1 -> updateActiveTG
+      2 -> setCurrentInvalid
+      3 -> setCurrentInvalid
     return False
 
   -- select a fill color
@@ -1089,6 +1122,7 @@ startGUI = do
             writeIORef st (editorSetGI (newNGI, snd giM) . editorSetGraph newGraph $ es)
             writeIORef currentNodeType $ Just typeInfo
             Gtk.widgetQueueDraw canvas
+            setCurrentInvalid
 
   -- choose a type in the type comboBox for edges
   on edgeTCBox #changed $ do
@@ -1113,6 +1147,7 @@ startGUI = do
             writeIORef st (editorSetGI newGI . editorSetGraph newGraph $ es)
             writeIORef currentEdgeType $ Just typeInfo
             Gtk.widgetQueueDraw canvas
+            setCurrentInvalid
 
 
 
