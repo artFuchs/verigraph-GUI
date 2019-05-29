@@ -220,25 +220,19 @@ startGUI = do
       _ -> return ()
     return False
 
-  let isGraphValid graph = do
-        tg <- readIORef activeTypeGraph
-        let validG = validationGraph graph tg
-        let valid = and $ concat [map nodeInfo $ nodes validG, map edgeInfo $ edges validG]
-        return valid
-
-  let setInvalid iter = do
+  let setValidFlag iter = do
         index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
         states <- readIORef graphStates
         mst <- return $ M.lookup index states
-        es <- case mst of
-          Nothing -> return emptyES
-          Just (es, u, r) -> return es
-        let g = editorGetGraph es
-        valid <- isGraphValid g
+        g <- case mst of
+          Nothing -> return G.empty
+          Just (es, u, r) -> return $ editorGetGraph es
+        tg <- readIORef activeTypeGraph
+        let valid = isGraphValid g tg
         gvValid <- toGValue valid
         Gtk.treeStoreSetValue store iter 5 gvValid
 
-  let setInvalids = do
+  let setValidFlags = do
         (fstValid, fstIter) <- Gtk.treeModelGetIterFirst store
         if fstValid
           then setInvalidsRec fstIter
@@ -254,16 +248,17 @@ startGUI = do
                   then setInvalidsRec childIter
                   else return ()
               1 -> return ()
-              2 -> setInvalid iter
-              3 -> setInvalid iter
+              2 -> setValidFlag iter
+              3 -> setValidFlag iter
             nextValid <- Gtk.treeModelIterNext store iter
             if nextValid
               then setInvalidsRec iter
               else return ()
 
-  let setCurrentInvalid = do
+  let setCurrentValidFlag = do
         es <- readIORef st
-        valid <- isGraphValid (editorGetGraph es)
+        tg <- readIORef activeTypeGraph
+        let valid = isGraphValid (editorGetGraph es) tg
         gvValid <- toGValue valid
         cpath <- readIORef currentPath >>= Gtk.treePathNewFromIndices
         (validIter, iter) <- Gtk.treeModelGetIter store cpath
@@ -310,12 +305,12 @@ startGUI = do
                 forM_ (M.keys possibleNT) $ \k -> Gtk.comboBoxTextAppendText nodeTCBox (T.pack k)
                 Gtk.comboBoxTextRemoveAll edgeTCBox
                 forM_ (M.keys possibleET) $ \k -> Gtk.comboBoxTextAppendText edgeTCBox (T.pack k)
-                setInvalids
+                setValidFlags
               else do
                 writeIORef activeTypeGraph (G.empty)
                 Gtk.comboBoxTextRemoveAll nodeTCBox
                 Gtk.comboBoxTextRemoveAll edgeTCBox
-                setInvalids
+                setValidFlags
 
 
   -- mouse button pressed on canvas
@@ -408,7 +403,7 @@ startGUI = do
                         Just gi -> return ("{" ++ t ++ "}", shape gi, fillColor gi, lineColor gi)
                   createNode' st t (x',y') shape c lc context
                   setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-                  setCurrentInvalid
+                  setCurrentValidFlag
 
 
             -- one node selected: create edges targeting this node
@@ -435,7 +430,7 @@ startGUI = do
                       Just gi -> return ("{" ++ t ++ "}", style gi, color gi)
                 modifyIORef st (\es -> createEdges es nid t estyle color)
                 setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-                setCurrentInvalid
+                setCurrentValidFlag
 
           Gtk.widgetQueueDraw canvas
           updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
@@ -775,14 +770,21 @@ startGUI = do
     saveFileAs (g,gi) saveGraph fileName window False
     return ()
 
+  let updateByType = do
+        gt <- readIORef currentGraphType
+        case gt of
+          1 -> updateActiveTG
+          2 -> setCurrentValidFlag
+          3 -> setCurrentValidFlag
+          _ -> return ()
+
   -- delete item
   on del #activate $ do
     es <- readIORef st
     stackUndo undoStack redoStack es
     modifyIORef st (\es -> deleteSelected es)
     setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-    updateActiveTG
-    setCurrentInvalid
+    updateByType
     Gtk.widgetQueueDraw canvas
 
 
@@ -799,12 +801,7 @@ startGUI = do
               Nothing -> DG.empty
     setChangeFlags window store changedProject changedGraph currentPath currentGraph $ not (isDiaGraphEqual (g,gi) x)
     Gtk.widgetQueueDraw canvas
-    gt <- readIORef currentGraphType
-    case gt of
-      0 -> return ()
-      1 -> updateActiveTG
-      2 -> setCurrentInvalid
-      3 -> setCurrentInvalid
+    updateByType
 
   -- redo
   on rdo #activate $ do
@@ -819,13 +816,7 @@ startGUI = do
               Nothing -> DG.empty
     setChangeFlags window store changedProject changedGraph currentPath currentGraph $ not (isDiaGraphEqual (g,gi) x)
     Gtk.widgetQueueDraw canvas
-    gt <- readIORef currentGraphType
-    case gt of
-      0 -> return ()
-      1 -> updateActiveTG
-      2 -> setCurrentInvalid
-      3 -> setCurrentInvalid
-
+    updateByType
 
   -- copy
   on cpy #activate $ do
@@ -842,13 +833,7 @@ startGUI = do
     setChangeFlags window store changedProject changedGraph currentPath currentGraph True
     modifyIORef st (pasteClipBoard clip)
     Gtk.widgetQueueDraw canvas
-    gt <- readIORef currentGraphType
-    case gt of
-      0 -> return ()
-      1 -> updateActiveTG
-      2 -> setCurrentInvalid
-      3 -> setCurrentInvalid
-
+    updateByType
 
   -- cut
   on cut #activate $ do
@@ -858,12 +843,7 @@ startGUI = do
     stackUndo undoStack redoStack es
     setChangeFlags window store changedProject changedGraph currentPath currentGraph  True
     Gtk.widgetQueueDraw canvas
-    gt <- readIORef currentGraphType
-    case gt of
-      0 -> return ()
-      1 -> updateActiveTG
-      2 -> setCurrentInvalid
-      3 -> setCurrentInvalid
+    updateByType
 
   -- select all
   on sla #activate $ do
@@ -951,12 +931,7 @@ startGUI = do
     context <- Gtk.widgetGetPangoContext canvas
     renameSelected st name context
     Gtk.widgetQueueDraw canvas
-    gt <- readIORef currentGraphType
-    case gt of
-      0 -> return ()
-      1 -> updateActiveTG
-      2 -> setCurrentInvalid
-      3 -> setCurrentInvalid
+    updateByType
     return False
 
   -- select a fill color
@@ -1122,7 +1097,7 @@ startGUI = do
             writeIORef st (editorSetGI (newNGI, snd giM) . editorSetGraph newGraph $ es)
             writeIORef currentNodeType $ Just typeInfo
             Gtk.widgetQueueDraw canvas
-            setCurrentInvalid
+            setCurrentValidFlag
 
   -- choose a type in the type comboBox for edges
   on edgeTCBox #changed $ do
@@ -1147,7 +1122,7 @@ startGUI = do
             writeIORef st (editorSetGI newGI . editorSetGraph newGraph $ es)
             writeIORef currentEdgeType $ Just typeInfo
             Gtk.widgetQueueDraw canvas
-            setCurrentInvalid
+            setCurrentValidFlag
 
 
 
@@ -1238,67 +1213,7 @@ startGUI = do
                 newNodeGI = M.fromList . map gn . map fn $ nodes g
                 newEdgeGI = M.fromList . map ge . map fe $ edges g
             writeIORef st (editorSetGI (newNodeGI, newEdgeGI) es)
-
-
         Gtk.widgetQueueDraw canvas
-
-  -- auxiliar functions to use when activate a menuitem in the treeview popup menu
-  -- let newGraph t = do
-  --       states <- readIORef graphStates
-  --       let newKey = if M.size states > 0 then maximum (M.keys states) + 1 else 0
-  --       parent <- do
-  --         selection <- Gtk.treeViewGetSelection treeview
-  --         (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
-  --         case sel of
-  --           False -> do
-  --             (valid, fIter) <- Gtk.treeModelGetIterFirst model
-  --             return $ if valid then (Just fIter) else Nothing
-  --           True -> do
-  --             typeI <- (Gtk.treeModelGetValue store iter 3 >>= fromGValue ) :: IO Int32
-  --             case typeI of
-  --               0 -> return $ Just iter
-  --               _ -> do
-  --                 (valid, pIter) <- Gtk.treeModelIterParent model iter
-  --                 return $ if valid then (Just pIter) else Nothing
-  --       iter <- Gtk.treeStoreAppend store parent
-  --       storeSetGraphStore store iter ("new",2, newKey,t)
-  --       modifyIORef graphStates (M.insert newKey (emptyES,[],[]))
-
-  -- let rmvGraph = do
-  --       selection <- Gtk.treeViewGetSelection treeview
-  --       (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
-  --       case sel of
-  --         False -> return ()
-  --         True -> do
-  --           typeI <- (Gtk.treeModelGetValue store iter 3 >>= fromGValue ) :: IO Int32
-  --           case typeI of
-  --             0 -> return ()
-  --             _ -> do
-  --               index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
-  --               Gtk.treeStoreRemove store iter
-  --               modifyIORef graphStates $ M.delete index
-
-  -- on treeview #buttonPressEvent $ \eventButton -> do
-  --   b <- get eventButton #button
-  --   case b of
-  --     3 -> do
-  --       -- create popup menu
-  --       popmenu <- new Gtk.Menu [];
-  --       newItem <- new Gtk.MenuItem [ #label := "create rule"];
-  --       delItem <- new Gtk.MenuItem [ #label := "delete rule"];
-  --       actItem <- new Gtk.MenuItem [ #label := "activate"];
-  --       Gtk.containerAdd popmenu newItem
-  --       Gtk.containerAdd popmenu delItem
-  --       Gtk.containerAdd popmenu actItem
-  --       -- connect menuItems
-  --       on newItem #activate createRule
-  --       on delItem #activate removeRule
-  --       on actItem #activate $ return () -- activateTypeGraph
-  --
-  --       #showAll popmenu
-  --       Gtk.menuPopupAtPointer popmenu Nothing
-  --     _ -> return ()
-  --   return False
 
   -- pressed the 'new' button on the treeview area
   -- create a new Rule
@@ -1728,6 +1643,11 @@ validationGraph g tg = fromNodesAndEdges vn ve
                                   srce' = nodeId . fromJust . lookupNode (sourceId e') $ tg
                               _ -> False
 
+isGraphValid :: Graph String String -> Graph String String -> Bool
+isGraphValid g tg = and $ concat [map nodeInfo $ nodes validG, map edgeInfo $ edges validG]
+      where
+        validG = validationGraph g tg
+
 -- general save function -------------------------------------------------------
 saveFile :: a -> (a -> String -> IO Bool) -> IORef (Maybe String) -> Gtk.Window -> Bool -> IO Bool
 saveFile x saveF fileName window changeFN = do
@@ -1982,7 +1902,7 @@ pasteClipBoard (cGraph, (cNgiM, cEgiM)) es = editorSetGI (newngiM,newegiM) . edi
     (newGraph, (newngiM,newegiM)) = diagrDisjointUnion (graph,(ngiM,egiM)) (cGraph,(cNgiM', cEgiM))
 
 
-
+-- Indicators ------------------------------------------------------------------
 -- change window name to indicate if the project was modified
 indicateProjChanged :: Gtk.Window -> Bool -> IO ()
 indicateProjChanged window True = do
