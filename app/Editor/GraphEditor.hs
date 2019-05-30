@@ -19,7 +19,6 @@ import Data.Int
 import Data.Char
 import Data.Maybe
 import qualified Data.Text as T
-import qualified Control.Exception as E
 import qualified Data.Map as M
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
@@ -35,6 +34,7 @@ import Editor.UIBuilders
 import Editor.DiaGraph hiding (empty)
 import qualified Editor.DiaGraph as DG
 import Editor.EditorState
+import Editor.SaveLoad
 
 --------------------------------------------------------------------------------
 -- MODULE STRUCTURES -----------------------------------------------------------
@@ -53,16 +53,6 @@ type GraphStore = (String, Int32, Int32, Int32, Bool, Bool)
 
 -- An info is a string in the format "label{type}"
 type Info = String
-
--- structs to save
-type NList = [(Int,String)]
-type EList = [(Int,Int,Int,String)]
-data SaveInfo = Topic String | TypeGraph String EditorState | HostGraph String EditorState | RuleGraph String EditorState Bool deriving (Show)
-data UncompressedSaveInfo = T String
-                          | TG String NList EList GraphicalInfo
-                          | HG String NList EList GraphicalInfo
-                          | RG String NList EList GraphicalInfo Bool
-                          deriving (Show, Read)
 
 
 --------------------------------------------------------------------------------
@@ -533,64 +523,8 @@ startGUI = do
       (False,False,'\65471') -> Gtk.widgetGrabFocus nameEntry
       _ -> return ()
     return True
-  --     -- <delete> | <Ctrl> + D : delete selection
-  --     (False,False,'\65535') -> do
-  --       es <- readIORef st
-  --       stackUndo undoStack redoStack es
-  --       modifyIORef st (\es -> deleteSelected es)
-  --       setChangeFlags window store changedProject changedGraph currentPath True
-  --       Gtk.widgetQueueDraw canvas
-  --     (True,False,'d') -> do
-  --       es <- readIORef st
-  --       stackUndo undoStack redoStack es
-  --       modifyIORef st (\es -> deleteSelected es)
-  --       setChangeFlags window store changedProject changedGraph currentPath True
-  --       Gtk.widgetQueueDraw canvas
-  --     -- CTRL + [SHIFT] + A : [de]select all
-  --     (True, True, 'a') -> do
-  --       modifyIORef st $ editorSetSelected ([],[])
-  --       Gtk.widgetQueueDraw canvas
-  --     (True, False, 'a') -> do
-  --       modifyIORef st (\es -> let g = editorGetGraph es in editorSetSelected (nodeIds g, edgeIds g) es)
-  --       Gtk.widgetQueueDraw canvas
-  --     -- CTRL + C/V/X : copy/paste/cut
-  --     (True, False, 'c') -> Gtk.menuItemActivate cpy
-  --     (True, False, 'v') -> Gtk.menuItemActivate pst
-  --     (True, False, 'x') -> Gtk.menuItemActivate cut
-  --     _       -> return ()
-  --   return True
-
-  -- on window #keyPressEvent $ \eventKey -> do
-  --   k <- get eventKey #keyval >>= return . chr . fromIntegral
-  --   ms <- get eventKey #state
-  --   context <- Gtk.widgetGetPangoContext canvas
-  --   case (Gdk.ModifierTypeControlMask `elem` ms, Gdk.ModifierTypeShiftMask `elem` ms, toLower k) of
-  --     -- CTRL + <+>/<->/<=> : zoom controls
-  --     (True,_,'+') -> Gtk.menuItemActivate zin
-  --     (True,_,'-') -> Gtk.menuItemActivate zut
-  --     (True,_,'=') -> Gtk.menuItemActivate zdf
-  --     -- CTRL + <0> : reset pan & zoom
-  --     (True,_,'0') -> Gtk.menuItemActivate vdf
-  --     -- CTRL + N : create a new graph in the treeView
-  --     (True, False, 'n') -> Gtk.buttonClicked createBtn
-  --     -- CTRL + W : remove a graph from the treeView
-  --     (True, False, 'w') -> Gtk.buttonClicked btnRmv
-  --     -- CTRL + SHIFT + N : create a new file
-  --     (True, True, 'n') -> Gtk.menuItemActivate newm
-  --     -- CTRL + SHIFT + S : save file as
-  --     (True, True, 's') -> Gtk.menuItemActivate sva
-  --     -- CTRL + S : save file
-  --     (True, False, 's') -> Gtk.menuItemActivate svn
-  --     -- CTRL + O : open file
-  --     (True, False, 'o') -> Gtk.menuItemActivate opn
-  --     -- CTRL + Z/R : undo/redo
-  --     (True, False, 'z') -> Gtk.menuItemActivate udo
-  --     (True, False, 'r') -> Gtk.menuItemActivate rdo
-  --     _ -> return ()
-  --   return False
 
   -- event bindings for the menu toolbar ---------------------------------------
-
   -- auxiliar functions to create/open/save the project
       -- auxiliar function to prepare the treeStore to save
   let prepToSave = do es <- readIORef st
@@ -694,16 +628,13 @@ startGUI = do
                 writeIORef redoStack []
                 writeIORef fileName $ Just fn
                 writeIORef currentPath [0]
+                p <- Gtk.treePathNewFromIndices [0]
+                Gtk.treeViewSetCursor treeview p namesCol False
+                Gtk.treeViewExpandToPath treeview p
                 writeIORef currentGraphType 1
                 writeIORef currentGraph i
                 writeIORef graphStates $ M.fromList statesList
-                writeIORef lastSavedState M.empty
-                writeIORef changedProject False
-                writeIORef changedGraph [False]
-                set window [#title := T.pack ("Graph Editor - " ++ fn)]
-                p <- Gtk.treePathNewFromIndices [0]
-                Gtk.treeViewExpandToPath treeview p
-                Gtk.treeViewSetCursor treeview p namesCol False
+                afterSave
                 updateActiveTG
                 Gtk.widgetQueueDraw canvas
       else return ()
@@ -738,9 +669,6 @@ startGUI = do
         newKey <- readIORef graphStates >>= return . (+1) . maximum . M.keys
         modifyIORef graphStates $ M.insert newKey (editorSetGI gi . editorSetGraph g $ emptyES, [],[])
         -- update the treeview
-        --parentIndices <- readIORef currentPath >>= \indices -> if length indices > 1 then return $ init indices else return indices
-        --parentPath <- Gtk.treePathNewFromIndices parentIndices
-        --parentIter <- Gtk.treeModelGetIter store parentPath >>= \(valid, iter) -> return $ if valid then Just iter else Nothing
         (valid,parentIter) <- Gtk.treeModelIterNthChild store Nothing 2
         if not valid
           then return ()
@@ -758,7 +686,6 @@ startGUI = do
             modifyIORef changedGraph (\xs -> xs ++ [True])
             writeIORef changedProject True
             indicateProjChanged window True
-
             Gtk.widgetQueueDraw canvas
       _      -> return ()
 
@@ -1647,148 +1574,6 @@ isGraphValid :: Graph String String -> Graph String String -> Bool
 isGraphValid g tg = and $ concat [map nodeInfo $ nodes validG, map edgeInfo $ edges validG]
       where
         validG = validationGraph g tg
-
--- general save function -------------------------------------------------------
-saveFile :: a -> (a -> String -> IO Bool) -> IORef (Maybe String) -> Gtk.Window -> Bool -> IO Bool
-saveFile x saveF fileName window changeFN = do
-  fn <- readIORef fileName
-  case fn of
-    Just path -> do
-      tentativa <- saveF x path
-      case tentativa of
-        True -> return True
-        False -> do
-          showError window $ T.pack ("Couldn't write to file." ++ path)
-          return False
-    Nothing -> saveFileAs x saveF fileName window changeFN
-
-
-saveFileAs :: a -> (a -> String -> IO Bool) -> IORef (Maybe String) -> Gtk.Window -> Bool -> IO Bool
-saveFileAs x saveF fileName window changeFN = do
-  saveD <- createSaveDialog window
-  response <- Gtk.dialogRun saveD
-  fn <- case toEnum . fromIntegral $  response of
-    Gtk.ResponseTypeAccept -> do
-      filename <- Gtk.fileChooserGetFilename saveD
-      case filename of
-        Nothing -> do
-          Gtk.widgetDestroy saveD
-          return Nothing
-        Just path -> do
-          tentativa <- saveF x path
-          case tentativa of
-            True -> do
-              Gtk.widgetDestroy saveD
-              return $ Just path
-            False -> do
-              Gtk.widgetDestroy saveD
-              showError window $ T.pack ("Couldn't write to file." ++ path)
-              return Nothing
-    _  -> do
-      Gtk.widgetDestroy saveD
-      return Nothing
-  case (changeFN, fn) of
-    (True, Just path) -> do
-      writeIORef fileName (Just path)
-      return True
-    _ -> return False
-
--- auxiliar save functions -----------------------------------------------------
--- save project
-saveProject :: Tree.Forest SaveInfo -> String -> IO Bool
-saveProject saveInfo path = do
-  let nodeContents es = map (\(Node nid info) -> (fromEnum nid, info)) (nodes $ editorGetGraph es)
-      edgeContents es = map (\(Edge eid srcid tgtid info) -> (fromEnum eid, fromEnum srcid, fromEnum tgtid, info)) (edges $ editorGetGraph es)
-      contents =  map
-                  (fmap (\node -> case node of
-                                      Topic name -> T name
-                                      TypeGraph name es -> TG name (nodeContents es) (edgeContents es) (editorGetGI es)
-                                      HostGraph name es -> HG name (nodeContents es) (edgeContents es) (editorGetGI es)
-                                      RuleGraph name es a -> RG name (nodeContents es) (edgeContents es) (editorGetGI es) a))
-                  saveInfo
-      writeProject = writeFile path $ show contents
-  saveTry <- E.try (writeProject)  :: IO (Either E.IOException ())
-  case saveTry of
-    Left _ -> return False
-    Right _ -> return True
---
--- save graph
-saveGraph :: (Graph String String ,GraphicalInfo) -> String -> IO Bool
-saveGraph (g,gi) path = do
-    let path' = if (tails path)!!(length path-3) == ".gr" then path else path ++ ".gr"
-        writeGraph = writeFile path' $ show ( map (\n -> (nodeId n, nodeInfo n) ) $ nodes g
-                                           , map (\e -> (edgeId e, sourceId e, targetId e, edgeInfo e)) $ edges g
-                                           , gi)
-
-    tentativa <- E.try (writeGraph)  :: IO (Either E.IOException ())
-    case tentativa of
-      Left _ -> return False
-      Right _ -> return True
---
---
--- load function ---------------------------------------------------------------
-loadFile :: Gtk.Window -> (String -> Maybe a) -> IO (Maybe (a,String))
-loadFile window loadF = do
-  loadD <- createLoadDialog window
-  response <- Gtk.dialogRun loadD
-  case toEnum . fromIntegral $ response of
-    Gtk.ResponseTypeAccept -> do
-      filename <- Gtk.fileChooserGetFilename loadD
-      Gtk.widgetDestroy loadD
-      case filename of
-        Nothing -> do
-          return Nothing
-        Just path -> do
-          tentativa <- E.try (readFile path) :: IO (Either E.IOException String)
-          case tentativa of
-            Left _ -> do
-              showError window "Couldn't open the file"
-              return Nothing
-            Right content -> case loadF content of
-              Nothing -> do
-                showError window "Couldn't read the file"
-                return Nothing
-              Just x -> return $ Just (x, path)
-    _             -> do
-      Gtk.widgetDestroy loadD
-      return Nothing
-
--- auxiliar load functions -----------------------------------------------------
-loadProject :: String -> Maybe (Tree.Forest SaveInfo)
-loadProject content = loadedTree
-  where
-    loadedTree = case reads content :: [(Tree.Forest UncompressedSaveInfo, String)] of
-      [(tree,"")] -> Just $ compress tree
-      _ -> Nothing
-    genNodes = map (\(nid, info) -> Node (NodeId nid) info)
-    genEdges = map (\(eid, src, dst, info) -> Edge (EdgeId eid) (NodeId src) (NodeId dst) info)
-    compress = map
-               (fmap
-                  (\node -> case node of
-                              T name -> Topic name
-                              TG name nlist elist gi -> let g = fromNodesAndEdges (genNodes nlist) (genEdges elist)
-                                                            es = editorSetGI gi . editorSetGraph g $ emptyES
-                                                        in TypeGraph name es
-                              HG name nlist elist gi -> let g = fromNodesAndEdges (genNodes nlist) (genEdges elist)
-                                                            es = editorSetGI gi . editorSetGraph g $ emptyES
-                                                        in HostGraph name es
-                              RG name nlist elist gi a -> let g = fromNodesAndEdges (genNodes nlist) (genEdges elist)
-                                                              es = editorSetGI gi . editorSetGraph g $ emptyES
-                                                          in RuleGraph name es a
-                  ) )
-
-
-
-loadGraph :: String -> Maybe (Graph String String,GraphicalInfo)
-loadGraph contents = result
-  where
-    result = case reads contents :: [( (NList, EList, GraphicalInfo), String)] of
-      [((rns,res,gi), "")] -> let ns = map (\(nid, info) -> Node (NodeId nid) info) rns
-                                  es = map (\(eid, src, dst, info) -> Edge (EdgeId eid) (NodeId src) (NodeId dst) info) res
-                                  g = fromNodesAndEdges ns es
-                              in Just (g,gi)
-      _ -> Nothing
-
 
 -- graph interaction
 -- create a new node, auto-generating it's name and dimensions
