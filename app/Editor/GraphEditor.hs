@@ -35,6 +35,7 @@ import Editor.DiaGraph hiding (empty)
 import qualified Editor.DiaGraph as DG
 import Editor.EditorState
 import Editor.SaveLoad
+import Editor.Info
 
 --------------------------------------------------------------------------------
 -- MODULE STRUCTURES -----------------------------------------------------------
@@ -50,9 +51,6 @@ import Editor.SaveLoad
  * valid (if the current graph is correctly mapped to the typegraph)
 -}
 type GraphStore = (String, Int32, Int32, Int32, Bool, Bool)
-
--- An info is a string in the format "label{type}"
-type Info = String
 
 
 --------------------------------------------------------------------------------
@@ -390,7 +388,7 @@ startGUI = do
                           mngi = M.lookup t possibleNT'
                       case mngi of
                         Nothing -> return ("", cShape, cColor, cLColor)
-                        Just gi -> return ("{" ++ t ++ "}", shape gi, fillColor gi, lineColor gi)
+                        Just gi -> return (t, shape gi, fillColor gi, lineColor gi)
                   createNode' st t (x',y') shape c lc context
                   setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                   setCurrentValidFlag
@@ -417,7 +415,7 @@ startGUI = do
                         megi = M.lookup t pet'
                     case megi of
                       Nothing -> return ("", cEstyle, cColor)
-                      Just gi -> return ("{" ++ t ++ "}", style gi, color gi)
+                      Just gi -> return (t, style gi, color gi)
                 modifyIORef st (\es -> createEdges es nid t estyle color)
                 setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                 setCurrentValidFlag
@@ -1018,7 +1016,7 @@ startGUI = do
             let (sNids,sEids) = editorGetSelected es
                 g = editorGetGraph es
                 giM = editorGetGI es
-                newGraph = foldl (\g nid -> updateNodePayload nid g (\info -> (infoLabel info) ++ "{" ++ typeInfo ++ "}")) g sNids
+                newGraph = foldl (\g nid -> updateNodePayload nid g (\info -> infoSetType info typeInfo)) g sNids
                 newNGI = foldl (\gi nid -> let ngi = getNodeGI (fromEnum nid) gi
                                            in M.insert (fromEnum nid) (nodeGiSetPosition (position ngi) . nodeGiSetDims (dims ngi) $ typeGI) gi) (fst giM) sNids
             writeIORef st (editorSetGI (newNGI, snd giM) . editorSetGraph newGraph $ es)
@@ -1045,7 +1043,7 @@ startGUI = do
                 newEGI = foldl (\gi eid -> let egi = getEdgeGI (fromEnum eid) gi
                                            in M.insert (fromEnum eid) (edgeGiSetPosition (cPosition egi) typeGI) gi) (snd giM) sEids
                 newGI = (fst giM, newEGI)
-                newGraph = foldl (\g eid -> updateEdgePayload eid g (\info -> (infoLabel info) ++ "{" ++ typeInfo ++ "}" )) g sEids
+                newGraph = foldl (\g eid -> updateEdgePayload eid g (\info -> infoSetType info typeInfo)) g sEids
             writeIORef st (editorSetGI newGI . editorSetGraph newGraph $ es)
             writeIORef currentEdgeType $ Just typeInfo
             Gtk.widgetQueueDraw canvas
@@ -1581,26 +1579,21 @@ createNode' :: IORef EditorState -> String -> GIPos -> NodeShape -> GIColor -> G
 createNode' st content pos nshape color lcolor context = do
   es <- readIORef st
   let nid = head $ newNodes (editorGetGraph es)
-      content' = if infoLabel content == "" then show nid else infoLabel content
-      info = if infoType content == "" then content' else content' ++ "{" ++ infoType content ++ "}"
-  dim <- getStringDims content' context
-  writeIORef st $ createNode es pos dim info nshape color lcolor
+      content' = if infoLabel content == "" then infoSetLabel content (show nid) else content
+  dim <- getStringDims (infoLabel content') context
+  writeIORef st $ createNode es pos dim content' nshape color lcolor
 
 -- rename the selected itens
 renameSelected:: IORef EditorState -> String -> P.Context -> IO()
 renameSelected state content context = do
   es <- readIORef state
-  let contentL = infoLabel content
-      contentT = infoType content
-  dim <- getStringDims contentL context
+  dim <- getStringDims (infoLabel content) context
   let graph = editorGetGraph es
       (nids,eids) = editorGetSelected es
       (ngiM,egiM) = editorGetGI es
-  let rename oldInfo = if contentT /= ""
+  let rename oldInfo = if (infoType content) /= ""
                         then content
-                        else contentL ++ if infoType oldInfo == ""
-                          then ""
-                          else "{"++ infoType oldInfo ++ "}"
+                        else infoSetType content (infoType oldInfo)
   let graph' = foldl (\g nid -> updateNodePayload nid g rename) graph nids
       newGraph  = foldl (\g eid -> updateEdgePayload eid g rename) graph' eids
       newNgiM = M.mapWithKey (\k gi -> if NodeId k `elem` nids then nodeGiSetDims dim gi else gi) ngiM
@@ -1750,21 +1743,7 @@ updateSavedState sst graphStates = do
   writeIORef sst $ (M.map (\(es,_,_) -> (editorGetGraph es, editorGetGI es) ) states)
 
 
--- Info manipulation -----------------------------------------------------------
-infoLabel :: Info -> String
-infoLabel [] = []
-infoLabel ('{':cs) = []
-infoLabel (c:cs) = c : infoLabel cs
 
-infoType :: Info -> String
-infoType [] = []
-infoType ('{':cs) = infoTypeAux cs
-infoType (c:cs) = infoType cs
-
-infoTypeAux :: Info -> String
-infoTypeAux [] = []
-infoTypeAux ('}':cs) = []
-infoTypeAux (c:cs) = c : infoTypeAux cs
 
 -- Tree generation/manipulation ------------------------------------------------
 genForestIds :: Tree.Forest a -> Int32 -> Tree.Forest Int32

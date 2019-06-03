@@ -1,4 +1,4 @@
-Main: Main.hs Editor/GraphEditor.hs
+Main: Main.hs Editor/*
 	stack ghc Main
 
 clean:
