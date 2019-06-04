@@ -537,14 +537,14 @@ startGUI = do
                 writeIORef st es
                 writeIORef undoStack []
                 writeIORef redoStack []
-                writeIORef fileName $ Just fn
-                writeIORef currentPath [0]
-                p <- Gtk.treePathNewFromIndices [0]
-                Gtk.treeViewSetCursor treeview p namesCol False
-                Gtk.treeViewExpandToPath treeview p
-                writeIORef currentGraphType 1
-                writeIORef currentGraph i
                 writeIORef graphStates $ M.fromList statesList
+                writeIORef fileName $ Just fn
+                writeIORef currentGraph i
+                writeIORef currentPath [0]
+                writeIORef currentGraphType 1
+                p <- Gtk.treePathNewFromIndices [0]
+                Gtk.treeViewExpandToPath treeview p
+                Gtk.treeViewSetCursor treeview p namesCol False
                 afterSave
                 updateTG
                 Gtk.widgetQueueDraw canvas
