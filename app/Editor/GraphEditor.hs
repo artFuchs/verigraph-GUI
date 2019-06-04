@@ -103,20 +103,7 @@ startGUI = do
   -- init an model to display in the tree panel --------------------------------
   store <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt, gtypeBoolean, gtypeBoolean]
   Gtk.treeViewSetModel treeview (Just store)
-  let initStore = do
-          fstIter <- Gtk.treeStoreAppend store Nothing
-          storeSetGraphStore store fstIter ("TypeGraph", 0, 0, 1, False, True)
-          sndIter <- Gtk.treeStoreAppend store Nothing
-          storeSetGraphStore store sndIter ("InitialGraph", 0, 1, 2, False, True)
-          rulesIter <- Gtk.treeStoreAppend store Nothing
-          storeSetGraphStore store rulesIter ("Rules", 0, 0, 0, False, True)
-          fstRuleIter <- Gtk.treeStoreAppend store (Just rulesIter)
-          storeSetGraphStore store fstRuleIter ("Rule0", 0, 2, 3, True, True)
-          path <- Gtk.treeModelGetPath store fstIter
-          Gtk.treeViewSetCursor treeview path (Nothing :: Maybe Gtk.TreeViewColumn) False
-          rulesPath <- Gtk.treeModelGetPath store rulesIter
-          Gtk.treeViewExpandRow treeview rulesPath True
-  initStore
+  initStore store treeview
 
   changesCol <- Gtk.treeViewGetColumn treeview 0
   namesCol <- Gtk.treeViewGetColumn treeview 1
@@ -496,7 +483,7 @@ startGUI = do
     if continue
       then do
         Gtk.treeStoreClear store
-        initStore
+        initStore store treeview
         writeIORef st emptyES
         writeIORef undoStack []
         writeIORef redoStack []
@@ -1136,6 +1123,22 @@ startGUI = do
 ------------------------------------------------------------------------------
 
 -- Gtk.treeStore manipulation
+initStore :: Gtk.TreeStore -> Gtk.TreeView ->  IO ()
+initStore store treeview = do
+  fstIter <- Gtk.treeStoreAppend store Nothing
+  storeSetGraphStore store fstIter ("TypeGraph", 0, 0, 1, False, True)
+  sndIter <- Gtk.treeStoreAppend store Nothing
+  storeSetGraphStore store sndIter ("InitialGraph", 0, 1, 2, False, True)
+  rulesIter <- Gtk.treeStoreAppend store Nothing
+  storeSetGraphStore store rulesIter ("Rules", 0, 0, 0, False, True)
+  fstRuleIter <- Gtk.treeStoreAppend store (Just rulesIter)
+  storeSetGraphStore store fstRuleIter ("Rule0", 0, 2, 3, True, True)
+  path <- Gtk.treeModelGetPath store fstIter
+  Gtk.treeViewSetCursor treeview path (Nothing :: Maybe Gtk.TreeViewColumn) False
+  rulesPath <- Gtk.treeModelGetPath store rulesIter
+  Gtk.treeViewExpandRow treeview rulesPath True
+  return ()
+
 storeSetGraphStore :: Gtk.TreeStore -> Gtk.TreeIter -> GraphStore -> IO ()
 storeSetGraphStore store iter (n,c,i,t,a,v) = do
   gv0 <- toGValue (Just n)
@@ -1707,28 +1710,15 @@ setValidFlag store iter states tg = do
 -- walk in the treeStore, applying setValidFalg for all the hostGraphs and RuleGraphs
 -- should be called when occur an update to the typeGraph
 setValidFlags :: Gtk.TreeStore -> Graph String String -> M.Map Int32 (EditorState, [DiaGraph], [DiaGraph]) -> IO ()
-setValidFlags store tg states= do
-  (fstValid, fstIter) <- Gtk.treeModelGetIterFirst store
-  if fstValid
-    then setInvalidsRec fstIter
-    else return ()
-  where
-    setInvalidsRec :: Gtk.TreeIter -> IO ()
-    setInvalidsRec iter = do
-      t <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
-      case t of
-        0 -> do
-          (childValid, childIter) <- Gtk.treeModelIterChildren store (Just iter)
-          if childValid
-            then setInvalidsRec childIter
-            else return ()
-        1 -> return ()
-        2 -> setValidFlag store iter states tg
-        3 -> setValidFlag store iter states tg
-      nextValid <- Gtk.treeModelIterNext store iter
-      if nextValid
-        then setInvalidsRec iter
-        else return ()
+setValidFlags store tg states = do
+  Gtk.treeModelForeach store $ \model path iter -> do
+    t <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
+    case t of
+      0 -> return ()
+      1 -> return ()
+      2 -> setValidFlag store iter states tg
+      3 -> setValidFlag store iter states tg
+    return False
 
 -- Change the valid flag for the graph that is being edited
 -- Needed because the graphStates IORef is not updated while the user is editing the graph
@@ -1749,18 +1739,3 @@ updateSavedState :: IORef (M.Map Int32 DiaGraph) -> IORef (M.Map Int32 (EditorSt
 updateSavedState sst graphStates = do
   states <- readIORef graphStates
   writeIORef sst $ (M.map (\(es,_,_) -> (editorGetGraph es, editorGetGI es) ) states)
-
-
-
--- Tree generation/manipulation ------------------------------------------------
-genForestIds :: Tree.Forest a -> Int32 -> Tree.Forest Int32
-genForestIds [] i = []
-genForestIds (t:ts) i = t' : (genForestIds ts i')
-  where (t',i') = genTreeId t i
-
-genTreeId :: Tree.Tree a -> Int32 -> (Tree.Tree Int32, Int32)
-genTreeId (Tree.Node x []) i = (Tree.Node i [], i + 1)
-genTreeId (Tree.Node x f) i = (Tree.Node i f', i')
-  where
-    f' = genForestIds f (i+1)
-    i' = (maximum (fmap maximum f')) + 1
