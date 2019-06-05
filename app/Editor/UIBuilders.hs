@@ -1,8 +1,8 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 
 -- | This module contains the UI definition
-module Editor.UIBuilders
-( buildMainWindow
+module Editor.UIBuilders( 
+  buildMainWindow
 , buildTypeInspector
 , buildHostInspector
 , buildRuleInspector
@@ -180,27 +180,22 @@ buildHostInspector = do
 
   return (mainBox, labelBox, nodeTypeComboBox, edgeTypeComboBox, (nodeTypeBox, edgeTypeBox))
 
-buildRuleInspector :: IO (Gtk.Frame, Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.ComboBoxText, (Gtk.Box, Gtk.Box))
+buildRuleInspector :: IO (Gtk.Box, Gtk.Box, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.ComboBoxText, (Gtk.Box, Gtk.Box))
 buildRuleInspector = do
-  frame <- new Gtk.Frame [ #shadowType := Gtk.ShadowTypeIn]
   mainBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical
                          , #spacing := 8
                          ]
-  Gtk.containerAdd frame mainBox
 
   -- creates a title label
   titleLabel <- new Gtk.Label [#label := "Inspector"]
   Gtk.boxPackStart mainBox titleLabel False False 0
 
   -- creates a HBox containing a entry for the user change the node label
-  labelBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
+  entryBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
                          , #spacing := 8]
-  Gtk.boxPackStart mainBox labelBox False False 0
+  Gtk.boxPackStart mainBox entryBox False False 0
   labelLabel <- new Gtk.Label [ #label := "Label: "]
-  Gtk.boxPackStart labelBox labelLabel False False 0
-  labelEntry <- new Gtk.Entry []
-  Gtk.boxPackStart labelBox labelEntry True True 0
-  Gtk.widgetSetCanFocus labelEntry True
+  Gtk.boxPackStart entryBox labelLabel False False 0
   --
   -- creates a HBox containing a ComboBox for the user change the node type
   nodeTypeBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
@@ -228,9 +223,12 @@ buildRuleInspector = do
   operationLabel <- new Gtk.Label [ #label := "Operation: "]
   Gtk.boxPackStart operationBox operationLabel False False 0
   operationComboBox <- new Gtk.ComboBoxText []
+  Gtk.comboBoxTextAppendText operationComboBox "create"
+  Gtk.comboBoxTextAppendText operationComboBox "delete"
   Gtk.boxPackStart operationBox operationComboBox True True 0
+
   --
-  return (frame, labelEntry, nodeTypeComboBox, edgeTypeComboBox, operationComboBox, (nodeTypeBox, edgeTypeBox))
+  return (mainBox, entryBox, nodeTypeComboBox, edgeTypeComboBox, operationComboBox, (nodeTypeBox, edgeTypeBox))
 
 -- creates the treePanel
 buildTreePanel = do

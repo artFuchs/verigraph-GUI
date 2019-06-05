@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
-module Editor.GraphEditor
-( startGUI
+module Editor.GraphEditor(
+  startGUI
 )where
 
 import qualified GI.Gtk as Gtk
@@ -95,8 +95,10 @@ startGUI = do
     [radioNormal, radioPointed, radioSlashed] = radioStyles
 
   (hostInspBox, hostNameBox, nodeTCBox, edgeTCBox, hostInspBoxes) <- buildHostInspector
+  (ruleInspBox, ruleNameBox, nodeTCBoxR, edgeTCBoxR, operationCBox, ruleInspBoxes) <- buildRuleInspector
   let
     hostInspWidgets = (nameEntry, nodeTCBox, edgeTCBox)
+    ruleInspWidgets = (nameEntry, nodeTCBoxR, edgeTCBoxR)
 
   #showAll window
 
@@ -208,8 +210,15 @@ startGUI = do
                 -- update the comboBoxes
                 Gtk.comboBoxTextRemoveAll nodeTCBox
                 Gtk.comboBoxTextRemoveAll edgeTCBox
-                forM_ (M.keys possibleNT) $ \k -> Gtk.comboBoxTextAppendText nodeTCBox (T.pack k)
-                forM_ (M.keys possibleET) $ \k -> Gtk.comboBoxTextAppendText edgeTCBox (T.pack k)
+                Gtk.comboBoxTextRemoveAll nodeTCBoxR
+                Gtk.comboBoxTextRemoveAll edgeTCBoxR
+                forM_ (M.keys possibleNT) $ \k -> do
+                    Gtk.comboBoxTextAppendText nodeTCBox (T.pack k)
+                    Gtk.comboBoxTextAppendText nodeTCBoxR (T.pack k)
+                forM_ (M.keys possibleET) $ \k -> do
+                    Gtk.comboBoxTextAppendText edgeTCBox (T.pack k)
+                    Gtk.comboBoxTextAppendText edgeTCBoxR (T.pack k)
+
                 -- update the valid flags
                 states <- readIORef graphStates
                 setValidFlags store tg states
@@ -273,6 +282,7 @@ startGUI = do
           Gtk.widgetQueueDraw canvas
           updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
           updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
+          updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
         -- right button click: create nodes and insert edges
         (3, False) -> liftIO $ do
           let g = editorGetGraph es
@@ -336,6 +346,7 @@ startGUI = do
           Gtk.widgetQueueDraw canvas
           updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
           updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
+          updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
         _           -> return ()
       return True
 
@@ -404,6 +415,7 @@ startGUI = do
             writeIORef st newEs
             updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
             updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
+            updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
           ((n,e), Nothing) -> return ()
           _ -> return ()
       _ -> return ()
@@ -913,54 +925,61 @@ startGUI = do
         updateTG
 
 
+
+  let nodeTCBoxChangedCallback comboBox= do
+          t <- readIORef currentGraphType
+          if t < 2
+            then return ()
+            else do
+              index <- Gtk.comboBoxGetActive comboBox
+              if index == (-1)
+                then return ()
+                else do
+                  es <- readIORef st
+                  typeInfo <- Gtk.comboBoxTextGetActiveText comboBox >>= return . T.unpack
+                  typeGI <- readIORef possibleNodeTypes >>= return . fst . fromJust . M.lookup typeInfo
+                  let (sNids,sEids) = editorGetSelected es
+                      g = editorGetGraph es
+                      giM = editorGetGI es
+                      newGraph = foldl (\g nid -> updateNodePayload nid g (\info -> infoSetType info typeInfo)) g sNids
+                      newNGI = foldl (\gi nid -> let ngi = getNodeGI (fromEnum nid) gi
+                                                 in M.insert (fromEnum nid) (nodeGiSetPosition (position ngi) . nodeGiSetDims (dims ngi) $ typeGI) gi) (fst giM) sNids
+                  writeIORef st (editorSetGI (newNGI, snd giM) . editorSetGraph newGraph $ es)
+                  writeIORef currentNodeType $ Just typeInfo
+                  Gtk.widgetQueueDraw canvas
+                  setCurrentValidFlag store st activeTypeGraph currentPath
+
   -- choose a type in the type comboBox for nodes
-  on nodeTCBox #changed $ do
-    t <- readIORef currentGraphType
-    if t < 2
-      then return ()
-      else do
-        index <- Gtk.comboBoxGetActive nodeTCBox
-        if index == (-1)
-          then return ()
-          else do
-            es <- readIORef st
-            typeInfo <- Gtk.comboBoxTextGetActiveText nodeTCBox >>= return . T.unpack
-            typeGI <- readIORef possibleNodeTypes >>= return . fst . fromJust . M.lookup typeInfo
-            let (sNids,sEids) = editorGetSelected es
-                g = editorGetGraph es
-                giM = editorGetGI es
-                newGraph = foldl (\g nid -> updateNodePayload nid g (\info -> infoSetType info typeInfo)) g sNids
-                newNGI = foldl (\gi nid -> let ngi = getNodeGI (fromEnum nid) gi
-                                           in M.insert (fromEnum nid) (nodeGiSetPosition (position ngi) . nodeGiSetDims (dims ngi) $ typeGI) gi) (fst giM) sNids
-            writeIORef st (editorSetGI (newNGI, snd giM) . editorSetGraph newGraph $ es)
-            writeIORef currentNodeType $ Just typeInfo
-            Gtk.widgetQueueDraw canvas
-            setCurrentValidFlag store st activeTypeGraph currentPath
+  on nodeTCBox #changed $ nodeTCBoxChangedCallback nodeTCBox
+  on nodeTCBoxR #changed $ nodeTCBoxChangedCallback nodeTCBoxR
+
+  let edgeTCBoxCallback comboBox = do
+          t <- readIORef currentGraphType
+          if t < 2
+            then return ()
+            else do
+              index <- Gtk.comboBoxGetActive comboBox
+              if index == (-1)
+                then return ()
+                else do
+                  es <- readIORef st
+                  typeInfo <- Gtk.comboBoxTextGetActiveText comboBox >>= return . T.unpack
+                  typeGI <- readIORef possibleEdgeTypes >>= return . fst . fromJust . M.lookup typeInfo
+                  let (sNids,sEids) = editorGetSelected es
+                      g = editorGetGraph es
+                      giM = editorGetGI es
+                      newEGI = foldl (\gi eid -> let egi = getEdgeGI (fromEnum eid) gi
+                                                 in M.insert (fromEnum eid) (edgeGiSetPosition (cPosition egi) typeGI) gi) (snd giM) sEids
+                      newGI = (fst giM, newEGI)
+                      newGraph = foldl (\g eid -> updateEdgePayload eid g (\info -> infoSetType info typeInfo)) g sEids
+                  writeIORef st (editorSetGI newGI . editorSetGraph newGraph $ es)
+                  writeIORef currentEdgeType $ Just typeInfo
+                  Gtk.widgetQueueDraw canvas
+                  setCurrentValidFlag store st activeTypeGraph currentPath
 
   -- choose a type in the type comboBox for edges
-  on edgeTCBox #changed $ do
-    t <- readIORef currentGraphType
-    if t < 2
-      then return ()
-      else do
-        index <- Gtk.comboBoxGetActive edgeTCBox
-        if index == (-1)
-          then return ()
-          else do
-            es <- readIORef st
-            typeInfo <- Gtk.comboBoxTextGetActiveText edgeTCBox >>= return . T.unpack
-            typeGI <- readIORef possibleEdgeTypes >>= return . fst . fromJust . M.lookup typeInfo
-            let (sNids,sEids) = editorGetSelected es
-                g = editorGetGraph es
-                giM = editorGetGI es
-                newEGI = foldl (\gi eid -> let egi = getEdgeGI (fromEnum eid) gi
-                                           in M.insert (fromEnum eid) (edgeGiSetPosition (cPosition egi) typeGI) gi) (snd giM) sEids
-                newGI = (fst giM, newEGI)
-                newGraph = foldl (\g eid -> updateEdgePayload eid g (\info -> infoSetType info typeInfo)) g sEids
-            writeIORef st (editorSetGI newGI . editorSetGraph newGraph $ es)
-            writeIORef currentEdgeType $ Just typeInfo
-            Gtk.widgetQueueDraw canvas
-            setCurrentValidFlag store st activeTypeGraph currentPath
+  on edgeTCBox #changed $ edgeTCBoxCallback edgeTCBox
+  on edgeTCBoxR #changed $ edgeTCBoxCallback edgeTCBoxR
 
   -- event bindings for the graphs' tree ---------------------------------------
   -- changed the selected graph
@@ -1022,8 +1041,33 @@ startGUI = do
         case (gType) of
           0 -> return ()
           1 -> changeInspector typeInspBox typeNameBox
-          _ -> do
+          2 -> do
             changeInspector hostInspBox hostNameBox
+            writeIORef currentShape NCircle
+            writeIORef currentStyle ENormal
+            writeIORef currentC (1,1,1)
+            writeIORef currentLC (0,0,0)
+            -- update nodes and edges elements according to the active typeGraph
+            pnt <- readIORef possibleNodeTypes
+            pet <- readIORef possibleEdgeTypes
+            es <- readIORef st
+            let g = editorGetGraph es
+                (ngi, egi) = editorGetGI es
+                fn node = (nid, infoType (nodeInfo node), getNodeGI nid ngi)
+                          where nid = fromEnum (nodeId node)
+                gn (i,t,gi) = case M.lookup t pnt of
+                                Nothing -> (i,gi)
+                                Just (gi',_) -> (i,nodeGiSetColor (fillColor gi') . nodeGiSetShape (shape gi') $ gi)
+                fe edge = (eid, infoType (edgeInfo edge), getEdgeGI eid egi)
+                          where eid = fromEnum (edgeId edge)
+                ge (i,t,gi) = case M.lookup t pet of
+                                Nothing -> (i,gi)
+                                Just (gi',_) -> (i,edgeGiSetColor (color gi') . edgeGiSetStyle (style gi') $ gi)
+                newNodeGI = M.fromList . map gn . map fn $ nodes g
+                newEdgeGI = M.fromList . map ge . map fe $ edges g
+            writeIORef st (editorSetGI (newNodeGI, newEdgeGI) es)
+          3 -> do
+            changeInspector ruleInspBox ruleNameBox
             writeIORef currentShape NCircle
             writeIORef currentStyle ENormal
             writeIORef currentC (1,1,1)
@@ -1320,6 +1364,7 @@ updateHostInspector st possibleNT possibleET currentNodeType currentEdgeType (en
       set nodeTBox [#visible := True]
 
 
+
 -- draw a graph in the canvas --------------------------------------------------
 drawTypeGraph :: EditorState -> Maybe (Double,Double,Double,Double)-> Render ()
 drawTypeGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
@@ -1441,6 +1486,8 @@ drawHostGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
 
 -- validation ------------------------------------------------------------------
 -- generate a mask graph that highlights that informs if a node/edge has a unique name
+-- True -> element has unique name
+-- False -> element has conflict
 nameConflictGraph :: Graph String String -> Graph Bool Bool
 nameConflictGraph g = fromNodesAndEdges vn ve
   where
@@ -1450,9 +1497,6 @@ nameConflictGraph g = fromNodesAndEdges vn ve
     es = edges g
     uniqueN n = Node (nodeId n) $ notElem (nodeInfo n) $ map nodeInfo . filter (\n' -> nodeId n' /= nodeId n) $ ns
     uniqueE e = Edge (edgeId e) (sourceId e) (targetId e) $ notElem (edgeInfo e) $ map edgeInfo . filter (\e' -> edgeId e' /= edgeId e) $ es
-    allDiff l = case l of
-      [] -> True
-      x:xs -> (notElem x xs) && (allDiff xs)
 
 -- generate a mask graph that says if a node/edge is valid according to a typeGraph or not
 validationGraph :: Graph String String -> Graph String String -> Graph Bool Bool
@@ -1499,7 +1543,7 @@ isGraphValid g tg = and $ concat [map nodeInfo $ nodes validG, map edgeInfo $ ed
       where
         validG = validationGraph g tg
 
--- update the active typegraph, checking if it's valid or not
+-- update the active typegraph if the corresponding diagraph is valid, set it as empty if not
 updateActiveTG :: IORef EditorState -> IORef (Graph String String) -> IORef (M.Map String (NodeGI, Int32)) -> IORef (M.Map String (EdgeGI, Int32)) -> IO ()
 updateActiveTG st activeTypeGraph possibleNodeTypes possibleEdgeTypes = do
         es <- readIORef st

@@ -1,6 +1,6 @@
 -- | Module containing generic auxiliar functions
-module Editor.Helper
-( -- geometry
+module Editor.Helper(
+-- geometry
   pointDistance
 , pointLineDistance
 , addPoint
