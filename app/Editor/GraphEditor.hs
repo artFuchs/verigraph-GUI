@@ -1495,12 +1495,12 @@ nameConflictGraph g = fromNodesAndEdges vn ve
     ve = map uniqueE es
     ns = nodes g
     es = edges g
-    uniqueN n = Node (nodeId n) $ notElem (nodeInfo n) $ map nodeInfo . filter (\n' -> nodeId n' /= nodeId n) $ ns
-    uniqueE e = Edge (edgeId e) (sourceId e) (targetId e) $ notElem (edgeInfo e) $ map edgeInfo . filter (\e' -> edgeId e' /= edgeId e) $ es
+    uniqueN n = Node (nodeId n) $ infoLabel (nodeInfo n) /= "" && (notElem (infoLabel . nodeInfo $ n) $ map nodeInfo . filter (\n' -> nodeId n' /= nodeId n) $ ns)
+    uniqueE e = Edge (edgeId e) (sourceId e) (targetId e) $ infoLabel (edgeInfo e) /= "" && (notElem (infoLabel . edgeInfo $ e) $ map edgeInfo . filter (\e' -> edgeId e' /= edgeId e) $ es)
 
 -- generate a mask graph that says if a node/edge is valid according to a typeGraph or not
-validationGraph :: Graph String String -> Graph String String -> Graph Bool Bool
-validationGraph g tg = fromNodesAndEdges vn ve
+correctTypeGraph :: Graph String String -> Graph String String -> Graph Bool Bool
+correctTypeGraph g tg = fromNodesAndEdges vn ve
   where
     vn = map nodeIsValid $ nodes g
     ve = map edgeIsValid $ edges g
@@ -1556,7 +1556,8 @@ updateActiveTG st activeTypeGraph possibleNodeTypes possibleEdgeTypes = do
                           [] -> True
                           x:xs -> (notElem x xs) && (allDiff xs)
             diffNames = (allDiff (map (infoLabel . nodeInfo) nds)) &&
-                        (allDiff (map (infoLabel . edgeInfo) edgs))
+                        (allDiff (map (infoLabel . edgeInfo) edgs)) &&
+                        notElem "" (concat [(map (infoLabel . edgeInfo) edgs), (map (infoLabel . nodeInfo) nds)])
         if diffNames
           then do -- load the variables with the info from the typeGraph
             writeIORef activeTypeGraph g
