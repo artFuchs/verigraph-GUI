@@ -8,7 +8,10 @@ module Editor.Info(
 , infoSetOperation
 )where
 
--- An info is a string in the format "label{type}operation"
+-- An info is a string in the format "label{type}operation", where
+--    label is the text of the node/edge
+--    type is a label of a node/edge of the typegraph
+--    operation is: "", "new" or "del"
 type Info = String
 
 infoLabel :: Info -> String
@@ -32,6 +35,7 @@ infoTypeAux (c:cs) = c : infoTypeAux cs
 infoOperation :: Info -> String
 infoOperation [] = []
 infoOperation ('}':cs) = unwords . words $ cs
+infoOperation (c:cs) = infoOperation cs
 
 infoSetLabel :: Info -> String -> Info
 infoSetLabel i l = l ++ "{" ++ infoType i ++ "}" ++ infoOperation i

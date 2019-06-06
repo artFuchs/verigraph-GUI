@@ -7,10 +7,14 @@ main = startGUI
 Tarefas ---------------------------------------------------------------------
 *Adicionar diferentes tipos de grafos, mudando o inspector (painel a direita) quando o usuario clicar nele
   *Rule  - grafo em que elementos indicam transformações sobre grafos Host
-
+*Arrumar bug - objetos tendo a aparencia modificada apenas ao mover se configurar o tipo através da entry
+*Mostrar informação de operação para elementos de ruleGraphs
+*Validar operações em ruleGraphs
+ - arestas não podem conectar um objeto que sera deletado
+ - endoarestas não podem ser deletadas de um objeto que será criado
 
 Progresso -------------------------------------------------------------------
-* Informar erros nos hostGraphs e rulesGraphs assim que o typeGraph for modificado
+*Informar erros nos hostGraphs e rulesGraphs assim que o typeGraph for modificado
 
 
 
@@ -61,4 +65,5 @@ Feito -----------------------------------------------------------------------
 *Arrumar função para indicar mudanças - ela está indicando mudanças em nodos do tipo Topic
 *Indicar conflitos no typeGraph
 *Adicionar coluna na treeview para atributo de ativação de ruleGraphs
+*Associar informação de operação para ruleGraphs
 -}

@@ -981,6 +981,28 @@ startGUI = do
   on edgeTCBox #changed $ edgeTCBoxCallback edgeTCBox
   on edgeTCBoxR #changed $ edgeTCBoxCallback edgeTCBoxR
 
+  -- choose a operaion in the operation comboBox
+  on operationCBox #changed $ do
+    t <- readIORef currentGraphType
+    if t < 3
+      then return ()
+      else do
+        index <- Gtk.comboBoxGetActive operationCBox
+        if index < 0 || index > 2
+          then return ()
+          else do
+            es <- readIORef st
+            operationInfo <- return $ case index of
+              0 -> ""
+              1 -> "new"
+              2 -> "del"
+            let (sNids,sEids) = editorGetSelected es
+                g = editorGetGraph es
+                newGraph  = foldl (\g nid -> updateNodePayload nid g (\info -> infoSetOperation info operationInfo)) g sNids
+                newGraph' = foldl (\g eid -> updateEdgePayload eid g (\info -> infoSetOperation info operationInfo)) newGraph sEids
+            writeIORef st (editorSetGraph newGraph' es)
+            Gtk.widgetQueueDraw canvas
+
   -- event bindings for the graphs' tree ---------------------------------------
   -- changed the selected graph
   let changeInspector inspectorBox nameBox = do
@@ -1266,7 +1288,8 @@ updateTypeInspector st currentC currentLC (nameEntry, colorBtn, lcolorBtn, radio
       set frameStyle [#visible := True]
     (n,0) -> do
       let nid = nodeId (ns!!0)
-          info = T.pack . unifyNames $ map (infoLabel . nodeInfo) ns
+          -- info = T.pack . unifyNames $ map (infoLabel . nodeInfo) ns
+          info = T.pack . unifyNames $ map nodeInfo ns
           gi = getNodeGI (fromEnum nid) ngiM
           (r,g,b) = fillColor gi
           (r',g',b') = lineColor gi
@@ -1287,7 +1310,8 @@ updateTypeInspector st currentC currentLC (nameEntry, colorBtn, lcolorBtn, radio
       set frameStyle [#visible := False]
     (0,n) -> do
       let eid = edgeId (es!!0)
-          info = T.pack . unifyNames $ map (infoLabel . edgeInfo) es
+          --info = T.pack . unifyNames $ map (infoLabel . edgeInfo) es
+          info = T.pack . unifyNames $ map edgeInfo es
           gi = getEdgeGI (fromEnum eid) egiM
           (r,g,b) = color gi
           edgeStyle = style gi
@@ -1304,7 +1328,8 @@ updateTypeInspector st currentC currentLC (nameEntry, colorBtn, lcolorBtn, radio
       set frameShape [#visible := False]
       set frameStyle [#visible := True]
     _ -> do
-      let info = T.pack . unifyNames $ concat [(map (infoLabel . edgeInfo) es), (map (infoLabel . nodeInfo) ns)]
+      -- let info = T.pack . unifyNames $ concat [(map (infoLabel . edgeInfo) es), (map (infoLabel . nodeInfo) ns)]
+      let info = T.pack . unifyNames $ concat [(map edgeInfo es), (map nodeInfo ns)]
       set nameEntry [#text := info ]
       Gtk.colorChooserSetRgba colorBtn emptyColor
       Gtk.colorChooserSetRgba lcolorBtn emptyColor
@@ -1325,7 +1350,7 @@ updateHostInspector st possibleNT possibleET currentNodeType currentEdgeType (en
       ns = filter (\n -> elem (nodeId n) $ fst $ editorGetSelected est) $ nodes g
       es = filter (\e -> elem (edgeId e) $ snd $ editorGetSelected est) $ edges g
       (ngiM,egiM) = editorGetGI est
-      unifyNames (x:xs) = if all (==x) xs then x else "----"
+      unifyNames (x:xs) = if all (==x) xs then x else ""
   case (length ns, length es) of
     (0,0) -> do
       Gtk.comboBoxSetActive nodeTCBox $ fromMaybe (-1) (Just snd <*> (M.lookup cNT pNT))
@@ -1362,6 +1387,58 @@ updateHostInspector st possibleNT possibleET currentNodeType currentEdgeType (en
       Gtk.comboBoxSetActive edgeTCBox typeEI
       set edgeTBox [#visible := True]
       set nodeTBox [#visible := True]
+
+updateRuleInspector :: IORef EditorState -> IORef (M.Map String (NodeGI, Int32)) -> IORef (M.Map String (EdgeGI, Int32)) ->
+                       IORef (Maybe String) -> IORef (Maybe String) -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.ComboBoxText) ->
+                       (Gtk.Box, Gtk.Box) -> IO()
+updateRuleInspector st possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox, operationCBox) (nodeTBox, edgeTBox) = do
+  est <- readIORef st
+  pNT <- readIORef possibleNT
+  pET <- readIORef possibleET
+  cNT <- readIORef currentNodeType >>= \x -> return $ fromMaybe "" x
+  cET <- readIORef currentEdgeType >>= \x -> return $ fromMaybe "" x
+  let g = editorGetGraph est
+      ns = filter (\n -> elem (nodeId n) $ fst $ editorGetSelected est) $ nodes g
+      es = filter (\e -> elem (edgeId e) $ snd $ editorGetSelected est) $ edges g
+      (ngiM,egiM) = editorGetGI est
+      unifyNames (x:xs) = if all (==x) xs then x else ""
+  case (length ns, length es) of
+    (0,0) -> do
+      Gtk.comboBoxSetActive nodeTCBox $ fromMaybe (-1) (Just snd <*> (M.lookup cNT pNT))
+      Gtk.comboBoxSetActive edgeTCBox $ fromMaybe (-1) (Just snd <*> (M.lookup cET pET))
+      set nodeTBox [#visible := True]
+      set edgeTBox [#visible := True]
+    (n,0) -> do
+      let typeL = unifyNames $ map (infoType . nodeInfo) ns
+          typeI = case M.lookup typeL pNT of
+                  Nothing -> -1
+                  Just (gi,i) -> i
+      Gtk.comboBoxSetActive nodeTCBox typeI
+      set nodeTBox [#visible := True]
+      set edgeTBox [#visible := False]
+    (0,e) -> do
+      let typeL = unifyNames $ map (infoType . edgeInfo) es
+          typeI = case M.lookup typeL pET of
+                  Nothing -> -1
+                  Just (gi,i) -> i
+
+      Gtk.comboBoxSetActive edgeTCBox typeI
+      set edgeTBox [#visible := True]
+      set nodeTBox [#visible := False]
+    (n,e) -> do
+      let typeNL = unifyNames $ map (infoType . nodeInfo) ns
+          typeNI = case M.lookup typeNL pNT of
+                  Nothing -> -1
+                  Just (gi,i) -> i
+          typeEL = unifyNames $ map (infoType . edgeInfo) es
+          typeEI = case M.lookup typeEL pET of
+                  Nothing -> -1
+                  Just (gi,i) -> i
+      Gtk.comboBoxSetActive nodeTCBox typeNI
+      Gtk.comboBoxSetActive edgeTCBox typeEI
+      set edgeTBox [#visible := True]
+      set nodeTBox [#visible := True]
+
 
 
 
@@ -1435,7 +1512,7 @@ drawHostGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
       errorColor = (0.9,0.2,0.2)
       bothColor = (0.47,0.13,0.87)
 
-  let vg = validationGraph g tg
+  let vg = correctTypeGraph g tg
   -- draw the edges
   forM (edges g) (\e -> do
     let dstN = M.lookup (fromEnum . targetId $ e) nGI
@@ -1520,7 +1597,7 @@ correctTypeGraph g tg = fromNodesAndEdges vn ve
     -- typedGraph
     typedG = TG.fromGraphMorphism $ Morph.fromGraphsAndLists g' tg' npairs epairs
 
-    -- functions to create the nodes and edges of the validationGraph
+    -- functions to create the nodes and edges of the correctTypeGraph
     nodeIsValid n = Node (nodeId n) $ case Morph.applyNodeId typedG (nodeId n) of
                       Just _ -> True
                       Nothing -> False
@@ -1541,7 +1618,7 @@ correctTypeGraph g tg = fromNodesAndEdges vn ve
 isGraphValid :: Graph String String -> Graph String String -> Bool
 isGraphValid g tg = and $ concat [map nodeInfo $ nodes validG, map edgeInfo $ edges validG]
       where
-        validG = validationGraph g tg
+        validG = correctTypeGraph g tg
 
 -- update the active typegraph if the corresponding diagraph is valid, set it as empty if not
 updateActiveTG :: IORef EditorState -> IORef (Graph String String) -> IORef (M.Map String (NodeGI, Int32)) -> IORef (M.Map String (EdgeGI, Int32)) -> IO ()

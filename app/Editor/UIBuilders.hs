@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 
 -- | This module contains the UI definition
-module Editor.UIBuilders( 
+module Editor.UIBuilders(
   buildMainWindow
 , buildTypeInspector
 , buildHostInspector
@@ -223,6 +223,7 @@ buildRuleInspector = do
   operationLabel <- new Gtk.Label [ #label := "Operation: "]
   Gtk.boxPackStart operationBox operationLabel False False 0
   operationComboBox <- new Gtk.ComboBoxText []
+  Gtk.comboBoxTextAppendText operationComboBox ""
   Gtk.comboBoxTextAppendText operationComboBox "create"
   Gtk.comboBoxTextAppendText operationComboBox "delete"
   Gtk.boxPackStart operationBox operationComboBox True True 0
