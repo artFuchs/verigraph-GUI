@@ -98,7 +98,7 @@ startGUI = do
   (ruleInspBox, ruleNameBox, nodeTCBoxR, edgeTCBoxR, operationCBox, ruleInspBoxes) <- buildRuleInspector
   let
     hostInspWidgets = (nameEntry, nodeTCBox, edgeTCBox)
-    ruleInspWidgets = (nameEntry, nodeTCBoxR, edgeTCBoxR)
+    ruleInspWidgets = (nameEntry, nodeTCBoxR, edgeTCBoxR, operationCBox)
 
   #showAll window
 
@@ -281,8 +281,10 @@ startGUI = do
               modifyIORef st (editorSetGraph graph . editorSetSelected (jointSN,jointSE))
           Gtk.widgetQueueDraw canvas
           updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
-          updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
-          updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
+          case gType of
+            2 -> updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
+            3 -> updateRuleInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
+            _ -> return ()
         -- right button click: create nodes and insert edges
         (3, False) -> liftIO $ do
           let g = editorGetGraph es
@@ -345,8 +347,10 @@ startGUI = do
 
           Gtk.widgetQueueDraw canvas
           updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
-          updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
-          updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
+          case gType of
+            2 -> updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
+            3 -> updateRuleInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
+            _ -> return ()
         _           -> return ()
       return True
 
@@ -414,8 +418,10 @@ startGUI = do
                 newEs = editorSetSelected (sNodes, sEdges) $ es
             writeIORef st newEs
             updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
-            updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
-            updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
+            case gType of
+              2 -> updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
+              3 -> updateRuleInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
+              _ -> return ()
           ((n,e), Nothing) -> return ()
           _ -> return ()
       _ -> return ()
@@ -1401,41 +1407,43 @@ updateRuleInspector st possibleNT possibleET currentNodeType currentEdgeType (en
       ns = filter (\n -> elem (nodeId n) $ fst $ editorGetSelected est) $ nodes g
       es = filter (\e -> elem (edgeId e) $ snd $ editorGetSelected est) $ edges g
       (ngiM,egiM) = editorGetGI est
-      unifyNames (x:xs) = if all (==x) xs then x else ""
+      unifyNames [] = ""
+      unifyNames (x:xs) = if all (==x) xs then x else "------"
+      typeNL = unifyNames $ map (infoType . nodeInfo) ns
+      typeEL = unifyNames $ map (infoType . edgeInfo) es
+      operation = unifyNames $ concat [map (infoOperation . edgeInfo) es, map (infoOperation . nodeInfo) ns]
+      typeNI = case M.lookup typeNL pNT of
+              Nothing -> -1
+              Just (gi,i) -> i
+      typeEI = case M.lookup typeEL pET of
+              Nothing -> -1
+              Just (gi,i) -> i
+      opI = case operation of
+        "" -> 0
+        "new" -> 1
+        "del" -> 2
+        _ -> -1
   case (length ns, length es) of
     (0,0) -> do
       Gtk.comboBoxSetActive nodeTCBox $ fromMaybe (-1) (Just snd <*> (M.lookup cNT pNT))
       Gtk.comboBoxSetActive edgeTCBox $ fromMaybe (-1) (Just snd <*> (M.lookup cET pET))
+      Gtk.comboBoxSetActive operationCBox opI
       set nodeTBox [#visible := True]
       set edgeTBox [#visible := True]
     (n,0) -> do
-      let typeL = unifyNames $ map (infoType . nodeInfo) ns
-          typeI = case M.lookup typeL pNT of
-                  Nothing -> -1
-                  Just (gi,i) -> i
-      Gtk.comboBoxSetActive nodeTCBox typeI
+      Gtk.comboBoxSetActive nodeTCBox typeNI
+      Gtk.comboBoxSetActive operationCBox opI
       set nodeTBox [#visible := True]
       set edgeTBox [#visible := False]
     (0,e) -> do
-      let typeL = unifyNames $ map (infoType . edgeInfo) es
-          typeI = case M.lookup typeL pET of
-                  Nothing -> -1
-                  Just (gi,i) -> i
-
-      Gtk.comboBoxSetActive edgeTCBox typeI
+      Gtk.comboBoxSetActive edgeTCBox typeNI
+      Gtk.comboBoxSetActive operationCBox opI
       set edgeTBox [#visible := True]
       set nodeTBox [#visible := False]
     (n,e) -> do
-      let typeNL = unifyNames $ map (infoType . nodeInfo) ns
-          typeNI = case M.lookup typeNL pNT of
-                  Nothing -> -1
-                  Just (gi,i) -> i
-          typeEL = unifyNames $ map (infoType . edgeInfo) es
-          typeEI = case M.lookup typeEL pET of
-                  Nothing -> -1
-                  Just (gi,i) -> i
       Gtk.comboBoxSetActive nodeTCBox typeNI
       Gtk.comboBoxSetActive edgeTCBox typeEI
+      Gtk.comboBoxSetActive operationCBox opI
       set edgeTBox [#visible := True]
       set nodeTBox [#visible := True]
 
