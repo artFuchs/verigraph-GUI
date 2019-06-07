@@ -36,6 +36,7 @@ import qualified Editor.DiaGraph as DG
 import Editor.EditorState
 import Editor.SaveLoad
 import Editor.Info
+import Editor.GraphValidation
 
 --------------------------------------------------------------------------------
 -- MODULE STRUCTURES -----------------------------------------------------------
@@ -193,7 +194,7 @@ startGUI = do
         renderWithContext context $ drawHostGraph es sq tg
       3 -> do
         tg <- readIORef activeTypeGraph
-        renderWithContext context $ drawHostGraph es sq tg
+        renderWithContext context $ drawRuleGraph es sq tg
       _ -> return ()
     return False
 
@@ -398,6 +399,7 @@ startGUI = do
   -- mouse button release on canvas
   on canvas #buttonReleaseEvent $ \eventButton -> do
     b <- get eventButton #button
+    gType <- readIORef currentGraphType
     case b of
       1 -> liftIO $ do
         writeIORef movingGI False
@@ -1569,64 +1571,70 @@ drawHostGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
     Nothing -> return ()
   return ()
 
--- validation ------------------------------------------------------------------
--- generate a mask graph that highlights that informs if a node/edge has a unique name
--- True -> element has unique name
--- False -> element has conflict
-nameConflictGraph :: Graph String String -> Graph Bool Bool
-nameConflictGraph g = fromNodesAndEdges vn ve
-  where
-    vn = map uniqueN ns
-    ve = map uniqueE es
-    ns = nodes g
-    es = edges g
-    uniqueN n = Node (nodeId n) $ infoLabel (nodeInfo n) /= "" && (notElem (infoLabel . nodeInfo $ n) $ map nodeInfo . filter (\n' -> nodeId n' /= nodeId n) $ ns)
-    uniqueE e = Edge (edgeId e) (sourceId e) (targetId e) $ infoLabel (edgeInfo e) /= "" && (notElem (infoLabel . edgeInfo $ e) $ map edgeInfo . filter (\e' -> edgeId e' /= edgeId e) $ es)
+drawRuleGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph String String -> Render ()
+drawRuleGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
+  scale z z
+  translate px py
 
--- generate a mask graph that says if a node/edge is valid according to a typeGraph or not
-correctTypeGraph :: Graph String String -> Graph String String -> Graph Bool Bool
-correctTypeGraph g tg = fromNodesAndEdges vn ve
-  where
-    vn = map nodeIsValid $ nodes g
-    ve = map edgeIsValid $ edges g
-    -- auxiliar functions to define the typedGraph
-    mkpairs xs ys = do x <- xs
-                       y <- ys
-                       return (x,y)
-    nodeToJust = \n -> Node (nodeId n) (Just $ nodeInfo n)
-    edgeToJust = \e -> Edge (edgeId e) (sourceId e) (targetId e) (Just $ edgeInfo e)
+  -- specify colors for select and error
+  let selectColor = (0.29,0.56,0.85)
+      errorColor = (0.9,0.2,0.2)
+      bothColor = (0.47,0.13,0.87)
 
-    -- auxiliar structs to define the typedGraph
-    epairs = map (applyPair edgeId) . filter (\(e,et) -> infoLabel (edgeInfo et) == infoType (edgeInfo e)) $ mkpairs (edges g) (edges tg)
-    npairs = map (applyPair nodeId) . filter (\(n,nt) -> infoLabel (nodeInfo nt) == infoType (nodeInfo n)) $ mkpairs (nodes g) (nodes tg)
-    g' = fromNodesAndEdges (map nodeToJust (nodes g)) (map edgeToJust (edges g))
-    tg' = fromNodesAndEdges (map nodeToJust (nodes tg)) (map edgeToJust (edges tg))
+  let vg = correctTypeGraph g tg
+  let ovg = opValidationGraph g
 
-    -- typedGraph
-    typedG = TG.fromGraphMorphism $ Morph.fromGraphsAndLists g' tg' npairs epairs
+  -- draw the edges
+  forM (edges g) (\e -> do
+    let dstN = M.lookup (fromEnum . targetId $ e) nGI
+        srcN = M.lookup (fromEnum . sourceId $ e) nGI
+        egi  = M.lookup (fromEnum . edgeId   $ e) eGI
+        info = (infoLabel (edgeInfo e) )
+        selected = (edgeId e) `elem` sEdges
+        typeError = case lookupEdge (edgeId e) vg of
+                      Just e' -> not $ edgeInfo e'
+                      Nothing -> True
+        operationError = case lookupEdge (edgeId e) ovg of
+                          Just e' -> not $ edgeInfo e'
+                          Nothing -> True
+        color = case (selected,typeError || operationError) of
+                 (False,False) -> (0,0,0)
+                 (False,True) -> errorColor
+                 (True,False) -> selectColor
+                 (True,True) -> bothColor
+    case (egi, srcN, dstN) of
+      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabel (edgeInfo e)) src dst (selected || typeError || operationError) color
+      _ -> return ())
 
-    -- functions to create the nodes and edges of the correctTypeGraph
-    nodeIsValid n = Node (nodeId n) $ case Morph.applyNodeId typedG (nodeId n) of
-                      Just _ -> True
-                      Nothing -> False
+  -- draw the nodes
+  forM (nodes g) (\n -> do
+    let ngi = M.lookup (fromEnum . nodeId $ n) nGI
+        selected = (nodeId n) `elem` (sNodes)
+        info = nodeInfo n
+        label = infoLabel info
+        typeError = case lookupNode (nodeId n) vg of
+                      Just n' -> not $ nodeInfo n'
+                      Nothing -> True
+        color = case (selected,typeError) of
+                  (False,False) -> (0,0,0)
+                  (False,True) -> errorColor
+                  (True,False) -> selectColor
+                  (True,True) -> bothColor
+    case (ngi) of
+      Just gi -> renderNode gi label (selected || typeError) color
+      Nothing -> return ())
 
-    edgeIsValid e = Edge (edgeId e) (sourceId e) (targetId e) nodesTypesAreValid
-      where
-        tge = Morph.applyEdgeId typedG (edgeId e)
-        tgtgt = Morph.applyNodeId typedG (targetId e)
-        tgsrc = Morph.applyNodeId typedG (sourceId e)
-        nodesTypesAreValid = case (tge, tgsrc, tgtgt) of
-                              (Just eid, Just srcid, Just tgtid) -> srcid == srce' && tgtid == tgte'
-                                where
-                                  e' = fromJust . lookupEdge eid $ tg
-                                  tgte' = nodeId . fromJust . lookupNode (targetId e') $ tg
-                                  srce' = nodeId . fromJust . lookupNode (sourceId e') $ tg
-                              _ -> False
-
-isGraphValid :: Graph String String -> Graph String String -> Bool
-isGraphValid g tg = and $ concat [map nodeInfo $ nodes validG, map edgeInfo $ edges validG]
-      where
-        validG = correctTypeGraph g tg
+  -- draw the selectionBox
+  case sq of
+    Just (x,y,w,h) -> do
+      rectangle x y w h
+      setSourceRGBA 0.29 0.56 0.85 0.5
+      fill
+      rectangle x y w h
+      setSourceRGBA 0.29 0.56 0.85 1
+      stroke
+    Nothing -> return ()
+  return ()
 
 -- update the active typegraph if the corresponding diagraph is valid, set it as empty if not
 updateActiveTG :: IORef EditorState -> IORef (Graph String String) -> IORef (M.Map String (NodeGI, Int32)) -> IORef (M.Map String (EdgeGI, Int32)) -> IO ()
