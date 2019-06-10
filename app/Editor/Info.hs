@@ -1,5 +1,6 @@
 module Editor.Info(
   Info
+, infoVisible
 , infoLabel
 , infoType
 , infoOperation
@@ -8,19 +9,30 @@ module Editor.Info(
 , infoSetOperation
 )where
 
--- An info is a string in the format "label{type}operation", where
---    label is the text of the node/edge
+-- An info is a string in the format "[operation:]label{type}", where
+--    [operation:]label is the text of the node/edge
 --    type is a label of a node/edge of the typegraph
 --    operation is: "", "new" or "del"
 type Info = String
 
-infoLabel :: Info -> String
-infoLabel info = unwords . words $ infoLabelAux info
+infoVisible :: Info -> String
+infoVisible info = unwords . words $ infoVisibleAux info
 
-infoLabelAux :: Info -> String
+infoVisibleAux :: Info -> String
+infoVisibleAux [] = []
+infoVisibleAux ('{':cs) = []
+infoVisibleAux (c:cs) = c : infoVisible cs
+
+infoLabel :: Info -> String
+infoLabel [] = []
+infoLabel i = case infoOperation i of
+  [] -> infoVisible i
+  o -> infoLabelAux . infoVisible $ i
+
+infoLabelAux :: String -> String
 infoLabelAux [] = []
-infoLabelAux ('{':cs) = []
-infoLabelAux (c:cs) = c : infoLabel cs
+infoLabelAux (':':cs) = cs
+infoLabelAux (c:cs) = infoLabelAux cs
 
 infoType :: Info -> String
 infoType [] = []
@@ -33,15 +45,26 @@ infoTypeAux ('}':cs) = []
 infoTypeAux (c:cs) = c : infoTypeAux cs
 
 infoOperation :: Info -> String
-infoOperation [] = []
-infoOperation ('}':cs) = unwords . words $ cs
-infoOperation (c:cs) = infoOperation cs
+infoOperation info = case infoOperationAux info of
+  Nothing -> []
+  Just cs -> cs
+
+infoOperationAux :: Info -> Maybe String
+infoOperationAux [] = Nothing
+infoOperationAux (':':cs) = Just []
+infoOperationAux ('{':cs) = Nothing
+infoOperationAux (c:cs) = Just (c:) <*> infoOperationAux cs
 
 infoSetLabel :: Info -> String -> Info
-infoSetLabel i l = l ++ "{" ++ infoType i ++ "}" ++ infoOperation i
+infoSetLabel i l = case infoOperation i of
+  [] -> l ++ "{" ++ infoType i ++ "}"
+  o  -> o ++ ":" ++ l ++ "{" ++ infoType i ++ "}"
 
 infoSetType :: Info -> String -> Info
-infoSetType i t = infoLabel i ++ "{" ++ t ++ "}" ++ infoOperation i
+infoSetType i t = case infoOperation i of
+  [] -> infoLabel i ++ "{" ++ t ++ "}"
+  o  -> o ++ ":" ++ infoLabel i ++ "{" ++ t ++ "}"
 
 infoSetOperation :: Info -> String -> Info
-infoSetOperation i o = infoLabel i ++ "{" ++ infoType i ++ "}" ++ o
+infoSetOperation i "" = infoLabel i ++ "{" ++ infoType i ++ "}"
+infoSetOperation i o = o ++ ":" ++ infoLabel i ++ "{" ++ infoType i ++ "}"
