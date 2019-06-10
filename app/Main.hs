@@ -5,8 +5,7 @@ main = startGUI
 
 {-
 Tarefas ---------------------------------------------------------------------
-*Adicionar diferentes tipos de grafos, mudando o inspector (painel a direita) quando o usuario clicar nele
-  *Rule  - grafo em que elementos indicam transformações sobre grafos Host
+*Gerar uma especificação de gramática compativel com o Verigraph
 *Arrumar bug - objetos tendo a aparencia modificada apenas ao mover se configurar o tipo através da entry
 *Modificar interface para que o painel do inspector não seja mostrado a toda hora.
   *Mostra-lo ao dar 2 cliques em um elemento.
@@ -50,13 +49,7 @@ Feito -----------------------------------------------------------------------
 *Adicionar diferentes tipos de grafos, mudando o inspector (painel a direita) quando o usuario clicar nele
   *Typed - grafo com mais liberdade de opções, define os tipos dos elementos
   *Host - grafos em que elementos são associados a um tipo e herdam a informação visual desses elementos
-   - fazer inspector mudar para hostInspector
-   - carregar comboboxes com informações de tipo
-   - fazer elementos do diagrama serem associados aos tipos
-      - fazer com que a informação de um elemento (nodeInfo, edgeInfo) seja uma string no formato " label { tipo }"
-   - mudar a aparência dos elementos do diagrama conforme seus tipos
-   - fazer atualização do hostInspector com a função updateInspector
-   - indicar erro caso o tipo do elemento não esteja especificado no typeGraph
+  *Rule  - grafo em que elementos indicam transformações sobre grafos Host
 *Verificar se um elemento do hostGraph foi mapeado corretamente para TypedGraph
 *Adicionar coluna na treeView para indicar mudança
 *Atualizar informações do typegraph ativado automaticamente durante a edição
