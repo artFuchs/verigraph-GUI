@@ -1448,7 +1448,7 @@ updateRuleInspector st possibleNT possibleET currentNodeType currentEdgeType (en
       set nodeTBox [#visible := True]
       set edgeTBox [#visible := False]
     (0,e) -> do
-      Gtk.comboBoxSetActive edgeTCBox typeNI
+      Gtk.comboBoxSetActive edgeTCBox typeEI
       Gtk.comboBoxSetActive operationCBox opI
       set edgeTBox [#visible := True]
       set nodeTBox [#visible := False]

@@ -204,25 +204,22 @@ renderNormalEdge edge content nodeSrc nodeDst drawShadow (sr,sg,sb) highlightTex
 
   -- draw Label
   if null content
-    then  return ()
-    else  do
+    then return ()
+    else do
       pL <- GRPC.createLayout content
-      case highlightText of
-        False -> do
-          desc <- liftIO $ GRP.fontDescriptionFromString "Sans Regular 10"
-          liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
-          setSourceRGB r g b
-        True -> do
-          let (r,g,b) = textColor
-          desc <- liftIO $ GRP.fontDescriptionFromString "Sans Bold 10"
-          liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
-          setSourceRGB r g b
+      desc <- case highlightText of
+        False -> liftIO $ GRP.fontDescriptionFromString "Sans Regular 10"
+        True -> liftIO $ GRP.fontDescriptionFromString "Sans Bold 10"
+      (rl,gl,bl) <- case highlightText of
+        False -> return (r,g,b)
+        True -> return textColor
+      liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
       (_, PangoRectangle px py pw ph) <- liftIO $ layoutGetExtents pL
       let a = angle (x1,y1) (x2,y2)
           (x0,y0) = multPoint (quadrant a) (pw/2,ph/2)
           minD = (abs $ tan(a)*x0 + y0) / sqrt(tan(a)*tan(a) + 1)
           labelPos = pointAt (a - pi/2) (minD+8) (xe, ye)
-      setSourceRGB r g b
+      setSourceRGB rl gl bl
       moveTo (fst labelPos - pw/2) (snd labelPos - ph/2)
       showLayout pL
 
@@ -273,16 +270,14 @@ renderLoop edge content node drawShadow (sr,sg,sb) highlightText textColor = do
     then  return ()
     else  do
       pL <- GRPC.createLayout content
-      case highlightText of
-        False -> do
-          desc <- liftIO $ GRP.fontDescriptionFromString "Sans Regular 10"
-          liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
-          setSourceRGB rl gl bl
-        True -> do
-          let (r,g,b) = textColor
-          desc <- liftIO $ GRP.fontDescriptionFromString "Sans Bold 10"
-          liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
-          setSourceRGB r g b
+      desc <- case highlightText of
+        False -> liftIO $ GRP.fontDescriptionFromString "Sans Regular 10"
+        True -> liftIO $ GRP.fontDescriptionFromString "Sans Bold 10"
+      (r,g,b) <- case highlightText of
+        True -> return textColor
+        False -> return (rl,gl,bl)
+      liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
+      setSourceRGB r g b
       (_, PangoRectangle px py pw ph) <- liftIO $ layoutGetExtents pL
       let a = angle (x,y) (xe,ye) + pi/2
           (x0,y0) = multPoint (quadrant a) (pw/2,ph/2)
