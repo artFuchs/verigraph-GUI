@@ -8,12 +8,12 @@ Tarefas ---------------------------------------------------------------------
 *Adicionar diferentes tipos de grafos, mudando o inspector (painel a direita) quando o usuario clicar nele
   *Rule  - grafo em que elementos indicam transformações sobre grafos Host
 *Arrumar bug - objetos tendo a aparencia modificada apenas ao mover se configurar o tipo através da entry
-*Mostrar informação de operação para elementos de ruleGraphs
-
+*Modificar interface para que o painel do inspector não seja mostrado a toda hora.
+  *Mostra-lo ao dar 2 cliques em um elemento.
+*Arrumar bug - arestas recém criadas em hostGraphs e ruleGraphs não recebem uma label automática.
 
 Progresso -------------------------------------------------------------------
-*Informar erros nos hostGraphs e rulesGraphs assim que o typeGraph for modificado
-
+*Mostrar informação de operação para elementos de ruleGraphs
 
 
 
@@ -62,9 +62,11 @@ Feito -----------------------------------------------------------------------
 *Atualizar informações do typegraph ativado automaticamente durante a edição
 *Arrumar função para indicar mudanças - ela está indicando mudanças em nodos do tipo Topic
 *Indicar conflitos no typeGraph
+*Informar erros nos hostGraphs e rulesGraphs assim que o typeGraph for modificado
 *Adicionar coluna na treeview para atributo de ativação de ruleGraphs
 *Associar informação de operação para ruleGraphs
 *Validar operações em ruleGraphs
  - arestas não podem conectar um objeto que sera deletado
  - endoarestas não podem ser deletadas de um objeto que será criado
+
 -}

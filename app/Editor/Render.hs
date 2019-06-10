@@ -35,8 +35,8 @@ renderWithContext ct r = withManagedPtr ct $ \p ->
 
 
 -- draw a node with it's label
-renderNode :: NodeGI -> String -> Bool -> (Double,Double,Double) -> Render ()
-renderNode node content drawShadow shadowColor= do
+renderNode :: NodeGI -> String -> Bool -> GIColor -> Bool -> GIColor -> Render ()
+renderNode node content drawShadow shadowColor highlightText textColor = do
   let (x,y) = position node
       (r,g,b) = fillColor node
       (rl,gl,bl) = lineColor node
@@ -49,14 +49,23 @@ renderNode node content drawShadow shadowColor= do
     NRect -> renderRectangle (x, y, pw, ph) (r,g,b) (rl,gl,bl) drawShadow shadowColor
     NSquare -> renderRectangle (x,y, (max pw ph), (max pw ph)) (r,g,b) (rl,gl,bl) drawShadow shadowColor
 
-  setSourceRGB rl gl bl
+
   moveTo (x-(pw/2-2)) (y-(ph/2-2))
 
-  pL <- GRPC.createLayout content
-  desc <- liftIO $ GRP.fontDescriptionFromString "Sans Regular 10"
-  liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
-  showLayout pL
-
+  case highlightText of
+    False -> do
+      setSourceRGB rl gl bl
+      pL <- GRPC.createLayout content
+      desc <- liftIO $ GRP.fontDescriptionFromString "Sans Regular 10"
+      liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
+      showLayout pL
+    True -> do
+      let (r,g,b) = textColor
+      setSourceRGB r g b
+      pL <- GRPC.createLayout content
+      desc <- liftIO $ GRP.fontDescriptionFromString "Sans Bold 10"
+      liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
+      showLayout pL
 
 renderCircle :: (Double,Double) -> Double -> (Double,Double,Double) -> (Double,Double,Double) -> Bool -> (Double,Double,Double) -> Render ()
 renderCircle (x,y) radius (r,g,b) (lr,lg,lb) drawShadow (sr,sg,sb) = do
@@ -92,14 +101,14 @@ renderRectangle (x,y,w,h) (r,g,b) (lr,lg,lb) drawShadow (sr,sg,sb) = do
 
 
 -- draws an edge
-renderEdge :: EdgeGI -> String -> NodeGI -> NodeGI -> Bool -> (Double, Double, Double) -> Render ()
-renderEdge edge content nodeSrc nodeDst drawShadow (shadowColor) = do
+renderEdge :: EdgeGI -> String -> NodeGI -> NodeGI -> Bool -> GIColor -> Bool -> GIColor -> Render ()
+renderEdge edge content nodeSrc nodeDst drawShadow (shadowColor) highlightText textColor = do
   if nodeSrc == nodeDst
-    then renderLoop edge content nodeSrc drawShadow (shadowColor)
-    else renderNormalEdge edge content nodeSrc nodeDst drawShadow (shadowColor)
+    then renderLoop edge content nodeSrc drawShadow (shadowColor) highlightText textColor
+    else renderNormalEdge edge content nodeSrc nodeDst drawShadow (shadowColor) highlightText textColor
 
-renderNormalEdge :: EdgeGI -> String -> NodeGI -> NodeGI -> Bool -> (Double, Double, Double) -> Render ()
-renderNormalEdge edge content nodeSrc nodeDst drawShadow (sr,sg,sb) = do
+renderNormalEdge :: EdgeGI -> String -> NodeGI -> NodeGI -> Bool -> GIColor -> Bool -> GIColor -> Render ()
+renderNormalEdge edge content nodeSrc nodeDst drawShadow (sr,sg,sb) highlightText textColor = do
   -- calculate the intersection points of the edge with the source and target nodes
   let (x1, y1) = position nodeSrc
       (pw, ph) = dims nodeSrc
@@ -198,8 +207,16 @@ renderNormalEdge edge content nodeSrc nodeDst drawShadow (sr,sg,sb) = do
     then  return ()
     else  do
       pL <- GRPC.createLayout content
-      desc <- liftIO $ GRP.fontDescriptionFromString "Sans Regular 10"
-      liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
+      case highlightText of
+        False -> do
+          desc <- liftIO $ GRP.fontDescriptionFromString "Sans Regular 10"
+          liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
+          setSourceRGB r g b
+        True -> do
+          let (r,g,b) = textColor
+          desc <- liftIO $ GRP.fontDescriptionFromString "Sans Bold 10"
+          liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
+          setSourceRGB r g b
       (_, PangoRectangle px py pw ph) <- liftIO $ layoutGetExtents pL
       let a = angle (x1,y1) (x2,y2)
           (x0,y0) = multPoint (quadrant a) (pw/2,ph/2)
@@ -209,8 +226,8 @@ renderNormalEdge edge content nodeSrc nodeDst drawShadow (sr,sg,sb) = do
       moveTo (fst labelPos - pw/2) (snd labelPos - ph/2)
       showLayout pL
 
-renderLoop:: EdgeGI -> String -> NodeGI -> Bool -> (Double, Double, Double) -> Render ()
-renderLoop edge content node drawShadow (sr,sg,sb) = do
+renderLoop:: EdgeGI -> String -> NodeGI -> Bool -> (Double, Double, Double) -> Bool -> GIColor -> Render ()
+renderLoop edge content node drawShadow (sr,sg,sb) highlightText textColor = do
   let (a, d) = cPosition edge
       (x,y) = position node
       (xe, ye) = pointAt a d (x,y)
@@ -256,14 +273,21 @@ renderLoop edge content node drawShadow (sr,sg,sb) = do
     then  return ()
     else  do
       pL <- GRPC.createLayout content
-      desc <- liftIO $ GRP.fontDescriptionFromString "Sans Regular 10"
-      liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
+      case highlightText of
+        False -> do
+          desc <- liftIO $ GRP.fontDescriptionFromString "Sans Regular 10"
+          liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
+          setSourceRGB rl gl bl
+        True -> do
+          let (r,g,b) = textColor
+          desc <- liftIO $ GRP.fontDescriptionFromString "Sans Bold 10"
+          liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
+          setSourceRGB r g b
       (_, PangoRectangle px py pw ph) <- liftIO $ layoutGetExtents pL
       let a = angle (x,y) (xe,ye) + pi/2
           (x0,y0) = multPoint (quadrant a) (pw/2,ph/2)
           minD = (abs $ tan(a)*x0 + y0) / sqrt(tan(a)*tan(a) + 1)
           labelPos = pointAt (a-pi/2) ( minD+8 ) (xe, ye)
-      setSourceRGB rl gl bl
       moveTo (fst labelPos - pw/2) (snd labelPos - ph/2)
       showLayout pL
 

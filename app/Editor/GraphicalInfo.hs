@@ -1,8 +1,8 @@
-module Editor.GraphicalInfo
-( GraphicalInfo (..)
-, GIPos (..)
-, GIDim (..)
-, GIColor (..)
+module Editor.GraphicalInfo(
+  GraphicalInfo (..)
+, GIPos
+, GIDim
+, GIColor
 , NodeShape (..)
 , NodeGI (..)
 , EdgeStyle (..)

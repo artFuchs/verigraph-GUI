@@ -1006,9 +1006,19 @@ startGUI = do
               2 -> "del"
             let (sNids,sEids) = editorGetSelected es
                 g = editorGetGraph es
+                gi = editorGetGI es
                 newGraph  = foldl (\g nid -> updateNodePayload nid g (\info -> infoSetOperation info operationInfo)) g sNids
                 newGraph' = foldl (\g eid -> updateEdgePayload eid g (\info -> infoSetOperation info operationInfo)) newGraph sEids
-            writeIORef st (editorSetGraph newGraph' es)
+            context <- Gtk.widgetGetPangoContext canvas
+            ndims <- forM sNids $ \nid -> do
+              dim <- getStringDims (infoVisible . nodeInfo . fromJust . G.lookupNode nid $ newGraph') context
+              return (nid, dim)
+            edims <- forM sEids $ \eid -> do
+              dim <- getStringDims (infoVisible . edgeInfo . fromJust . G.lookupEdge eid $ newGraph') context
+              return (eid, dim)
+            let newNgiM = foldl (\giM (nid, dim) -> let gi = nodeGiSetDims dim $ getNodeGI (fromEnum nid) giM
+                                                    in M.insert (fromEnum nid) gi giM) (fst gi) ndims
+            writeIORef st (editorSetGI (newNgiM, snd gi) . editorSetGraph newGraph' $ es)
             Gtk.widgetQueueDraw canvas
 
   -- event bindings for the graphs' tree ---------------------------------------
@@ -1480,7 +1490,7 @@ drawTypeGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
           (True,False) -> selectColor
           (True,True) -> bothColor
     case (egi, srcN, dstN) of
-      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabel $ edgeInfo e) src dst (selected || conflict) shadowColor
+      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabel $ edgeInfo e) src dst (selected || conflict) shadowColor False (0,0,0)
       _ -> return ())
 
   -- draw the nodes
@@ -1497,7 +1507,7 @@ drawTypeGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
           (True,True) -> bothColor
         info = infoLabel $ nodeInfo n
     case (ngi) of
-      Just gi -> renderNode gi info (selected || conflict) shadowColor
+      Just gi -> renderNode gi info (selected || conflict) shadowColor False (0,0,0)
       Nothing -> return ())
 
   -- draw the selectionBox
@@ -1538,7 +1548,7 @@ drawHostGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
                  (True,False) -> selectColor
                  (True,True) -> bothColor
     case (egi, srcN, dstN) of
-      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabel (edgeInfo e)) src dst (selected || typeError) color
+      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabel (edgeInfo e)) src dst (selected || typeError) color False (0,0,0)
       _ -> return ())
 
   -- draw the nodes
@@ -1556,7 +1566,7 @@ drawHostGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
                   (True,False) -> selectColor
                   (True,True) -> bothColor
     case (ngi) of
-      Just gi -> renderNode gi label (selected || typeError) color
+      Just gi -> renderNode gi label (selected || typeError) color False (0,0,0)
       Nothing -> return ())
 
   -- draw the selectionBox
@@ -1580,6 +1590,8 @@ drawRuleGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
   let selectColor = (0.29,0.56,0.85)
       errorColor = (0.9,0.2,0.2)
       bothColor = (0.47,0.13,0.87)
+      createColor = (0, 1, 0)
+      deleteColor = (0, 0, 1)
 
   let vg = correctTypeGraph g tg
   let ovg = opValidationGraph g
@@ -1589,7 +1601,7 @@ drawRuleGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
     let dstN = M.lookup (fromEnum . targetId $ e) nGI
         srcN = M.lookup (fromEnum . sourceId $ e) nGI
         egi  = M.lookup (fromEnum . edgeId   $ e) eGI
-        info = (infoLabel (edgeInfo e) )
+        info = infoVisible (edgeInfo e)
         selected = (edgeId e) `elem` sEdges
         typeError = case lookupEdge (edgeId e) vg of
                       Just e' -> not $ edgeInfo e'
@@ -1602,8 +1614,13 @@ drawRuleGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
                  (False,True) -> errorColor
                  (True,False) -> selectColor
                  (True,True) -> bothColor
+        (highlight, textColor) = case (infoOperation (edgeInfo e)) of
+          "new" -> (True, createColor)
+          "del" -> (True, deleteColor)
+          ""    -> (False, (0,0,0))
+          _     -> (True, errorColor)
     case (egi, srcN, dstN) of
-      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabel (edgeInfo e)) src dst (selected || typeError || operationError) color
+      (Just gi, Just src, Just dst) -> renderEdge gi info src dst (selected || typeError || operationError) color highlight textColor
       _ -> return ())
 
   -- draw the nodes
@@ -1611,7 +1628,7 @@ drawRuleGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
     let ngi = M.lookup (fromEnum . nodeId $ n) nGI
         selected = (nodeId n) `elem` (sNodes)
         info = nodeInfo n
-        label = infoLabel info
+        label = infoVisible info
         typeError = case lookupNode (nodeId n) vg of
                       Just n' -> not $ nodeInfo n'
                       Nothing -> True
@@ -1620,8 +1637,13 @@ drawRuleGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
                   (False,True) -> errorColor
                   (True,False) -> selectColor
                   (True,True) -> bothColor
+        (highlight, textColor) = case (infoOperation info) of
+          "new" -> (True, createColor)
+          "del" -> (True, deleteColor)
+          ""    -> (False, (0,0,0))
+          _     -> (True, errorColor)
     case (ngi) of
-      Just gi -> renderNode gi label (selected || typeError) color
+      Just gi -> renderNode gi label (selected || typeError) color highlight textColor
       Nothing -> return ())
 
   -- draw the selectionBox
@@ -1677,15 +1699,15 @@ createNode' :: IORef EditorState -> String -> GIPos -> NodeShape -> GIColor -> G
 createNode' st content pos nshape color lcolor context = do
   es <- readIORef st
   let nid = head $ newNodes (editorGetGraph es)
-      content' = if infoLabel content == "" then infoSetLabel content (show nid) else content
-  dim <- getStringDims (infoLabel content') context
+      content' = if infoVisible content == "" then infoSetLabel content (show nid) else content
+  dim <- getStringDims (infoVisible content') context
   writeIORef st $ createNode es pos dim content' nshape color lcolor
 
 -- rename the selected itens
 renameSelected:: IORef EditorState -> String -> P.Context -> IO()
 renameSelected state content context = do
   es <- readIORef state
-  dim <- getStringDims (infoLabel content) context
+  dim <- getStringDims (infoVisible content) context
   let graph = editorGetGraph es
       (nids,eids) = editorGetSelected es
       (ngiM,egiM) = editorGetGI es
