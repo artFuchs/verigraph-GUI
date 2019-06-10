@@ -1010,12 +1010,12 @@ startGUI = do
                 newGraph  = foldl (\g nid -> updateNodePayload nid g (\info -> infoSetOperation info operationInfo)) g sNids
                 newGraph' = foldl (\g eid -> updateEdgePayload eid g (\info -> infoSetOperation info operationInfo)) newGraph sEids
             context <- Gtk.widgetGetPangoContext canvas
+            font <- case operationInfo == "" of
+              True -> return Nothing
+              False -> return $ Just "Sans Bold 10"
             ndims <- forM sNids $ \nid -> do
-              dim <- getStringDims (infoVisible . nodeInfo . fromJust . G.lookupNode nid $ newGraph') context
+              dim <- getStringDims (infoVisible . nodeInfo . fromJust . G.lookupNode nid $ newGraph') context font
               return (nid, dim)
-            edims <- forM sEids $ \eid -> do
-              dim <- getStringDims (infoVisible . edgeInfo . fromJust . G.lookupEdge eid $ newGraph') context
-              return (eid, dim)
             let newNgiM = foldl (\giM (nid, dim) -> let gi = nodeGiSetDims dim $ getNodeGI (fromEnum nid) giM
                                                     in M.insert (fromEnum nid) gi giM) (fst gi) ndims
             writeIORef st (editorSetGI (newNgiM, snd gi) . editorSetGraph newGraph' $ es)
@@ -1306,8 +1306,8 @@ updateTypeInspector st currentC currentLC (nameEntry, colorBtn, lcolorBtn, radio
       set frameStyle [#visible := True]
     (n,0) -> do
       let nid = nodeId (ns!!0)
-          -- info = T.pack . unifyNames $ map (infoLabel . nodeInfo) ns
-          info = T.pack . unifyNames $ map nodeInfo ns
+          info = T.pack . unifyNames $ map (infoLabel . nodeInfo) ns
+          --info = T.pack . unifyNames $ map nodeInfo ns
           gi = getNodeGI (fromEnum nid) ngiM
           (r,g,b) = fillColor gi
           (r',g',b') = lineColor gi
@@ -1328,8 +1328,8 @@ updateTypeInspector st currentC currentLC (nameEntry, colorBtn, lcolorBtn, radio
       set frameStyle [#visible := False]
     (0,n) -> do
       let eid = edgeId (es!!0)
-          --info = T.pack . unifyNames $ map (infoLabel . edgeInfo) es
-          info = T.pack . unifyNames $ map edgeInfo es
+          info = T.pack . unifyNames $ map (infoLabel . edgeInfo) es
+          --info = T.pack . unifyNames $ map edgeInfo es
           gi = getEdgeGI (fromEnum eid) egiM
           (r,g,b) = color gi
           edgeStyle = style gi
@@ -1346,8 +1346,8 @@ updateTypeInspector st currentC currentLC (nameEntry, colorBtn, lcolorBtn, radio
       set frameShape [#visible := False]
       set frameStyle [#visible := True]
     _ -> do
-      -- let info = T.pack . unifyNames $ concat [(map (infoLabel . edgeInfo) es), (map (infoLabel . nodeInfo) ns)]
-      let info = T.pack . unifyNames $ concat [(map edgeInfo es), (map nodeInfo ns)]
+      let info = T.pack . unifyNames $ concat [(map (infoLabel . edgeInfo) es), (map (infoLabel . nodeInfo) ns)]
+      --let info = T.pack . unifyNames $ concat [(map edgeInfo es), (map nodeInfo ns)]
       set nameEntry [#text := info ]
       Gtk.colorChooserSetRgba colorBtn emptyColor
       Gtk.colorChooserSetRgba lcolorBtn emptyColor
@@ -1590,8 +1590,8 @@ drawRuleGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
   let selectColor = (0.29,0.56,0.85)
       errorColor = (0.9,0.2,0.2)
       bothColor = (0.47,0.13,0.87)
-      createColor = (0, 1, 0)
-      deleteColor = (0, 0, 1)
+      createColor = (0.12, 0.48, 0.10)
+      deleteColor = (0.17, 0.28, 0.77)
 
   let vg = correctTypeGraph g tg
   let ovg = opValidationGraph g
@@ -1700,14 +1700,14 @@ createNode' st content pos nshape color lcolor context = do
   es <- readIORef st
   let nid = head $ newNodes (editorGetGraph es)
       content' = if infoVisible content == "" then infoSetLabel content (show nid) else content
-  dim <- getStringDims (infoVisible content') context
+  dim <- getStringDims (infoVisible content') context Nothing
   writeIORef st $ createNode es pos dim content' nshape color lcolor
 
 -- rename the selected itens
 renameSelected:: IORef EditorState -> String -> P.Context -> IO()
 renameSelected state content context = do
   es <- readIORef state
-  dim <- getStringDims (infoVisible content) context
+  dim <- getStringDims (infoVisible content) context Nothing
   let graph = editorGetGraph es
       (nids,eids) = editorGetSelected es
       (ngiM,egiM) = editorGetGI es
@@ -1723,9 +1723,11 @@ renameSelected state content context = do
 -- auxiliar function used by createNode' and renameSelected
 -- given a text, compute the size of it's bounding box
 -- uses the pango lib
-getStringDims :: String -> P.Context -> IO (Double, Double)
-getStringDims str context = do
-  desc <- P.fontDescriptionFromString "Sans Regular 10"
+getStringDims :: String -> P.Context -> Maybe T.Text -> IO (Double, Double)
+getStringDims str context font = do
+  desc <- case font of
+    Just f -> P.fontDescriptionFromString f
+    Nothing -> P.fontDescriptionFromString "Sans Regular 10"
   pL <- P.layoutNew context
   P.layoutSetFontDescription pL (Just desc)
   P.layoutSetText pL (T.pack str) (fromIntegral . length $ str)
