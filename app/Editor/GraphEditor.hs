@@ -37,7 +37,7 @@ import Editor.EditorState
 import Editor.SaveLoad
 import Editor.Info
 import Editor.GraphValidation
-
+import Editor.GrammarMaker
 --------------------------------------------------------------------------------
 -- MODULE STRUCTURES -----------------------------------------------------------
 --------------------------------------------------------------------------------
@@ -452,6 +452,16 @@ startGUI = do
     case (Gdk.ModifierTypeControlMask `elem` ms, Gdk.ModifierTypeShiftMask `elem` ms, toLower k) of
       -- F2 - rename selection
       (False,False,'\65471') -> Gtk.widgetGrabFocus nameEntry
+      (True,False,'p') -> do
+        gt <- readIORef currentGraphType
+        if gt == 3
+          then do
+            g <- readIORef st >>= \es -> return $ editorGetGraph es
+            (lhs,k,rhs) <- return $ graphToRuleGraphs g
+            putStrLn $ "lhs: " ++ show lhs ++ "\n"
+            putStrLn $ "k: " ++ show k ++ "\n"
+            putStrLn $ "rhs: " ++ show rhs ++ "\n"
+          else return ()
       _ -> return ()
     return True
 

@@ -12,8 +12,6 @@ Tarefas ---------------------------------------------------------------------
 *Arrumar bug - arestas recém criadas em hostGraphs e ruleGraphs não recebem uma label automática.
 
 Progresso -------------------------------------------------------------------
-*Mostrar informação de operação para elementos de ruleGraphs
-
 
 
 
@@ -61,5 +59,6 @@ Feito -----------------------------------------------------------------------
 *Validar operações em ruleGraphs
  - arestas não podem conectar um objeto que sera deletado
  - endoarestas não podem ser deletadas de um objeto que será criado
-
+*Mostrar informação de operação para elementos de ruleGraphs
+*Transformar um ruleGraph em 3 grafos diferentes: LHS, K e RHS
 -}
