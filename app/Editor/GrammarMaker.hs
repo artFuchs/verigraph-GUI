@@ -1,13 +1,18 @@
 module Editor.GrammarMaker (
   graphToRuleGraphs
+, makeGrammar
 )where
 
 import Data.Maybe
 import Data.Graphs
+import qualified Data.List as L
 import Editor.Info
+import Base.Valid
+import Abstract.Rewriting.DPO
 import Rewriting.DPO.TypedGraph
 import Data.Graphs.Morphism
 import qualified Data.TypedGraph as TG
+import qualified Data.TypedGraph.Morphism as TGM
 import XML.GGXReader.Span
 import Editor.Helper
 
@@ -52,7 +57,7 @@ makeTypedGraph g tg = fromGraphsAndLists g' tg npairs epairs
 
 
 
-graphToRule :: Graph String String -> Graph (Maybe String) (Maybe String) -> TypedGraphRule String String
+graphToRule :: Graph String String -> TypeGraph String String -> TypedGraphRule String String
 graphToRule ruleGraph typeGraph = Production lhsTgm rhsTgm []
   where
     (lhs, k, rhs) = graphToRuleGraphs ruleGraph
@@ -65,10 +70,22 @@ graphToRule ruleGraph typeGraph = Production lhsTgm rhsTgm []
     maps = nmapping ++ emapping
 
 
-
-
-graphToTypeGraph :: Graph a b -> Graph (Maybe a) (Maybe b)
+graphToTypeGraph :: Graph a b -> TypeGraph a b
 graphToTypeGraph g = fromNodesAndEdges nds edgs
   where
     nds = map (\n -> Node (nodeId n) $ Just (nodeInfo n)) $ nodes g
     edgs = map (\e -> Edge (edgeId e) (sourceId e) (targetId e) (Just $ edgeInfo e)) $ edges g
+
+
+makeGrammar :: Graph String String -> Graph String String -> [Graph String String] -> IO (Grammar (TGM.TypedGraphMorphism String String))
+makeGrammar tg hg rgs = do
+
+  let typegraph = graphToTypeGraph tg
+      rulesNames = map show [1..]
+      initGraph = makeTypedGraph hg typegraph
+      productions = map (\r -> graphToRule r typegraph) rgs
+
+  ensureValid $ validateNamed (\name -> "Rule '"++name++"'") (zip rulesNames productions)
+  _ <- (L.null productions && error "No first-order productions were found, at least one is needed.") `seq` return ()
+
+  return $ grammar initGraph [] (zip rulesNames productions)

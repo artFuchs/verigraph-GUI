@@ -9,6 +9,7 @@ Tarefas ---------------------------------------------------------------------
 *Modificar interface para que o painel do inspector não seja mostrado a toda hora.
   *Mostra-lo ao dar 2 cliques em um elemento.
 *Arrumar bug - arestas recém criadas em hostGraphs e ruleGraphs não recebem uma label automática.
+*Arrumar bug - não há informação de erros quando há nodos com mesmo nome no typeGraph
 
 Progresso -------------------------------------------------------------------
 *Gerar uma especificação de gramática compativel com o Verigraph

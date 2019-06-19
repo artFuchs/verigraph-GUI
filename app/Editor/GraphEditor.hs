@@ -14,19 +14,23 @@ import Data.IORef
 import Graphics.Rendering.Cairo
 import Graphics.Rendering.Pango.Layout
 import Graphics.Rendering.Pango
+
 import Data.List
 import Data.Int
 import Data.Char
 import Data.Maybe
 import qualified Data.Text as T
 import qualified Data.Map as M
+import qualified Data.Tree as Tree
+import Data.Monoid
+import Control.Monad.Zip
+
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
 import qualified Data.Graphs.Morphism as Morph
 import qualified Data.TypedGraph as TG
-import qualified Data.Tree as Tree
-import Data.Monoid
-import Control.Monad.Zip
+import qualified Abstract.Rewriting.DPO
+
 import Editor.GraphicalInfo
 import Editor.Render
 import Editor.Helper
@@ -462,6 +466,21 @@ startGUI = do
             putStrLn $ "k: " ++ show k ++ "\n"
             putStrLn $ "rhs: " ++ show rhs ++ "\n"
           else return ()
+      (True, False, 'm') -> do
+        sts <- readIORef graphStates
+        let (tes,_,_) = fromJust $ M.lookup 0 sts
+            (hes,_,_) = fromJust $ M.lookup 1 sts
+            tg = editorGetGraph tes
+            hg = editorGetGraph hes
+            rsts = M.elems (M.filterWithKey (\k a -> k > 1) sts)
+            rgs = map (\(es,_,_) -> editorGetGraph es) rsts
+        gram <- makeGrammar tg hg rgs
+        putStrLn $ "start:"
+        print $ Abstract.Rewriting.DPO.start gram
+        putStrLn $ "rules:"
+        print $ Abstract.Rewriting.DPO.productions gram
+        return ()
+
       _ -> return ()
     return True
 
