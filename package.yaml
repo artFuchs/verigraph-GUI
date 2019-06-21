@@ -47,6 +47,9 @@ executables:
     - prettyprinter
     - parallel
     - containers
+    - set-monad
+    - hxt
+    - mtl
 
 tests:
   graph-editor-gi-gtk-test:

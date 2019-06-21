@@ -43,6 +43,7 @@ extra-deps:
 - glib-0.13.7.0
 - gtk2hs-buildtools-0.13.5.0
 - gi-gtk-3.0.27
+- set-monad-0.3.0.0
 
 # Override default flag values for local packages and extra-deps
 # flags: {}
