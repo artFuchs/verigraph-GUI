@@ -29,12 +29,15 @@ import           Prelude hiding (null)
 -- difference lists, allowing /O(1)/ checks if the list is empty.
 newtype DList a = DList { unDList :: Maybe ([a] -> [a]) }
 
+instance Semigroup (DList a) where
+  (<>) (DList Nothing) dl                    = dl
+  (<>) dl (DList Nothing)                    = dl
+  (<>) (DList (Just dl1)) (DList (Just dl2)) = DList (Just $ dl1 . dl2)
+
 instance Monoid (DList a) where
   mempty = empty
 
-  mappend (DList Nothing) dl                    = dl
-  mappend dl (DList Nothing)                    = dl
-  mappend (DList (Just dl1)) (DList (Just dl2)) = DList (Just $ dl1 . dl2)
+  mappend = (<>)
 
 -- | A dlist containing no elements. /O(1)/.
 empty :: DList a
@@ -76,4 +79,3 @@ toList dl = apply dl []
 apply :: DList a -> [a] -> [a]
 apply (DList Nothing)   = id
 apply (DList (Just dl)) = dl
-
