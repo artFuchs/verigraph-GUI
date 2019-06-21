@@ -1,5 +1,6 @@
 module Editor.GrammarMaker (
   graphToRuleGraphs
+, makeTypeGraph
 , makeGrammar
 )where
 
@@ -70,8 +71,8 @@ graphToRule ruleGraph typeGraph = Production lhsTgm rhsTgm []
     maps = nmapping ++ emapping
 
 
-graphToTypeGraph :: Graph a b -> TypeGraph a b
-graphToTypeGraph g = fromNodesAndEdges nds edgs
+makeTypeGraph :: Graph a b -> TypeGraph a b
+makeTypeGraph g = fromNodesAndEdges nds edgs
   where
     nds = map (\n -> Node (nodeId n) $ Just (nodeInfo n)) $ nodes g
     edgs = map (\e -> Edge (edgeId e) (sourceId e) (targetId e) (Just $ edgeInfo e)) $ edges g
@@ -80,7 +81,7 @@ graphToTypeGraph g = fromNodesAndEdges nds edgs
 makeGrammar :: Graph String String -> Graph String String -> [Graph String String] -> IO (Grammar (TGM.TypedGraphMorphism String String))
 makeGrammar tg hg rgs = do
 
-  let typegraph = graphToTypeGraph tg
+  let typegraph = makeTypeGraph tg
       rulesNames = map show [1..]
       initGraph = makeTypedGraph hg typegraph
       productions = map (\r -> graphToRule r typegraph) rgs

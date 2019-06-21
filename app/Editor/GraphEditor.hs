@@ -3,6 +3,7 @@ module Editor.GraphEditor(
   startGUI
 )where
 
+-- Gtk modules
 import qualified GI.Gtk as Gtk
 import qualified GI.Gdk as Gdk
 import qualified GI.Pango as P
@@ -25,12 +26,21 @@ import qualified Data.Tree as Tree
 import Data.Monoid
 import Control.Monad.Zip
 
+-- verigraph modules
+import Abstract.Category
+import Abstract.Rewriting.DPO
+import Category.TypedGraphRule (RuleMorphism)
 import Data.Graphs hiding (null, empty)
+import Data.TypedGraph.Morphism
+import Rewriting.DPO.TypedGraph
 import qualified Data.Graphs as G
 import qualified Data.Graphs.Morphism as Morph
 import qualified Data.TypedGraph as TG
-import qualified Abstract.Rewriting.DPO
 
+import XML.GGXWriter
+
+
+-- editor modules
 import Editor.GraphicalInfo
 import Editor.Render
 import Editor.Helper
@@ -474,13 +484,33 @@ startGUI = do
             hg = editorGetGraph hes
             rsts = M.elems (M.filterWithKey (\k a -> k > 1) sts)
             rgs = map (\(es,_,_) -> editorGetGraph es) rsts
-        gram <- makeGrammar tg hg rgs
+        fstOrderGG <- makeGrammar tg hg rgs
         putStrLn $ "start:"
-        print $ Abstract.Rewriting.DPO.start gram
+        print $ start fstOrderGG
         putStrLn $ "rules:"
-        print $ Abstract.Rewriting.DPO.productions gram
-        return ()
+        print $ productions fstOrderGG
+        let getFilename path = reverse . takeWhile (/= '/') . reverse $ path
+        ggName <- readIORef fileName >>= \mfilename -> case mfilename of
+                                                        Nothing -> return "graphGrammar"
+                                                        Just fn -> return $ getFilename fn
+        let nods = nodes tg
+            edgs = edges tg
+            nodeNames = map (\n -> (show . nodeId $ n, infoLabel . nodeInfo $ n)) nods
+            edgeNames = map (\e -> (show . edgeId $ e, infoLabel . edgeInfo $ e)) edgs
+            names = nodeNames ++ edgeNames
 
+        putStrLn $ "ggName:"
+        print $ ggName
+        putStrLn $ "names:"
+        print $ names
+
+        outputName <- readIORef fileName >>= \mfilename -> case mfilename of
+                                                        Nothing -> return "graphGrammar.ggx"
+                                                        Just fn -> return $ getFilename fn ++ ".ggx"
+
+        let emptySndOrderGG = grammar (emptyGraphRule (makeTypeGraph tg)) [] [] :: Grammar (RuleMorphism String String)
+
+        writeGrammarFile (fstOrderGG,emptySndOrderGG) ggName names outputName
       _ -> return ()
     return True
 
