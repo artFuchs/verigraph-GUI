@@ -14,10 +14,10 @@ import Rewriting.DPO.TypedGraph
 import Data.Graphs.Morphism
 import qualified Data.TypedGraph as TG
 import qualified Data.TypedGraph.Morphism as TGM
-import XML.GGXReader.Span
 import Editor.Helper
 
 type RuleGraphs = (Graph String String, Graph String String, Graph String String)
+type TypeGraph a b = Graph (Maybe a) (Maybe b) -- may delete this if import span
 
 graphToRuleGraphs :: Graph String String -> RuleGraphs
 graphToRuleGraphs g = (lhs, k, rhs)
@@ -65,21 +65,15 @@ graphToRule ruleGraph typeGraph = Production lhsTgm rhsTgm []
     lm = makeTypedGraph lhs typeGraph
     rm = makeTypedGraph rhs typeGraph
     km = makeTypedGraph k typeGraph
-    --lhsTgm = TGM.buildTypedGraphMorphism k lm leftMapping
-    --rhsTgm = TGM.buildTypedGraphMorphism k rm rightMapping
+
     lhsTgm = TGM.fromGraphsAndLists km lm leftNodeMapping leftEdgeMapping
     rhsTgm = TGM.fromGraphsAndLists km rm rightNodeMapping rightEdgeMapping
 
-    --leftMapping = fromGraphsAndLists k rm leftNodeMapping leftEdgeMapping
     leftNodeMapping = filter (\(n1,n2) -> n1 == n2) $ mkpairs (map nodeId $ nodes k) (map nodeId $ nodes lhs)
     leftEdgeMapping = filter (\(n1,n2) -> n1 == n2) $ mkpairs (map edgeId $ edges k) (map edgeId $ edges lhs)
 
-    --rightMapping = fromGraphsAndLists k rm rightNodeMapping rightEdgeMapping
     rightNodeMapping = filter (\(n1,n2) -> n1 == n2) $ mkpairs (map nodeId $ nodes k) (map nodeId $ nodes rhs)
     rightEdgeMapping = filter (\(n1,n2) -> n1 == n2) $ mkpairs (map edgeId $ edges k) (map edgeId $ edges rhs)
-
-    --(lhsTgm,rhsTgm) = instantiateSpan lm rm maps
-
 
 
 makeTypeGraph :: Graph a b -> TypeGraph a b
