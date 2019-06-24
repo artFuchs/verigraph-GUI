@@ -64,11 +64,22 @@ graphToRule ruleGraph typeGraph = Production lhsTgm rhsTgm []
     (lhs, k, rhs) = graphToRuleGraphs ruleGraph
     lm = makeTypedGraph lhs typeGraph
     rm = makeTypedGraph rhs typeGraph
-    (lhsTgm,rhsTgm) = instantiateSpan lm rm maps
+    km = makeTypedGraph k typeGraph
+    --lhsTgm = TGM.buildTypedGraphMorphism k lm leftMapping
+    --rhsTgm = TGM.buildTypedGraphMorphism k rm rightMapping
+    lhsTgm = TGM.fromGraphsAndLists km lm leftNodeMapping leftEdgeMapping
+    rhsTgm = TGM.fromGraphsAndLists km rm rightNodeMapping rightEdgeMapping
 
-    nmapping = map (\p -> let (l,r) = applyPair (show . nodeId) p in (r, Nothing, l)) . filter (\(n,nt) -> infoLabel (nodeInfo nt) == infoType (nodeInfo n)) $ mkpairs (nodes lhs) (nodes rhs)
-    emapping = map (\p -> let (l,r) = applyPair (show . edgeId) p in (r, Nothing, l)) . filter (\(e,et) -> infoLabel (edgeInfo et) == infoType (edgeInfo e)) $ mkpairs (edges lhs) (edges rhs)
-    maps = nmapping ++ emapping
+    --leftMapping = fromGraphsAndLists k rm leftNodeMapping leftEdgeMapping
+    leftNodeMapping = filter (\(n1,n2) -> n1 == n2) $ mkpairs (map nodeId $ nodes k) (map nodeId $ nodes lhs)
+    leftEdgeMapping = filter (\(n1,n2) -> n1 == n2) $ mkpairs (map edgeId $ edges k) (map edgeId $ edges lhs)
+
+    --rightMapping = fromGraphsAndLists k rm rightNodeMapping rightEdgeMapping
+    rightNodeMapping = filter (\(n1,n2) -> n1 == n2) $ mkpairs (map nodeId $ nodes k) (map nodeId $ nodes rhs)
+    rightEdgeMapping = filter (\(n1,n2) -> n1 == n2) $ mkpairs (map edgeId $ edges k) (map edgeId $ edges rhs)
+
+    --(lhsTgm,rhsTgm) = instantiateSpan lm rm maps
+
 
 
 makeTypeGraph :: Graph a b -> TypeGraph a b
