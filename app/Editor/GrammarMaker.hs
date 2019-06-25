@@ -83,11 +83,10 @@ makeTypeGraph g = fromNodesAndEdges nds edgs
     edgs = map (\e -> Edge (edgeId e) (sourceId e) (targetId e) (Just $ edgeInfo e)) $ edges g
 
 
-makeGrammar :: Graph String String -> Graph String String -> [Graph String String] -> IO (Grammar (TGM.TypedGraphMorphism String String))
-makeGrammar tg hg rgs = do
+makeGrammar :: Graph String String -> Graph String String -> [Graph String String] -> [String] -> IO (Grammar (TGM.TypedGraphMorphism String String))
+makeGrammar tg hg rgs rulesNames = do
 
   let typegraph = makeTypeGraph tg
-      rulesNames = map show [1..]
       initGraph = makeTypedGraph hg typegraph
       productions = map (\r -> graphToRule r typegraph) rgs
 

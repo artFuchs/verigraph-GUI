@@ -10,10 +10,11 @@ Tarefas ---------------------------------------------------------------------
   *Mostra-lo ao dar 2 cliques em um elemento.
 *Arrumar bug - arestas recém criadas em hostGraphs e ruleGraphs não recebem uma label automática.
 *Arrumar bug - não há informação de erros quando há nodos com mesmo nome no typeGraph
+*Mostrar regras em formato R -> L
 
 Progresso -------------------------------------------------------------------
-*Gerar uma especificação de gramática compativel com o Verigraph
-
+*Adicionar menuEntry para exportar gramática para .ggx
+  - mostrar dialogo de salvamento para usuario escolher o caminho e nome do arquivo
 
 
 Feito -----------------------------------------------------------------------
@@ -62,4 +63,5 @@ Feito -----------------------------------------------------------------------
  - endoarestas não podem ser deletadas de um objeto que será criado
 *Mostrar informação de operação para elementos de ruleGraphs
 *Transformar um ruleGraph em 3 grafos diferentes: LHS, K e RHS
+*Gerar uma especificação de gramática compativel com o Verigraph
 -}

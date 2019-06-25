@@ -59,7 +59,7 @@ import Editor.GrammarMaker
  A tuple representing what is showed in each node of the tree in the treeview
  It contains the informations:
  * name,
- * graph changed (0 - no, 1 - yes, 2 - invalid, 3 - modified and invalid),
+ * graph changed (0 - no, 1 - yes),
  * graph id,
  * type (0 - topic, 1 - typeGraph, 2 - hostGraph) and
  * active (valid for rules only)
@@ -88,7 +88,7 @@ startGUI = do
   -- creates the main window, containing the canvas and the slots to place the panels
   -- shows the main window
   (window, canvas, mainBox, treeFrame, inspectorFrame, fileItems, editItems, viewItems, helpItems) <- buildMainWindow
-  let (newm,opn,svn,sva,svg,opg) = fileItems
+  let (newm,opn,svn,sva,eggx,svg,opg) = fileItems
       (del,udo,rdo,cpy,pst,cut,sla,sln,sle) = editItems
       (zin,zut,z50,zdf,z150,z200,vdf) = viewItems
       (hlp,abt) = helpItems
@@ -476,41 +476,6 @@ startGUI = do
             putStrLn $ "k: " ++ show k ++ "\n"
             putStrLn $ "rhs: " ++ show rhs ++ "\n"
           else return ()
-      (True, False, 'm') -> do
-        sts <- readIORef graphStates
-        let (tes,_,_) = fromJust $ M.lookup 0 sts
-            (hes,_,_) = fromJust $ M.lookup 1 sts
-            tg = editorGetGraph tes
-            hg = editorGetGraph hes
-            rsts = M.elems (M.filterWithKey (\k a -> k > 1) sts)
-            rgs = map (\(es,_,_) -> editorGetGraph es) rsts
-        fstOrderGG <- makeGrammar tg hg rgs
-        putStrLn $ "start:"
-        print $ start fstOrderGG
-        putStrLn $ "rules:"
-        print $ productions fstOrderGG
-        let getFilename path = reverse . takeWhile (/= '/') . reverse $ path
-        ggName <- readIORef fileName >>= \mfilename -> case mfilename of
-                                                        Nothing -> return "graphGrammar"
-                                                        Just fn -> return $ getFilename fn
-        let nods = nodes tg
-            edgs = edges tg
-            nodeNames = map (\n -> (show . nodeId $ n, infoLabel . nodeInfo $ n)) nods
-            edgeNames = map (\e -> (show . edgeId $ e, infoLabel . edgeInfo $ e)) edgs
-            names = nodeNames ++ edgeNames
-
-        putStrLn $ "ggName:"
-        print $ ggName
-        putStrLn $ "names:"
-        print $ names
-
-        outputName <- readIORef fileName >>= \mfilename -> case mfilename of
-                                                        Nothing -> return "graphGrammar.ggx"
-                                                        Just fn -> return $ getFilename fn ++ ".ggx"
-
-        let emptySndOrderGG = grammar (emptyGraphRule (makeTypeGraph tg)) [] [] :: Grammar (RuleMorphism String String)
-
-        writeGrammarFile (fstOrderGG,emptySndOrderGG) ggName names outputName
       _ -> return ()
     return True
 
@@ -646,6 +611,39 @@ startGUI = do
     if saved
       then afterSave
       else return ()
+
+  eggx `on` #activate $ do
+    sts <- readIORef graphStates
+
+    let (tes,_,_) = fromJust $ M.lookup 0 sts
+        (hes,_,_) = fromJust $ M.lookup 1 sts
+        tg = editorGetGraph tes
+        hg = editorGetGraph hes
+
+    rules <- getRules store graphStates
+    let rulesNames = map snd rules
+        rgs = map fst rules
+
+
+    fstOrderGG <- makeGrammar tg hg rgs rulesNames
+    let getFilename path = reverse . takeWhile (/= '/') . reverse $ path
+    ggName <- readIORef fileName >>= \mfilename -> case mfilename of
+                                                    Nothing -> return "graphGrammar"
+                                                    Just fn -> return $ getFilename fn
+    let nods = nodes tg
+        edgs = edges tg
+        nodeNames = map (\n -> (show . nodeId $ n, infoLabel . nodeInfo $ n)) nods
+        edgeNames = map (\e -> (show . edgeId $ e, infoLabel . edgeInfo $ e)) edgs
+        names = nodeNames ++ edgeNames
+
+    outputName <- readIORef fileName >>= \mfilename -> case mfilename of
+                                                    Nothing -> return "graphGrammar.ggx"
+                                                    Just fn -> return $ getFilename fn ++ ".ggx"
+
+    let emptySndOrderGG = grammar (emptyGraphRule (makeTypeGraph tg)) [] [] :: Grammar (RuleMorphism String String)
+
+    writeGrammarFile (fstOrderGG,emptySndOrderGG) ggName names outputName
+
 
   -- open graph
   on opg #activate $ do
@@ -1338,6 +1336,29 @@ getStructsToSave store graphStates = do
                     )) treeNodeList
       return structs
 
+
+getRuleList :: Gtk.TreeStore ->  Gtk.TreeIter -> M.Map Int32 (EditorState, [DiaGraph], [DiaGraph]) -> IO [(Graph String String, String)]
+getRuleList model iter gStates = do
+  name <- Gtk.treeModelGetValue model iter 0 >>= fromGValue >>= return . fromJust :: IO String
+  index <- Gtk.treeModelGetValue model iter 2 >>= fromGValue :: IO Int32
+  res <- case M.lookup index gStates of
+    Nothing -> return []
+    Just (es, _, _) -> return $ [(editorGetGraph es, name)]
+  continue <- Gtk.treeModelIterNext model iter
+  if continue
+    then do
+      rest <- getRuleList model iter gStates
+      return $ res ++ rest
+    else return res
+
+getRules :: Gtk.TreeStore -> IORef (M.Map Int32 (EditorState, [DiaGraph], [DiaGraph])) -> IO [(Graph String String,String)]
+getRules model graphStates = do
+  (valid, iter) <- Gtk.treeModelGetIterFromString model "2:1"
+  if not valid
+    then return []
+    else do
+      gStates <- readIORef graphStates
+      getRuleList model iter gStates
 
 -- update the inspector --------------------------------------------------------
 updateTypeInspector :: IORef EditorState -> IORef (Double,Double,Double) -> IORef (Double,Double,Double) ->
