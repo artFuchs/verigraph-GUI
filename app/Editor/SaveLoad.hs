@@ -3,6 +3,7 @@ module Editor.SaveLoad
 , saveFile
 , saveFileAs
 , saveGraph
+, exportGGX
 , saveProject
 , loadFile
 , loadGraph
@@ -20,6 +21,13 @@ import qualified Control.Exception as E
 import qualified Data.Text as T
 import Data.IORef
 import Data.List
+import Abstract.Rewriting.DPO
+import qualified Data.TypedGraph.Morphism as TGM
+import XML.GGXWriter
+import Editor.GrammarMaker
+import Category.TypedGraphRule (RuleMorphism)
+import Rewriting.DPO.TypedGraph
+import Editor.Info
 --------------------------------------------------------------------------------
 -- structs ---------------------------------------------------------------------
 
@@ -108,6 +116,22 @@ saveProject saveInfo path = do
   case saveTry of
     Left _ -> return False
     Right _ -> return True
+
+
+exportGGX :: (Grammar (TGM.TypedGraphMorphism String String), Graph String String) -> String -> IO Bool
+exportGGX (fstOrderGG, tg)  path = do
+  let path' = if (tails path)!!(length path-4) == ".ggx" then path else path ++ ".ggx"
+  let nods = nodes tg
+      edgs = edges tg
+      nodeNames = map (\n -> (show . nodeId $ n, infoLabel . nodeInfo $ n)) nods
+      edgeNames = map (\e -> (show . edgeId $ e, infoLabel . edgeInfo $ e)) edgs
+      names = nodeNames ++ edgeNames
+
+  let emptySndOrderGG = grammar (emptyGraphRule (makeTypeGraph tg)) [] [] :: Grammar (RuleMorphism String String)
+  let ggName = reverse . takeWhile (/= '/') . drop 4 . reverse $ path'
+
+  writeGrammarFile (fstOrderGG,emptySndOrderGG) ggName names path'
+  return True
 
 
 loadFile :: Gtk.Window -> (String -> Maybe a) -> IO (Maybe (a,String))

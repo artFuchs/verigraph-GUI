@@ -29,15 +29,13 @@ import Control.Monad.Zip
 -- verigraph modules
 import Abstract.Category
 import Abstract.Rewriting.DPO
-import Category.TypedGraphRule (RuleMorphism)
 import Data.Graphs hiding (null, empty)
 import Data.TypedGraph.Morphism
-import Rewriting.DPO.TypedGraph
 import qualified Data.Graphs as G
 import qualified Data.Graphs.Morphism as Morph
 import qualified Data.TypedGraph as TG
 
-import XML.GGXWriter
+
 
 
 -- editor modules
@@ -624,26 +622,9 @@ startGUI = do
     let rulesNames = map snd rules
         rgs = map fst rules
 
-
     fstOrderGG <- makeGrammar tg hg rgs rulesNames
-    let getFilename path = reverse . takeWhile (/= '/') . reverse $ path
-    ggName <- readIORef fileName >>= \mfilename -> case mfilename of
-                                                    Nothing -> return "graphGrammar"
-                                                    Just fn -> return $ getFilename fn
-    let nods = nodes tg
-        edgs = edges tg
-        nodeNames = map (\n -> (show . nodeId $ n, infoLabel . nodeInfo $ n)) nods
-        edgeNames = map (\e -> (show . edgeId $ e, infoLabel . edgeInfo $ e)) edgs
-        names = nodeNames ++ edgeNames
-
-    outputName <- readIORef fileName >>= \mfilename -> case mfilename of
-                                                    Nothing -> return "graphGrammar.ggx"
-                                                    Just fn -> return $ getFilename fn ++ ".ggx"
-
-    let emptySndOrderGG = grammar (emptyGraphRule (makeTypeGraph tg)) [] [] :: Grammar (RuleMorphism String String)
-
-    writeGrammarFile (fstOrderGG,emptySndOrderGG) ggName names outputName
-
+    saveFileAs (fstOrderGG,tg) exportGGX fileName window False
+    return ()
 
   -- open graph
   on opg #activate $ do
