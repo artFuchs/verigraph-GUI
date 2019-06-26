@@ -83,7 +83,7 @@ makeTypeGraph g = fromNodesAndEdges nds edgs
     edgs = map (\e -> Edge (edgeId e) (sourceId e) (targetId e) (Just $ edgeInfo e)) $ edges g
 
 
-makeGrammar :: Graph String String -> Graph String String -> [Graph String String] -> [String] -> IO (Grammar (TGM.TypedGraphMorphism String String))
+makeGrammar :: Graph String String -> Graph String String -> [Graph String String] -> [String] -> IO (Maybe (Grammar (TGM.TypedGraphMorphism String String)))
 makeGrammar tg hg rgs rulesNames = do
 
   let typegraph = makeTypeGraph tg
@@ -91,6 +91,6 @@ makeGrammar tg hg rgs rulesNames = do
       productions = map (\r -> graphToRule r typegraph) rgs
 
   ensureValid $ validateNamed (\name -> "Rule '"++name++"'") (zip rulesNames productions)
-  _ <- (L.null productions && error "No first-order productions were found, at least one is needed.") `seq` return ()
-
-  return $ grammar initGraph [] (zip rulesNames productions)
+  if (L.null productions)
+    then return Nothing
+    else return $ Just $ grammar initGraph [] (zip rulesNames productions)

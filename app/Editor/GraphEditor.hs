@@ -622,9 +622,12 @@ startGUI = do
     let rulesNames = map snd rules
         rgs = map fst rules
 
-    fstOrderGG <- makeGrammar tg hg rgs rulesNames
-    saveFileAs (fstOrderGG,tg) exportGGX fileName window False
-    return ()
+    mfstOrderGG <- makeGrammar tg hg rgs rulesNames
+    case mfstOrderGG of
+      Nothing -> showError window "No first-order productions were found, at least one is needed."
+      Just fstOrderGG -> do
+        saveFileAs (fstOrderGG,tg) exportGGX fileName window False
+        return ()
 
   -- open graph
   on opg #activate $ do
