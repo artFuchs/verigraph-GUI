@@ -830,6 +830,7 @@ startGUI = do
     context <- Gtk.widgetGetPangoContext canvas
     renameSelected st name context
     Gtk.widgetQueueDraw canvas
+    updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
     updateByType
     return False
 

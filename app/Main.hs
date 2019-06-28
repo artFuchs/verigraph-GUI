@@ -5,7 +5,6 @@ main = startGUI
 
 {-
 Tarefas ---------------------------------------------------------------------
-*Arrumar bug - objetos tendo a aparencia modificada apenas ao mover se configurar o tipo através da entry
 *Modificar interface para que o painel do inspector não seja mostrado a toda hora.
   *Mostra-lo ao dar 2 cliques em um elemento.
 *Arrumar bug - arestas recém criadas em hostGraphs e ruleGraphs não recebem uma label automática.
@@ -13,8 +12,7 @@ Tarefas ---------------------------------------------------------------------
 *Mostrar regras em formato R -> L
 
 Progresso -------------------------------------------------------------------
-*Adicionar menuEntry para exportar gramática para .ggx
-  - mostrar dialogo de salvamento para usuario escolher o caminho e nome do arquivo
+*Arrumar bug - objetos tendo a aparencia modificada apenas ao mover se configurar o tipo através da entry
 
 
 Feito -----------------------------------------------------------------------
@@ -64,4 +62,5 @@ Feito -----------------------------------------------------------------------
 *Mostrar informação de operação para elementos de ruleGraphs
 *Transformar um ruleGraph em 3 grafos diferentes: LHS, K e RHS
 *Gerar uma especificação de gramática compativel com o Verigraph
+*Adicionar menuEntry para exportar gramática para .ggx
 -}
