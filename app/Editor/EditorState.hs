@@ -132,15 +132,15 @@ createNode es pos dim content nshape color lcolor = editorSetGraph newGraph . ed
 
 
 -- create edges between the selected nodes and a target node
-createEdges:: EditorState -> NodeId -> String -> EdgeStyle -> (Double,Double,Double) -> EditorState
-createEdges es dstNode content estyle ecolor = editorSetGraph newGraph . editorSetGI (ngiM, newegiM) . editorSetSelected ([],createdEdges) $ es
+createEdges:: EditorState -> NodeId -> String -> Bool -> EdgeStyle -> (Double,Double,Double) -> EditorState
+createEdges es dstNode content autoNaming estyle ecolor = editorSetGraph newGraph . editorSetGI (ngiM, newegiM) . editorSetSelected ([],createdEdges) $ es
   where selectedNodes = fst $ editorGetSelected es
         graph = editorGetGraph es
         (ngiM,egiM) = editorGetGI es
         (newGraph, newegiM, createdEdges) = foldl create (graph, egiM, []) selectedNodes
         create = (\(g,giM,eids) nid -> let
                                     eid = head $ newEdges g
-                                    content' = if infoLabel content == "" then infoSetLabel content (show eid) else content
+                                    content' = if infoLabel content == "" && autoNaming then infoSetLabel content (show eid) else content
                                     ng = insertEdgeWithPayload eid nid dstNode content' g
                                     newPos = if (dstNode == nid) then newLoopPos nid (g,(ngiM,egiM)) else newEdgePos nid dstNode (g,(ngiM,egiM))
                                     negi = EdgeGI {cPosition = newPos, color = ecolor, style = estyle}

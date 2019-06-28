@@ -143,7 +143,7 @@ buildTypeInspector = do
   return (mainBox, typeBox, colorButton, lineColorButton, radioShapes, radioStyles, (colorBox, frameShape, frameStyle))
 
 -- creates the inspector for the host graph
-buildHostInspector :: IO (Gtk.Box, Gtk.Box, Gtk.ComboBoxText, Gtk.ComboBoxText, (Gtk.Box, Gtk.Box))
+buildHostInspector :: IO (Gtk.Box, Gtk.Box, Gtk.CheckButton, Gtk.CheckButton, Gtk.ComboBoxText, Gtk.ComboBoxText, (Gtk.Box, Gtk.Box))
 buildHostInspector = do
   mainBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical
                          , #spacing := 8
@@ -155,10 +155,26 @@ buildHostInspector = do
 
   -- creates a HBox containing a entry for the user change the node label
   labelBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
-                         , #spacing := 8]
+                          , #spacing := 8]
   Gtk.boxPackStart mainBox labelBox False False 0
   labelLabel <- new Gtk.Label [ #label := "Label: "]
   Gtk.boxPackStart labelBox labelLabel False False 0
+
+  -- create a Toggle button to choose if auto-labelling for nodes is activated
+  autoBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
+                          , #spacing := 8]
+  Gtk.boxPackStart mainBox autoBox False False 0
+  autoToggle <- Gtk.checkButtonNewWithLabel "Automatic labelling for nodes"
+  set autoToggle [ #active := True ]
+  Gtk.boxPackStart autoBox autoToggle False False 0
+
+  -- create a Toggle button to choose if auto-labelling for edges is activated
+  autoBoxE <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
+                          , #spacing := 8]
+  Gtk.boxPackStart mainBox autoBoxE False False 0
+  autoToggleE <- Gtk.checkButtonNewWithLabel "Automatic labelling for edges"
+  set autoToggleE [ #active := True ]
+  Gtk.boxPackStart autoBoxE autoToggleE False False 0
 
   -- creates a HBox containing a ComboBox for the user change the node type
   nodeTypeBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
@@ -179,9 +195,9 @@ buildHostInspector = do
   edgeTypeComboBox <- new Gtk.ComboBoxText []
   Gtk.boxPackStart edgeTypeBox edgeTypeComboBox True True 0
 
-  return (mainBox, labelBox, nodeTypeComboBox, edgeTypeComboBox, (nodeTypeBox, edgeTypeBox))
+  return (mainBox, labelBox, autoToggle, autoToggleE, nodeTypeComboBox, edgeTypeComboBox, (nodeTypeBox, edgeTypeBox))
 
-buildRuleInspector :: IO (Gtk.Box, Gtk.Box, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.ComboBoxText, (Gtk.Box, Gtk.Box))
+buildRuleInspector :: IO (Gtk.Box, Gtk.Box, Gtk.CheckButton, Gtk.CheckButton, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.ComboBoxText, (Gtk.Box, Gtk.Box))
 buildRuleInspector = do
   mainBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical
                          , #spacing := 8
@@ -197,7 +213,23 @@ buildRuleInspector = do
   Gtk.boxPackStart mainBox entryBox False False 0
   labelLabel <- new Gtk.Label [ #label := "Label: "]
   Gtk.boxPackStart entryBox labelLabel False False 0
-  --
+
+  -- create a Toggle button to choose if auto-labelling is activated
+  autoBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
+                          , #spacing := 8]
+  Gtk.boxPackStart mainBox autoBox False False 0
+  autoToggle <- Gtk.checkButtonNewWithLabel "Automatic labelling for nodes"
+  set autoToggle [ #active := True ]
+  Gtk.boxPackStart autoBox autoToggle False False 0
+
+  -- create a Toggle button to choose if auto-labelling is activated
+  autoBoxE <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
+                          , #spacing := 8]
+  Gtk.boxPackStart mainBox autoBoxE False False 0
+  autoToggleE <- Gtk.checkButtonNewWithLabel "Automatic labelling for edges"
+  set autoToggleE [ #active := True ]
+  Gtk.boxPackStart autoBoxE autoToggleE False False 0
+
   -- creates a HBox containing a ComboBox for the user change the node type
   nodeTypeBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
                              , #spacing := 8
@@ -230,7 +262,7 @@ buildRuleInspector = do
   Gtk.boxPackStart operationBox operationComboBox True True 0
 
   --
-  return (mainBox, entryBox, nodeTypeComboBox, edgeTypeComboBox, operationComboBox, (nodeTypeBox, edgeTypeBox))
+  return (mainBox, entryBox, autoToggle, autoToggleE, nodeTypeComboBox, edgeTypeComboBox, operationComboBox, (nodeTypeBox, edgeTypeBox))
 
 -- creates the treePanel
 buildTreePanel = do

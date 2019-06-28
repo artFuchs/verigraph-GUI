@@ -107,8 +107,8 @@ startGUI = do
     [radioCircle, radioRect, radioQuad] = radioShapes
     [radioNormal, radioPointed, radioSlashed] = radioStyles
 
-  (hostInspBox, hostNameBox, nodeTCBox, edgeTCBox, hostInspBoxes) <- buildHostInspector
-  (ruleInspBox, ruleNameBox, nodeTCBoxR, edgeTCBoxR, operationCBox, ruleInspBoxes) <- buildRuleInspector
+  (hostInspBox, hostNameBox, autoLabelN, autoLabelE, nodeTCBox, edgeTCBox, hostInspBoxes) <- buildHostInspector
+  (ruleInspBox, ruleNameBox, autoLabelNR, autoLabelER, nodeTCBoxR, edgeTCBoxR, operationCBox, ruleInspBoxes) <- buildRuleInspector
   let
     hostInspWidgets = (nameEntry, nodeTCBox, edgeTCBox)
     ruleInspWidgets = (nameEntry, nodeTCBoxR, edgeTCBoxR, operationCBox)
@@ -313,10 +313,11 @@ startGUI = do
             Nothing -> case gType of
                 0 -> return ()
                 1 -> do
-                  createNode' st "" (x',y') cShape cColor cLColor context
+                  createNode' st "" True (x',y') cShape cColor cLColor context
                   setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                   updateTG
                 _ -> do
+                  auto <- Gtk.toggleButtonGetActive autoLabelN
                   mntype <- readIORef currentNodeType
                   (t, shape, c, lc) <- case mntype of
                     Nothing -> return ("", cShape, cColor, cLColor)
@@ -327,7 +328,7 @@ startGUI = do
                       case mngi of
                         Nothing -> return ("", cShape, cColor, cLColor)
                         Just gi -> return (t, shape gi, fillColor gi, lineColor gi)
-                  createNode' st (infoSetType "" t) (x',y') shape c lc context
+                  createNode' st (infoSetType "" t) auto (x',y') shape c lc context
                   setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                   setCurrentValidFlag store st activeTypeGraph currentPath
 
@@ -338,13 +339,14 @@ startGUI = do
               1 -> do
                 estyle <- readIORef currentStyle
                 color <- readIORef currentLC
-                modifyIORef st (\es -> createEdges es nid "" estyle color)
+                modifyIORef st (\es -> createEdges es nid "" True estyle color)
                 setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                 updateTG
               _ -> do
                 metype <- readIORef currentEdgeType
                 cEstyle <- readIORef currentStyle
                 cColor <- readIORef currentLC
+                auto <- Gtk.toggleButtonGetActive autoLabelE
                 (t,estyle,color) <- case metype of
                   Nothing -> return ("", cEstyle, cColor)
                   Just t -> do
@@ -354,7 +356,7 @@ startGUI = do
                     case megi of
                       Nothing -> return ("", cEstyle, cColor)
                       Just gi -> return (t, style gi, color gi)
-                modifyIORef st (\es -> createEdges es nid (infoSetType "" t) estyle color)
+                modifyIORef st (\es -> createEdges es nid (infoSetType "" t) auto estyle color)
                 setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                 setCurrentValidFlag store st activeTypeGraph currentPath
 
@@ -833,6 +835,23 @@ startGUI = do
     updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
     updateByType
     return False
+
+  on autoLabelN #toggled $ do
+    active <- Gtk.toggleButtonGetActive autoLabelN
+    set autoLabelNR [#active := active]
+
+  on autoLabelNR #toggled $ do
+    active <- Gtk.toggleButtonGetActive autoLabelNR
+    set autoLabelN [#active := active]
+
+  on autoLabelE #toggled $ do
+    active <- Gtk.toggleButtonGetActive autoLabelE
+    set autoLabelER [#active := active]
+
+  on autoLabelER #toggled $ do
+    active <- Gtk.toggleButtonGetActive autoLabelER
+    set autoLabelE [#active := active]
+
 
   -- select a fill color
   -- change the selection fill color and
@@ -1760,11 +1779,11 @@ updateActiveTG st activeTypeGraph possibleNodeTypes possibleEdgeTypes = do
 
 -- graph interaction
 -- create a new node, auto-generating it's name and dimensions
-createNode' :: IORef EditorState -> String -> GIPos -> NodeShape -> GIColor -> GIColor -> P.Context ->  IO ()
-createNode' st content pos nshape color lcolor context = do
+createNode' :: IORef EditorState -> String -> Bool -> GIPos -> NodeShape -> GIColor -> GIColor -> P.Context ->  IO ()
+createNode' st content autoNaming pos nshape color lcolor context = do
   es <- readIORef st
   let nid = head $ newNodes (editorGetGraph es)
-      content' = if infoVisible content == "" then infoSetLabel content (show nid) else content
+      content' = if infoVisible content == "" && autoNaming then infoSetLabel content (show nid) else content
   dim <- getStringDims (infoVisible content') context Nothing
   writeIORef st $ createNode es pos dim content' nshape color lcolor
 

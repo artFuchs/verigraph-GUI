@@ -11,7 +11,7 @@ Tarefas ---------------------------------------------------------------------
 *Criar uma espécie de inferência de tipos de arestas quando criá-las
 
 Progresso -------------------------------------------------------------------
-*Arrumar bug - arestas recém criadas em hostGraphs e ruleGraphs não recebem uma label automática.
+*Permitir que o usuário controle se os elementos irão receber nomes automáticos ou não
 
 
 Feito -----------------------------------------------------------------------
@@ -64,4 +64,5 @@ Feito -----------------------------------------------------------------------
 *Adicionar menuEntry para exportar gramática para .ggx
 *Arrumar bug - objetos tendo a aparencia modificada apenas ao mover se configurar o tipo através da entry
 *Arrumar bug - não há informação de erros quando há nodos com mesmo nome no typeGraph
+*Arrumar bug - arestas recém criadas em hostGraphs e ruleGraphs não recebem uma label automática.
 -}
