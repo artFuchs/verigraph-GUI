@@ -1337,7 +1337,7 @@ getRuleList model iter gStates = do
 
 getRules :: Gtk.TreeStore -> IORef (M.Map Int32 (EditorState, [DiaGraph], [DiaGraph])) -> IO [(Graph String String,String)]
 getRules model graphStates = do
-  (valid, iter) <- Gtk.treeModelGetIterFromString model "2:1"
+  (valid, iter) <- Gtk.treeModelGetIterFromString model "2:0"
   if not valid
     then return []
     else do
