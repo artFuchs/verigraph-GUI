@@ -2,8 +2,8 @@
 -- containing all the informations needed to draw a graph in the canvas
 -- it also contain functions to modify the editor state
 
-module Editor.EditorState
-( EditorState
+module Editor.EditorState(
+  EditorState
 , emptyES
 , editorGetGraph
 , editorSetGraph
@@ -33,6 +33,7 @@ import qualified Data.Graphs as G
 import Editor.GraphicalInfo
 import Editor.Helper
 import Data.List
+import Editor.Info
 
 -- | Graph Editor State
 -- A tuple containing all the informations needed to draw the graph in the canvas
@@ -139,7 +140,7 @@ createEdges es dstNode content estyle ecolor = editorSetGraph newGraph . editorS
         (newGraph, newegiM, createdEdges) = foldl create (graph, egiM, []) selectedNodes
         create = (\(g,giM,eids) nid -> let
                                     eid = head $ newEdges g
-                                    content' = if content == "" then show eid else content
+                                    content' = if infoLabel content == "" then infoSetLabel content (show eid) else content
                                     ng = insertEdgeWithPayload eid nid dstNode content' g
                                     newPos = if (dstNode == nid) then newLoopPos nid (g,(ngiM,egiM)) else newEdgePos nid dstNode (g,(ngiM,egiM))
                                     negi = EdgeGI {cPosition = newPos, color = ecolor, style = estyle}

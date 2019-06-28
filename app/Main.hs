@@ -7,11 +7,11 @@ main = startGUI
 Tarefas ---------------------------------------------------------------------
 *Modificar interface para que o painel do inspector não seja mostrado a toda hora.
   *Mostra-lo ao dar 2 cliques em um elemento.
-*Arrumar bug - arestas recém criadas em hostGraphs e ruleGraphs não recebem uma label automática.
 *Mostrar regras em formato R -> L
+*Criar uma espécie de inferência de tipos de arestas quando criá-las
 
 Progresso -------------------------------------------------------------------
-*Arrumar bug - não há informação de erros quando há nodos com mesmo nome no typeGraph
+*Arrumar bug - arestas recém criadas em hostGraphs e ruleGraphs não recebem uma label automática.
 
 
 Feito -----------------------------------------------------------------------
@@ -63,4 +63,5 @@ Feito -----------------------------------------------------------------------
 *Gerar uma especificação de gramática compativel com o Verigraph
 *Adicionar menuEntry para exportar gramática para .ggx
 *Arrumar bug - objetos tendo a aparencia modificada apenas ao mover se configurar o tipo através da entry
+*Arrumar bug - não há informação de erros quando há nodos com mesmo nome no typeGraph
 -}
