@@ -23,7 +23,7 @@ nameConflictGraph g = fromNodesAndEdges vn ve
     ve = map uniqueE es
     ns = nodes g
     es = edges g
-    uniqueN n = Node (nodeId n) $ infoLabel (nodeInfo n) /= "" && (notElem (infoLabel . nodeInfo $ n) $ map nodeInfo . filter (\n' -> nodeId n' /= nodeId n) $ ns)
+    uniqueN n = Node (nodeId n) $ infoLabel (nodeInfo n) /= "" && (notElem (infoLabel . nodeInfo $ n) $ map (infoLabel . nodeInfo) . filter (\n' -> nodeId n' /= nodeId n) $ ns)
     uniqueE e = Edge (edgeId e) (sourceId e) (targetId e) $ infoLabel (edgeInfo e) /= "" && (notElem (infoLabel . edgeInfo $ e) $ map edgeInfo . filter (\e' -> edgeId e' /= edgeId e) $ es)
 
 -- generate a mask graph that says if a node/edge is valid according to a typeGraph or not

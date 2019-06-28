@@ -8,11 +8,10 @@ Tarefas ---------------------------------------------------------------------
 *Modificar interface para que o painel do inspector não seja mostrado a toda hora.
   *Mostra-lo ao dar 2 cliques em um elemento.
 *Arrumar bug - arestas recém criadas em hostGraphs e ruleGraphs não recebem uma label automática.
-*Arrumar bug - não há informação de erros quando há nodos com mesmo nome no typeGraph
 *Mostrar regras em formato R -> L
 
 Progresso -------------------------------------------------------------------
-*Arrumar bug - objetos tendo a aparencia modificada apenas ao mover se configurar o tipo através da entry
+*Arrumar bug - não há informação de erros quando há nodos com mesmo nome no typeGraph
 
 
 Feito -----------------------------------------------------------------------
@@ -63,4 +62,5 @@ Feito -----------------------------------------------------------------------
 *Transformar um ruleGraph em 3 grafos diferentes: LHS, K e RHS
 *Gerar uma especificação de gramática compativel com o Verigraph
 *Adicionar menuEntry para exportar gramática para .ggx
+*Arrumar bug - objetos tendo a aparencia modificada apenas ao mover se configurar o tipo através da entry
 -}
