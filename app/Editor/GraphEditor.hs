@@ -104,7 +104,7 @@ startGUI = do
   Gtk.containerAdd inspectorFrame typeInspBox
   let
     typeInspWidgets = (nameEntry, colorBtn, lineColorBtn, radioShapes, radioStyles)
-    [radioCircle, radioRect, radioQuad] = radioShapes
+    [radioCircle, radioRect, radioSquare] = radioShapes
     [radioNormal, radioPointed, radioSlashed] = radioStyles
 
   (hostInspBox, hostNameBox, autoLabelN, autoLabelE, nodeTCBox, edgeTCBox, hostInspBoxes) <- buildHostInspector
@@ -930,10 +930,10 @@ startGUI = do
         Gtk.widgetQueueDraw canvas
         updateTG
 
-  radioQuad `on` #toggled $ do
+  radioSquare `on` #toggled $ do
     writeIORef currentShape NSquare
     es <- readIORef st
-    active <- get radioQuad #active
+    active <- get radioSquare #active
     let nds = fst $ editorGetSelected es
         giM = fst $ editorGetGI es
     if not active || M.null (M.filterWithKey (\k gi -> NodeId k `elem` nds && shape gi /= NSquare) giM)

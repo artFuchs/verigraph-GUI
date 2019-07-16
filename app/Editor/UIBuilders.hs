@@ -121,9 +121,9 @@ buildTypeInspector = do
   Gtk.boxPackStart nodeShapeBox radioCircle True True 0
   radioRect <- Gtk.radioButtonNewWithLabelFromWidget (Just radioCircle) "Rect"
   Gtk.boxPackStart nodeShapeBox radioRect True True 0
-  radioQuad <- Gtk.radioButtonNewWithLabelFromWidget (Just radioCircle) "Quad"
-  Gtk.boxPackStart nodeShapeBox radioQuad True True 0
-  let radioShapes = [radioCircle, radioRect, radioQuad]
+  radioSquare <- Gtk.radioButtonNewWithLabelFromWidget (Just radioCircle) "Square"
+  Gtk.boxPackStart nodeShapeBox radioSquare True True 0
+  let radioShapes = [radioCircle, radioRect, radioSquare]
 
 
   -- creates a frame conataining a VBox with radioButtons to the user change the edge shape
