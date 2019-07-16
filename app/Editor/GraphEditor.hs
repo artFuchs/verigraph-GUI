@@ -724,7 +724,6 @@ startGUI = do
     es <- readIORef st
     let copy = copySelected es
     writeIORef clipboard $ copy
-    print copy
 
   -- paste
   on pst #activate $ do
