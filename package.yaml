@@ -1,6 +1,6 @@
-name:                graph-editor-gi-gtk
+name:                graph-editor
 version:             0.1.0.0
-github:              "githubuser/graph-editor-gi-gtk"
+github:              "artFuchs/graph-editor"
 license:             BSD3
 author:              "Author name here"
 maintainer:          "example@example.com"
@@ -17,16 +17,35 @@ extra-source-files:
 # To avoid duplicated efforts in documentation and dealing with the
 # complications of embedding Haddock markup inside cabal files, it is
 # common to point users to the README.md file.
-description:         Please see the README on GitHub at <https://github.com/githubuser/graph-editor-gi-gtk#readme>
+description:         Please see the README on GitHub at <https://github.com/artFuchs/graph-editor#readme>
 
 dependencies:
 - base >= 4.7 && < 5
+- gi-gtk
+- gi-gdk
+- prettyprinter
+- text
+- cairo
+- pango
+- gi-cairo
+- gi-pango
+- haskell-gi-base
+- transformers
+- parallel
+- containers
+- set-monad
+- hxt
+- mtl
+- filepath
+- parsec
+- directory
+
 
 library:
   source-dirs: src
 
 executables:
-  graph-editor-gi-gtk-exe:
+  graph-editor-exe:
     main:                Main.hs
     source-dirs:         app
     ghc-options:
@@ -34,30 +53,15 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - graph-editor-gi-gtk
-    - gi-gtk
-    - gi-gdk
-    - text
-    - cairo
-    - pango
-    - gi-cairo
-    - gi-pango
-    - haskell-gi-base
-    - transformers
-    - prettyprinter
-    - parallel
-    - containers
-    - set-monad
-    - hxt
-    - mtl
+    - graph-editor
 
-tests:
-  graph-editor-gi-gtk-test:
-    main:                Spec.hs
-    source-dirs:         test
-    ghc-options:
-    - -threaded
-    - -rtsopts
-    - -with-rtsopts=-N
-    dependencies:
-    - graph-editor-gi-gtk
+#tests:
+#  graph-editor-gi-gtk-test:
+#    main:                Spec.hs
+#    source-dirs:         test
+#    ghc-options:
+#    - -threaded
+#    - -rtsopts
+#    - -with-rtsopts=-N
+#    dependencies:
+#    - graph-editor-gi-gtk
