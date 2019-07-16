@@ -113,6 +113,8 @@ startGUI = do
     hostInspWidgets = (nameEntry, nodeTCBox, edgeTCBox)
     ruleInspWidgets = (nameEntry, nodeTCBoxR, edgeTCBoxR, operationCBox)
 
+  (rvwindow, lhsCanvas, rhsCanvas) <- buildRuleViewWindow window
+
   #showAll window
 
   -- init an model to display in the tree panel --------------------------------
@@ -475,6 +477,7 @@ startGUI = do
             putStrLn $ "lhs: " ++ show lhs ++ "\n"
             putStrLn $ "k: " ++ show k ++ "\n"
             putStrLn $ "rhs: " ++ show rhs ++ "\n"
+            #showAll rvwindow
           else return ()
       _ -> return ()
     return True
