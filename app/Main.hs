@@ -9,10 +9,10 @@ Tarefas ---------------------------------------------------------------------
   *Mostra-lo ao dar 2 cliques em um elemento.
 *Mostrar regras em formato R -> L
 *Criar uma espécie de inferência de tipos de arestas quando criá-las
+*Quando editar o nome de uma aresta ou nodo, fazer update em todos os grafos que usam o objeto
 
 Progresso -------------------------------------------------------------------
-*Permitir que o usuário controle se os elementos irão receber nomes automáticos ou não
-
+*Exportar nomes dos tipos de nodos e arestas no arquivo ggx
 
 Feito -----------------------------------------------------------------------
 *Melhorar menu de Propriedades
@@ -65,4 +65,5 @@ Feito -----------------------------------------------------------------------
 *Arrumar bug - objetos tendo a aparencia modificada apenas ao mover se configurar o tipo através da entry
 *Arrumar bug - não há informação de erros quando há nodos com mesmo nome no typeGraph
 *Arrumar bug - arestas recém criadas em hostGraphs e ruleGraphs não recebem uma label automática.
+*Permitir que o usuário controle se os elementos irão receber nomes automáticos ou não
 -}

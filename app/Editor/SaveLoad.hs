@@ -123,8 +123,8 @@ exportGGX (fstOrderGG, tg)  path = do
   let path' = if (tails path)!!(length path-4) == ".ggx" then path else path ++ ".ggx"
   let nods = nodes tg
       edgs = edges tg
-      nodeNames = map (\n -> (show . nodeId $ n, infoLabel . nodeInfo $ n)) nods
-      edgeNames = map (\e -> (show . edgeId $ e, infoLabel . edgeInfo $ e)) edgs
+      nodeNames = map (\n -> ('N' : (show . nodeId $ n), (infoLabel . nodeInfo $ n) ++ "%:[NODE]:" )) nods
+      edgeNames = map (\e -> ('E' : (show . edgeId $ e), (infoLabel . edgeInfo $ e) ++ "%:[EDGE]:" )) edgs
       names = nodeNames ++ edgeNames
 
   let emptySndOrderGG = grammar (emptyGraphRule (makeTypeGraph tg)) [] [] :: Grammar (RuleMorphism String String)
