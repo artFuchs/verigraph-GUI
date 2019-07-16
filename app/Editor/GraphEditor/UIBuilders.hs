@@ -12,6 +12,7 @@ module Editor.GraphEditor.UIBuilders(
 , createSaveDialog
 , createLoadDialog
 , createConfirmDialog
+, buildRuleViewWindow
 ) where
 
 import qualified GI.Gtk as Gtk
@@ -377,3 +378,25 @@ createConfirmDialog window msg = do
   response <- Gtk.dialogRun closeD
   Gtk.widgetDestroy closeD
   return $ toEnum . fromIntegral $ response
+
+buildRuleViewWindow :: Gtk.Window -> IO (Gtk.Window, Gtk.DrawingArea, Gtk.DrawingArea)
+buildRuleViewWindow window = do
+  rvWindow <- new Gtk.Window [ #transientFor := window
+                            , #destroyWithParent := True
+                            , #defaultWidth := 320
+                            , #defaultHeight := 240
+                            , #title := "RuleViewer"]
+  rulePaned <- new Gtk.Paned [ #orientation := Gtk.OrientationHorizontal]
+  Gtk.containerAdd rvWindow rulePaned
+
+  lhsCanvas <- Gtk.drawingAreaNew
+  Gtk.panedPack1 rulePaned lhsCanvas True True
+  Gtk.widgetSetCanFocus lhsCanvas True
+  --Gtk.widgetSetEvents lhsCanvas [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
+
+  rhsCanvas <- Gtk.drawingAreaNew
+  Gtk.panedPack2 rulePaned rhsCanvas True True
+  Gtk.widgetSetCanFocus rhsCanvas True
+  --Gtk.widgetSetEvents rhsCanvas [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
+
+  return (rvWindow, lhsCanvas, rhsCanvas)
