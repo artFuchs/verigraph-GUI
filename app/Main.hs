@@ -66,4 +66,10 @@ Feito -----------------------------------------------------------------------
 *Arrumar bug - arestas recém criadas em hostGraphs e ruleGraphs não recebem uma label automática.
 *Permitir que o usuário controle se os elementos irão receber nomes automáticos ou não
 *Exportar nomes dos tipos de nodos e arestas no arquivo ggx
+
+
+Ideias -------------------------------------------------------------------------
+*criação de nodos através de clique duplo em um espaço em branco
+*criação de arestas dando clique duplo em um nodo e movendo o mouse para outro nodo
+*mostrar um campo de digitação em cima do elemento quando o usuario apertar F2 para renomeá-lo
 -}
