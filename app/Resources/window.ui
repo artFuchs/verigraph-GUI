@@ -110,7 +110,6 @@
                         <property name="label" translatable="yes">_Delete Selected</property>
                         <property name="use_underline">True</property>
                         <accelerator key="d" signal="activate" modifiers="GDK_CONTROL_MASK"/>
-                        <accelerator key="Delete" signal="activate"/>
                       </object>
                     </child>
                     <child>
