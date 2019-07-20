@@ -1,6 +1,6 @@
--- | Module containing generic auxiliar functions
-module Editor.Helper(
--- geometry
+-- module containing functions related to geometry
+
+module Editor.Geometry(
   pointDistance
 , pointLineDistance
 , addPoint
@@ -11,19 +11,11 @@ module Editor.Helper(
 , toPolarFrom
 , angle
 , quadrant
-, applyPair
 , interpolate
--- tree manipulation
-, genForestIds
-, genTreeId
-)where
+) where
 
 import Data.Fixed
-import Data.Tree
-import Data.Int
 
-
--- auxiliar functions related with geometry ------------------------------------
 -- | calculates the distance between two points
 pointDistance :: (Double,Double) -> (Double,Double) -> Double
 pointDistance (x1,y1) (x2,y2) = sqrt $ (x1-x2)*(x1-x2) + (y1-y2)*(y1-y2)
@@ -83,9 +75,7 @@ quadrant ang = (c,d)
         c = if (abs a) <= pi/2 then 1 else -1
         d = if b < pi then 1 else -1
 
--- | Apply a function in a pair
-applyPair :: (a->b) -> (a,a) -> (b,b)
-applyPair f (a,b) = (f a, f b)
+
 
 -- | calculate a point of a line specified by two points in the time t
 interpolate :: (Double,Double) -> (Double,Double) -> Double -> (Double,Double)
@@ -93,17 +83,3 @@ interpolate (x0,y0) (x1,y1) t = (x,y)
   where
     x = x0 + t * (x1 - x0)
     y = y0 + t * (y1 - y0)
-
-
--- Tree generation/manipulation ------------------------------------------------
-genForestIds :: Forest a -> Int32 -> Forest Int32
-genForestIds [] i = []
-genForestIds (t:ts) i = t' : (genForestIds ts i')
-  where (t',i') = genTreeId t i
-
-genTreeId :: Tree a -> Int32 -> (Tree Int32, Int32)
-genTreeId (Node x []) i = (Node i [], i + 1)
-genTreeId (Node x f) i = (Node i f', i')
-  where
-    f' = genForestIds f (i+1)
-    i' = (maximum (fmap maximum f')) + 1

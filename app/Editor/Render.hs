@@ -19,7 +19,7 @@ import Graphics.Rendering.Pango as GRP
 import qualified Data.Text as T
 import Data.List
 import Editor.GraphicalInfo
-import Editor.Helper
+import Editor.Geometry
 import Control.Monad
 
 

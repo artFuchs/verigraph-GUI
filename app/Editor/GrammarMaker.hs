@@ -14,7 +14,6 @@ import Rewriting.DPO.TypedGraph
 import Data.Graphs.Morphism
 import qualified Data.TypedGraph as TG
 import qualified Data.TypedGraph.Morphism as TGM
-import Editor.Helper
 
 type RuleGraphs = (Graph String String, Graph String String, Graph String String)
 type TypeGraph a b = Graph (Maybe a) (Maybe b) -- may delete this if import span

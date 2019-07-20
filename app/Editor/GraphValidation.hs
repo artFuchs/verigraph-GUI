@@ -10,11 +10,10 @@ import Data.Graphs
 import qualified Data.Graphs.Morphism as Morph
 import qualified Data.TypedGraph as TG
 import Editor.Info
-import Editor.Helper
 
 -- validation ------------------------------------------------------------------
--- generate a mask graph that highlights that informs if a node/edge has a unique name
--- True -> element has unique name
+-- generate a mask graph that informs if a node/edge has a unique name
+-- True -> element has unique  name
 -- False -> element has conflict
 nameConflictGraph :: Graph String String -> Graph Bool Bool
 nameConflictGraph g = fromNodesAndEdges vn ve
@@ -25,6 +24,10 @@ nameConflictGraph g = fromNodesAndEdges vn ve
     es = edges g
     uniqueN n = Node (nodeId n) $ infoLabel (nodeInfo n) /= "" && (notElem (infoLabel . nodeInfo $ n) $ map (infoLabel . nodeInfo) . filter (\n' -> nodeId n' /= nodeId n) $ ns)
     uniqueE e = Edge (edgeId e) (sourceId e) (targetId e) $ infoLabel (edgeInfo e) /= "" && (notElem (infoLabel . edgeInfo $ e) $ map edgeInfo . filter (\e' -> edgeId e' /= edgeId e) $ es)
+
+-- | Apply a function in a pair
+applyPair :: (a->b) -> (a,a) -> (b,b)
+applyPair f (a,b) = (f a, f b)
 
 -- generate a mask graph that says if a node/edge is valid according to a typeGraph or not
 correctTypeGraph :: Graph String String -> Graph String String -> Graph Bool Bool
@@ -66,10 +69,12 @@ correctTypeGraph g tg = fromNodesAndEdges vn ve
                                   srce' = nodeId . fromJust . lookupNode (sourceId e') $ tg
                               _ -> False
 
+
 isGraphValid :: Graph String String -> Graph String String -> Bool
 isGraphValid g tg = and $ concat [map nodeInfo $ nodes validG, map edgeInfo $ edges validG]
       where
         validG = correctTypeGraph g tg
+
 
 opValidationGraph :: Graph String String -> Graph Bool Bool
 opValidationGraph g = fromNodesAndEdges nodes' edges'

@@ -41,7 +41,7 @@ import qualified Data.TypedGraph as TG
 -- editor modules
 import Editor.GraphicalInfo
 import Editor.Render
-import Editor.Helper
+import Editor.Geometry
 import Editor.UIBuilders
 import Editor.DiaGraph hiding (empty)
 import qualified Editor.DiaGraph as DG
@@ -1265,6 +1265,19 @@ startGUI = do
 ------------------------------------------------------------------------------
 -- Auxiliar Functions --------------------------------------------------------
 ------------------------------------------------------------------------------
+
+-- Tree generation/manipulation ------------------------------------------------
+genForestIds :: Tree.Forest a -> Int32 -> Tree.Forest Int32
+genForestIds [] i = []
+genForestIds (t:ts) i = t' : (genForestIds ts i')
+  where (t',i') = genTreeId t i
+
+genTreeId :: Tree.Tree a -> Int32 -> (Tree.Tree Int32, Int32)
+genTreeId (Tree.Node x []) i = (Tree.Node i [], i + 1)
+genTreeId (Tree.Node x f) i = (Tree.Node i f', i')
+  where
+    f' = genForestIds f (i+1)
+    i' = (maximum (fmap maximum f')) + 1
 
 -- Gtk.treeStore manipulation
 initStore :: Gtk.TreeStore -> Gtk.TreeView ->  IO ()
