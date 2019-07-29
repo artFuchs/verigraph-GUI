@@ -1,4 +1,4 @@
-module Editor.Info(
+module Editor.Data.Info(
   Info
 , infoVisible
 , infoLabel

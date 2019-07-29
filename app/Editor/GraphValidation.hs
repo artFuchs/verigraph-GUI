@@ -9,7 +9,7 @@ import Data.Maybe
 import Data.Graphs
 import qualified Data.Graphs.Morphism as Morph
 import qualified Data.TypedGraph as TG
-import Editor.Info
+import Editor.Data.Info
 
 -- validation ------------------------------------------------------------------
 -- generate a mask graph that informs if a node/edge has a unique name
@@ -25,7 +25,7 @@ nameConflictGraph g = fromNodesAndEdges vn ve
     uniqueN n = Node (nodeId n) $ infoLabel (nodeInfo n) /= "" && (notElem (infoLabel . nodeInfo $ n) $ map (infoLabel . nodeInfo) . filter (\n' -> nodeId n' /= nodeId n) $ ns)
     uniqueE e = Edge (edgeId e) (sourceId e) (targetId e) $ infoLabel (edgeInfo e) /= "" && (notElem (infoLabel . edgeInfo $ e) $ map edgeInfo . filter (\e' -> edgeId e' /= edgeId e) $ es)
 
--- | Apply a function in a pair
+-- Auxiliar function: apply a function in a pair
 applyPair :: (a->b) -> (a,a) -> (b,b)
 applyPair f (a,b) = (f a, f b)
 

@@ -1,4 +1,4 @@
-module Editor.GrammarMaker (
+module Editor.GraphEditor.GrammarMaker (
   graphToRuleGraphs
 , makeTypeGraph
 , makeGrammar
@@ -7,7 +7,7 @@ module Editor.GrammarMaker (
 import Data.Maybe
 import Data.Graphs
 import qualified Data.List as L
-import Editor.Info
+import Editor.Data.Info
 import Base.Valid
 import Abstract.Rewriting.DPO
 import Rewriting.DPO.TypedGraph

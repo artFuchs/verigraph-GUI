@@ -2,7 +2,7 @@
 -- containing all the informations needed to draw a graph in the canvas
 -- it also contain functions to modify the editor state
 
-module Editor.EditorState(
+module Editor.Data.EditorState(
   EditorState
 , emptyES
 , editorGetGraph
@@ -30,10 +30,10 @@ module Editor.EditorState(
 import qualified Data.Map as M
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
-import Editor.GraphicalInfo
-import Editor.Geometry
+import Editor.Data.GraphicalInfo
+import Editor.Render.Geometry
 import Data.List
-import Editor.Info
+import Editor.Data.Info
 
 -- | Graph Editor State
 -- A tuple containing all the informations needed to draw the graph in the canvas

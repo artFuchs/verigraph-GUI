@@ -1,4 +1,4 @@
-module Editor.DiaGraph
+module Editor.Data.DiaGraph
 ( DiaGraph
 , isDiaGraphEqual
 , diagrDisjointUnion
@@ -8,7 +8,7 @@ module Editor.DiaGraph
 import qualified Data.Map as M
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
-import Editor.GraphicalInfo
+import Editor.Data.GraphicalInfo
 
 -- |DiaGraph
 -- A pair containing a graph and it's graphical information

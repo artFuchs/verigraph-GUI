@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 
 -- | This module contains the UI definition
-module Editor.UIBuilders(
+module Editor.GraphEditor.UIBuilders(
   buildMainWindow
 , buildTypeInspector
 , buildHostInspector

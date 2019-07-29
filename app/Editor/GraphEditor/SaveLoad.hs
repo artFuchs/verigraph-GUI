@@ -1,4 +1,4 @@
-module Editor.SaveLoad
+module Editor.GraphEditor.SaveLoad
 ( SaveInfo(..)
 , saveFile
 , saveFileAs
@@ -10,9 +10,9 @@ module Editor.SaveLoad
 , loadProject
 )where
 
-import Editor.UIBuilders
-import Editor.GraphicalInfo
-import Editor.EditorState
+import Editor.GraphEditor.UIBuilders
+import Editor.Data.GraphicalInfo
+import Editor.Data.EditorState
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
 import qualified Data.Tree as Tree
@@ -24,10 +24,10 @@ import Data.List
 import Abstract.Rewriting.DPO
 import qualified Data.TypedGraph.Morphism as TGM
 import XML.GGXWriter
-import Editor.GrammarMaker
+import Editor.GraphEditor.GrammarMaker
 import Category.TypedGraphRule (RuleMorphism)
 import Rewriting.DPO.TypedGraph
-import Editor.Info
+import Editor.Data.Info
 --------------------------------------------------------------------------------
 -- structs ---------------------------------------------------------------------
 

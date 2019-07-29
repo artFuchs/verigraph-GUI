@@ -1,5 +1,5 @@
 -- | module containing functions related with the rendering of a graph
-module Editor.Render
+module Editor.Render.Render
 ( renderWithContext
 , renderNode
 , renderEdge
@@ -18,8 +18,8 @@ import Graphics.Rendering.Pango as GRP
 
 import qualified Data.Text as T
 import Data.List
-import Editor.GraphicalInfo
-import Editor.Geometry
+import Editor.Data.GraphicalInfo
+import Editor.Render.Geometry
 import Control.Monad
 
 

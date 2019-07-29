@@ -1,4 +1,4 @@
-module Editor.GraphicalInfo(
+module Editor.Data.GraphicalInfo(
   GraphicalInfo (..)
 , GIPos
 , GIDim
