@@ -39,6 +39,7 @@ import qualified Data.TypedGraph as TG
 
 
 -- editor modules
+<<<<<<< HEAD
 import Editor.Data.GraphicalInfo
 import Editor.Render.Render
 import Editor.Render.Geometry
@@ -50,6 +51,21 @@ import Editor.GraphEditor.SaveLoad
 import Editor.Data.Info
 import Editor.GraphValidation
 import Editor.GraphEditor.GrammarMaker
+=======
+import Editor.GraphicalInfo
+import Editor.Render
+import Editor.GraphDraw
+import Editor.Helper
+import Editor.UIBuilders
+import Editor.DiaGraph hiding (empty)
+import qualified Editor.DiaGraph as DG
+import Editor.EditorState
+import Editor.SaveLoad
+import Editor.Info
+import Editor.GraphValidation
+import Editor.GrammarMaker
+import Editor.RuleViewer
+>>>>>>> a3dd5a8defeb19f7277242183dcd22e9ad689b27
 --------------------------------------------------------------------------------
 -- MODULE STRUCTURES -----------------------------------------------------------
 --------------------------------------------------------------------------------
