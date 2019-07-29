@@ -1,4 +1,4 @@
-module Editor.GraphDraw (
+module Editor.Render.GraphDraw (
   drawTypeGraph
 , drawHostGraph
 , drawRuleGraph
@@ -10,10 +10,10 @@ import Graphics.Rendering.Cairo
 
 import Data.Graphs
 
-import Editor.EditorState
-import Editor.Render
+import Editor.Data.Info
+import Editor.Data.EditorState
+import Editor.Render.Render
 import Editor.GraphValidation
-import Editor.Info
 
 -- draw a graph in the canvas --------------------------------------------------
 drawTypeGraph :: EditorState -> Maybe (Double,Double,Double,Double)-> Render ()

@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
-module Editor.RuleViewer (
+module Editor.GraphEditor.RuleViewer (
   createRuleViewerWindow
 ) where
 
@@ -11,12 +11,12 @@ import Data.Graphs
 
 import qualified Data.Map as M
 
-import Editor.EditorState
-import Editor.UIBuilders
-import Editor.Render
-import Editor.GraphDraw
-import Editor.Helper
-import Editor.GraphicalInfo
+import Editor.Data.EditorState
+import Editor.Data.GraphicalInfo
+import Editor.GraphEditor.UIBuilders
+import Editor.Render.Render
+import Editor.Render.Geometry
+import Editor.Render.GraphDraw
 
 import Data.IORef
 
