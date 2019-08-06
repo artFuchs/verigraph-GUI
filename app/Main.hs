@@ -8,7 +8,9 @@ Tarefas ---------------------------------------------------------------------
 *Modificar interface para que o painel do inspector não seja mostrado a toda hora.
   *Mostra-lo ao dar 2 cliques em um elemento.
 *Criar uma espécie de inferência de tipos de arestas quando criá-las
-*Quando editar o nome de uma aresta ou nodo, fazer update em todos os grafos que usam o objeto
+*Quando editar o nome de uma aresta ou nodo no grafo de tipos, fazer update em todos os grafos que usam o objeto
+*permitir que o usuário escolha como será vista a regra (formato L->R, ou L<-K->R)
+*melhorar janela de ajuda
 
 Progresso -------------------------------------------------------------------
 *Mostrar regras em formato R -> L

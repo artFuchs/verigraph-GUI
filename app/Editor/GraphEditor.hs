@@ -477,15 +477,32 @@ startGUI = do
           then do
             g <- readIORef st >>= \es -> return $ editorGetGraph es
             (lhs,k,rhs) <- return $ graphToRuleGraphs g
-            -- putStrLn $ "lhs: " ++ show lhs ++ "\n"
-            -- putStrLn $ "k: " ++ show k ++ "\n"
-            -- putStrLn $ "rhs: " ++ show rhs ++ "\n"
 
             gi <- readIORef st >>= return . editorGetGI
             tg <- readIORef activeTypeGraph
 
-            modifyIORef rvlesIOR (editorSetGraph lhs . editorSetGI gi)
-            modifyIORef rvresIOR (editorSetGraph rhs . editorSetGI gi)
+            -- modify contents for each element
+            context <- Gtk.widgetGetPangoContext canvas
+            let changeGIDims str gi = do
+                    dims <- getStringDims str context Nothing
+                    gi' <- return $ nodeGiSetDims dims gi
+                    return gi'
+            let updateNodeGiM nodeGiM = do
+                    nodeGiM' <- forM (M.toList nodeGiM) (\(k,gi) -> do
+                            gi' <- changeGIDims (show k) gi
+                            return (k,gi')
+                            )
+                    return $ M.fromList nodeGiM'
+            nodeGi <- updateNodeGiM (fst gi)
+            let idsGraph g = g''
+                  where g' = foldr (\e g -> insertEdgeWithPayload (edgeId e) (sourceId e) (targetId e) (show . edgeId $ e) g) g (edges g)
+                        g'' = foldr (\n g -> insertNodeWithPayload (nodeId n) (show . nodeId $ n) g) g' (nodes g)
+            let lhs' = idsGraph lhs
+            let rhs' = idsGraph rhs
+
+            -- update ruleViewer canvas
+            modifyIORef rvlesIOR (editorSetGraph lhs' . editorSetGI (nodeGi, snd gi))
+            modifyIORef rvresIOR (editorSetGraph rhs' . editorSetGI (nodeGi, snd gi))
             writeIORef rvtgIOR tg
 
             Gtk.widgetQueueDraw rvlCanvas

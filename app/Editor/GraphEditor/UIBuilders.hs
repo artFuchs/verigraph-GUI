@@ -386,11 +386,11 @@ buildRuleViewPanel = do
   lhsCanvas <- Gtk.drawingAreaNew
   Gtk.panedPack1 rulePaned lhsCanvas True True
   Gtk.widgetSetCanFocus lhsCanvas True
-  --Gtk.widgetSetEvents lhsCanvas [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
+  Gtk.widgetSetEvents lhsCanvas [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
 
   rhsCanvas <- Gtk.drawingAreaNew
   Gtk.panedPack2 rulePaned rhsCanvas True True
   Gtk.widgetSetCanFocus rhsCanvas True
-  --Gtk.widgetSetEvents rhsCanvas [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
+  Gtk.widgetSetEvents rhsCanvas [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
 
   return (rulePaned, lhsCanvas, rhsCanvas)

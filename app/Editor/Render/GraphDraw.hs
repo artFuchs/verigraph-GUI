@@ -2,6 +2,7 @@ module Editor.Render.GraphDraw (
   drawTypeGraph
 , drawHostGraph
 , drawRuleGraph
+, drawRuleSideGraph
 ) where
 
 import qualified Data.Map as M
@@ -64,15 +65,7 @@ drawTypeGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
       Nothing -> return ())
 
   -- draw the selectionBox
-  case sq of
-    Just (x,y,w,h) -> do
-      rectangle x y w h
-      setSourceRGBA 0.29 0.56 0.85 0.5
-      fill
-      rectangle x y w h
-      setSourceRGBA 0.29 0.56 0.85 1
-      stroke
-    Nothing -> return ()
+  drawSelectionBox sq
   return ()
 
 drawHostGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph String String -> Render ()
@@ -123,15 +116,7 @@ drawHostGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
       Nothing -> return ())
 
   -- draw the selectionBox
-  case sq of
-    Just (x,y,w,h) -> do
-      rectangle x y w h
-      setSourceRGBA 0.29 0.56 0.85 0.5
-      fill
-      rectangle x y w h
-      setSourceRGBA 0.29 0.56 0.85 1
-      stroke
-    Nothing -> return ()
+  drawSelectionBox sq
   return ()
 
 drawRuleGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph String String -> Render ()
@@ -199,14 +184,47 @@ drawRuleGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
       Just gi -> renderNode gi label (selected || typeError) color highlight textColor
       Nothing -> return ())
 
-  -- draw the selectionBox
-  case sq of
-    Just (x,y,w,h) -> do
-      rectangle x y w h
-      setSourceRGBA 0.29 0.56 0.85 0.5
-      fill
-      rectangle x y w h
-      setSourceRGBA 0.29 0.56 0.85 1
-      stroke
-    Nothing -> return ()
+  drawSelectionBox sq
   return ()
+
+
+drawRuleSideGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Render ()
+drawRuleSideGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
+  scale z z
+  translate px py
+
+  -- specify colors for select and error
+  let selectColor = (0.29,0.56,0.85)
+      errorColor = (0.9,0.2,0.2)
+      bothColor = (0.47,0.13,0.87)
+  -- draw the edges
+  forM (edges g) (\e -> do
+    let dstN = M.lookup (fromEnum . targetId $ e) nGI
+        srcN = M.lookup (fromEnum . sourceId $ e) nGI
+        egi  = M.lookup (fromEnum . edgeId   $ e) eGI
+    case (egi, srcN, dstN) of
+      (Just gi, Just src, Just dst) -> renderEdge gi (show (edgeId e)) src dst False (0,0,0) False (0,0,0)
+      _ -> return ())
+
+  -- draw the nodes
+  forM (nodes g) (\n -> do
+    let ngi = M.lookup (fromEnum . nodeId $ n) nGI
+        label = show (nodeId n)
+    case (ngi) of
+      Just gi -> renderNode gi label False (0,0,0) False (0,0,0)
+      Nothing -> return ())
+
+  drawSelectionBox sq
+  return ()
+
+
+drawSelectionBox:: Maybe (Double,Double,Double,Double) -> Render()
+drawSelectionBox sq = case sq of
+  Just (x,y,w,h) -> do
+    rectangle x y w h
+    setSourceRGBA 0.29 0.56 0.85 0.5
+    fill
+    rectangle x y w h
+    setSourceRGBA 0.29 0.56 0.85 1
+    stroke
+  Nothing -> return ()
