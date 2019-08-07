@@ -9,6 +9,7 @@ import qualified GI.Gdk as Gdk
 import qualified GI.Pango as P
 import Data.GI.Base
 import Data.GI.Base.GValue
+import Data.GI.Base.GType
 import Control.Monad
 import Control.Monad.IO.Class
 import Data.IORef
