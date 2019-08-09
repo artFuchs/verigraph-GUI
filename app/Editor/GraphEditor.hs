@@ -92,8 +92,9 @@ startGUI = do
   (window, canvas, mainBox, treeFrame, inspectorFrame, fileItems, editItems, viewItems, helpItems) <- buildMainWindow
   let (newm,opn,svn,sva,eggx,svg,opg) = fileItems
       (del,udo,rdo,cpy,pst,cut,sla,sln,sle) = editItems
-      (zin,zut,z50,zdf,z150,z200,vdf) = viewItems
+      (zin,zut,z50,zdf,z150,z200,vdf,orv) = viewItems
       (hlp,abt) = helpItems
+  Gtk.widgetSetSensitive orv False
   -- creates the tree panel
   (treeBox, treeview, changesRenderer, nameRenderer, activeRenderer, createBtn, btnRmv) <- buildTreePanel
   Gtk.containerAdd treeFrame treeBox
@@ -472,45 +473,7 @@ startGUI = do
     case (Gdk.ModifierTypeControlMask `elem` ms, Gdk.ModifierTypeShiftMask `elem` ms, toLower k) of
       -- F2 - rename selection
       (False,False,'\65471') -> Gtk.widgetGrabFocus nameEntry
-      (True,False,'p') -> do
-        gt <- readIORef currentGraphType
-        if gt == 3
-          then do
-            g <- readIORef st >>= \es -> return $ editorGetGraph es
-            (lhs,k,rhs) <- return $ graphToRuleGraphs g
-
-            gi <- readIORef st >>= return . editorGetGI
-            tg <- readIORef activeTypeGraph
-
-            -- modify contents for each element
-            context <- Gtk.widgetGetPangoContext canvas
-            let changeGIDims str gi = do
-                    dims <- getStringDims str context Nothing
-                    gi' <- return $ nodeGiSetDims dims gi
-                    return gi'
-            let updateNodeGiM nodeGiM = do
-                    nodeGiM' <- forM (M.toList nodeGiM) (\(k,gi) -> do
-                            gi' <- changeGIDims (show k) gi
-                            return (k,gi')
-                            )
-                    return $ M.fromList nodeGiM'
-            nodeGi <- updateNodeGiM (fst gi)
-            let idsGraph g = g''
-                  where g' = foldr (\e g -> insertEdgeWithPayload (edgeId e) (sourceId e) (targetId e) (show . edgeId $ e) g) g (edges g)
-                        g'' = foldr (\n g -> insertNodeWithPayload (nodeId n) (show . nodeId $ n) g) g' (nodes g)
-            let lhs' = idsGraph lhs
-            let rhs' = idsGraph rhs
-
-            -- update ruleViewer canvas
-            modifyIORef rvlesIOR (editorSetGraph lhs' . editorSetGI (nodeGi, snd gi))
-            modifyIORef rvresIOR (editorSetGraph rhs' . editorSetGI (nodeGi, snd gi))
-            writeIORef rvtgIOR tg
-
-            Gtk.widgetQueueDraw rvlCanvas
-            Gtk.widgetQueueDraw rvrCanvas
-
-            #showAll rvWindow
-          else return ()
+      (True,False,'p') -> Gtk.menuItemActivate orv
       _ -> return ()
     return True
 
@@ -839,6 +802,46 @@ startGUI = do
   vdf `on` #activate $ do
     modifyIORef st (\es -> editorSetZoom 1 $ editorSetPan (0,0) es )
     Gtk.widgetQueueDraw canvas
+
+  orv `on` #activate $ do
+    gt <- readIORef currentGraphType
+    if gt == 3
+      then do
+        g <- readIORef st >>= \es -> return $ editorGetGraph es
+        (lhs,k,rhs) <- return $ graphToRuleGraphs g
+
+        gi <- readIORef st >>= return . editorGetGI
+        tg <- readIORef activeTypeGraph
+
+        -- modify contents for each element
+        context <- Gtk.widgetGetPangoContext canvas
+        let changeGIDims str gi = do
+                dims <- getStringDims str context Nothing
+                gi' <- return $ nodeGiSetDims dims gi
+                return gi'
+        let updateNodeGiM nodeGiM = do
+                nodeGiM' <- forM (M.toList nodeGiM) (\(k,gi) -> do
+                        gi' <- changeGIDims (show k) gi
+                        return (k,gi')
+                        )
+                return $ M.fromList nodeGiM'
+        nodeGi <- updateNodeGiM (fst gi)
+        let idsGraph g = g''
+              where g' = foldr (\e g -> insertEdgeWithPayload (edgeId e) (sourceId e) (targetId e) (show . edgeId $ e) g) g (edges g)
+                    g'' = foldr (\n g -> insertNodeWithPayload (nodeId n) (show . nodeId $ n) g) g' (nodes g)
+        let lhs' = idsGraph lhs
+        let rhs' = idsGraph rhs
+
+        -- update ruleViewer canvas
+        modifyIORef rvlesIOR (editorSetGraph lhs' . editorSetGI (nodeGi, snd gi))
+        modifyIORef rvresIOR (editorSetGraph rhs' . editorSetGI (nodeGi, snd gi))
+        writeIORef rvtgIOR tg
+
+        Gtk.widgetQueueDraw rvlCanvas
+        Gtk.widgetQueueDraw rvrCanvas
+
+        #showAll rvWindow
+      else return ()
 
   -- help
   hlp `on` #activate $ do
@@ -1174,9 +1177,12 @@ startGUI = do
                 writeIORef currentGraph index
               Nothing -> return ()
         case (gType) of
-          0 -> return ()
-          1 -> changeInspector typeInspBox typeNameBox
+          0 -> Gtk.widgetSetSensitive orv False
+          1 -> do
+            Gtk.widgetSetSensitive orv False
+            changeInspector typeInspBox typeNameBox
           2 -> do
+            Gtk.widgetSetSensitive orv False
             changeInspector hostInspBox hostNameBox
             writeIORef currentShape NCircle
             writeIORef currentStyle ENormal
@@ -1202,6 +1208,7 @@ startGUI = do
                 newEdgeGI = M.fromList . map ge . map fe $ edges g
             writeIORef st (editorSetGI (newNodeGI, newEdgeGI) es)
           3 -> do
+            Gtk.widgetSetSensitive orv True
             changeInspector ruleInspBox ruleNameBox
             writeIORef currentShape NCircle
             writeIORef currentStyle ENormal
