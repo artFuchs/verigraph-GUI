@@ -16,7 +16,7 @@ import Editor.Data.EditorState
 import Editor.Data.GraphicalInfo
 import Editor.GraphEditor.UIBuilders
 import Editor.Render.Render
-import Editor.Render.Geometry
+import Editor.Helper.Geometry
 import Editor.Render.GraphDraw
 
 import Data.IORef

@@ -45,14 +45,14 @@ import Editor.Data.Info
 import Editor.Data.DiaGraph hiding (empty)
 import Editor.Data.EditorState
 import Editor.Render.Render
-import Editor.Render.Geometry
 import Editor.Render.GraphDraw
 import Editor.GraphEditor.UIBuilders
 import qualified Editor.Data.DiaGraph as DG
 import Editor.GraphEditor.SaveLoad
-import Editor.GraphValidation
 import Editor.GraphEditor.GrammarMaker
 import Editor.GraphEditor.RuleViewer
+import Editor.Helper.Geometry
+import Editor.Helper.GraphValidation
 --------------------------------------------------------------------------------
 -- MODULE STRUCTURES -----------------------------------------------------------
 --------------------------------------------------------------------------------

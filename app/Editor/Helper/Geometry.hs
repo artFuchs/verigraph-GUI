@@ -1,6 +1,6 @@
 -- module containing functions related to geometry
 
-module Editor.Render.Geometry(
+module Editor.Helper.Geometry(
   pointDistance
 , pointLineDistance
 , addPoint

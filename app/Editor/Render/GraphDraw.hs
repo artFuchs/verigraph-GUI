@@ -14,7 +14,7 @@ import Data.Graphs
 import Editor.Data.Info
 import Editor.Data.EditorState
 import Editor.Render.Render
-import Editor.GraphValidation
+import Editor.Helper.GraphValidation
 
 -- draw a graph in the canvas --------------------------------------------------
 drawTypeGraph :: EditorState -> Maybe (Double,Double,Double,Double)-> Render ()
