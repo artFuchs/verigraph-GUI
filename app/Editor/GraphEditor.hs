@@ -84,7 +84,7 @@ startGUI = do
   -- GUI definition ------------------------------------------------------------
   -- auxiliar windows ---------------------------------------------------------------
   helpWindow <- buildHelpWindow
-  (rvWindow, rvlCanvas, rvrCanvas, rvlesIOR, rvresIOR, rvtgIOR) <- createRuleViewerWindow
+  (rvWindow, rvNameLabel, rvlCanvas, rvrCanvas, rvlesIOR, rvresIOR, rvtgIOR, rvkIOR) <- createRuleViewerWindow
 
   -- main window ---------------------------------------------------------------
   -- creates the main window, containing the canvas and the slots to place the panels
@@ -474,7 +474,7 @@ startGUI = do
       -- F2 - rename selection
       (False,False,'\65471') -> Gtk.widgetGrabFocus nameEntry
       (True,False,'p') -> Gtk.menuItemActivate orv
-      _ -> return ()
+      (False,False,'\65535') -> Gtk.menuItemActivate del
     return True
 
   -- event bindings for the menu toolbar ---------------------------------------
@@ -813,28 +813,32 @@ startGUI = do
         gi <- readIORef st >>= return . editorGetGI
         tg <- readIORef activeTypeGraph
 
-        -- modify contents for each element
+        --change the dimensions of each node
         context <- Gtk.widgetGetPangoContext canvas
         let changeGIDims str gi = do
-                dims <- getStringDims str context Nothing
-                gi' <- return $ nodeGiSetDims dims gi
-                return gi'
-        let updateNodeGiM nodeGiM = do
-                nodeGiM' <- forM (M.toList nodeGiM) (\(k,gi) -> do
-                        gi' <- changeGIDims (show k) gi
-                        return (k,gi')
-                        )
-                return $ M.fromList nodeGiM'
-        nodeGi <- updateNodeGiM (fst gi)
-        let idsGraph g = g''
-              where g' = foldr (\e g -> insertEdgeWithPayload (edgeId e) (sourceId e) (targetId e) (show . edgeId $ e) g) g (edges g)
-                    g'' = foldr (\n g -> insertNodeWithPayload (nodeId n) (show . nodeId $ n) g) g' (nodes g)
-        let lhs' = idsGraph lhs
-        let rhs' = idsGraph rhs
+               dims <- getStringDims str context Nothing
+               gi' <- return $ nodeGiSetDims dims gi
+               return gi'
+        let updateNodesDims nodes = do
+              nodeGiM' <- forM (nodes) (\n -> do
+                    let nid = fromEnum . nodeId $ n
+                        ngi = getNodeGI nid (fst gi)
+                    gi' <- changeGIDims (infoLabel . nodeInfo $ n) ngi
+                    return (nid, gi'))
+              return $ M.fromList nodeGiM'
+        nodeGi <- updateNodesDims (nodes g)
 
-        -- update ruleViewer canvas
-        modifyIORef rvlesIOR (editorSetGraph lhs' . editorSetGI (nodeGi, snd gi))
-        modifyIORef rvresIOR (editorSetGraph rhs' . editorSetGI (nodeGi, snd gi))
+        -- get the name of the current rule
+        path <- readIORef currentPath >>= Gtk.treePathNewFromIndices
+        (valid, iter) <- Gtk.treeModelGetIter store path
+        name <- if valid
+                then Gtk.treeModelGetValue store iter 0 >>= (\n -> fromGValue n :: IO (Maybe String)) >>= return . T.pack . fromJust
+                else return "ruleName should be here"
+
+        writeIORef rvkIOR k
+        modifyIORef rvlesIOR (editorSetGraph lhs . editorSetGI (nodeGi, snd gi))
+        modifyIORef rvresIOR (editorSetGraph rhs . editorSetGI (nodeGi, snd gi))
+        Gtk.labelSetText rvNameLabel name
         writeIORef rvtgIOR tg
 
         Gtk.widgetQueueDraw rvlCanvas

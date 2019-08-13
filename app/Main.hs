@@ -11,6 +11,13 @@ Tarefas ---------------------------------------------------------------------
 *Quando editar o nome de uma aresta ou nodo no grafo de tipos, fazer update em todos os grafos que usam o objeto
 *permitir que o usuário escolha como será vista a regra (formato L->R, ou L<-K->R)
 *melhorar janela de ajuda
+*arrumar bug: renomear elemento em RuleGraph faz com que a informação de operação seja perdida
+
+Ideias -------------------------------------------------------------------------
+*criação de nodos através de clique duplo em um espaço em branco
+*criação de arestas dando clique duplo em um nodo e arrastando mouse para outro nodo
+*mostrar um campo de digitação em cima do elemento quando o usuario apertar F2 para renomeá-lo
+*mostrar menu de contexto ao clicar em um elemento com o botão direito
 
 Progresso -------------------------------------------------------------------
 *Mostrar regras em formato R -> L
@@ -68,10 +75,4 @@ Feito -----------------------------------------------------------------------
 *Arrumar bug - arestas recém criadas em hostGraphs e ruleGraphs não recebem uma label automática.
 *Permitir que o usuário controle se os elementos irão receber nomes automáticos ou não
 *Exportar nomes dos tipos de nodos e arestas no arquivo ggx
-
-
-Ideias -------------------------------------------------------------------------
-*criação de nodos através de clique duplo em um espaço em branco
-*criação de arestas dando clique duplo em um nodo e movendo o mouse para outro nodo
-*mostrar um campo de digitação em cima do elemento quando o usuario apertar F2 para renomeá-lo
 -}

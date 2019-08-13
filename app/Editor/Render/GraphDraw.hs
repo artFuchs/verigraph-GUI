@@ -13,8 +13,14 @@ import Data.Graphs
 
 import Editor.Data.Info
 import Editor.Data.EditorState
+import Editor.Data.GraphicalInfo
 import Editor.Render.Render
 import Editor.Helper.GraphValidation
+
+import Graphics.Rendering.Pango as GRP
+import Graphics.Rendering.Pango.Cairo as GRPC
+import Graphics.Rendering.Pango.Layout as GRPL
+import Editor.Helper.Geometry
 
 -- draw a graph in the canvas --------------------------------------------------
 drawTypeGraph :: EditorState -> Maybe (Double,Double,Double,Double)-> Render ()
@@ -187,31 +193,65 @@ drawRuleGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
   drawSelectionBox sq
   return ()
 
-
-drawRuleSideGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Render ()
-drawRuleSideGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
+drawRuleSideGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph String String -> Render ()
+drawRuleSideGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq k = do
   scale z z
   translate px py
 
   -- specify colors for select and error
-  let selectColor = (0.29,0.56,0.85)
-      errorColor = (0.9,0.2,0.2)
-      bothColor = (0.47,0.13,0.87)
+  let selectColor = (0.29, 0.56, 0.85)
+      errorColor =  (0.90, 0.20, 0.20)
+      bothColor =   (0.47, 0.13, 0.87)
+      (idr, idg, idb) = (0.5,0.5,0.5)--(0.57, 0.47, 0)
+
   -- draw the edges
   forM (edges g) (\e -> do
     let dstN = M.lookup (fromEnum . targetId $ e) nGI
         srcN = M.lookup (fromEnum . sourceId $ e) nGI
         egi  = M.lookup (fromEnum . edgeId   $ e) eGI
+        info = infoLabel (edgeInfo e)
+        shouldDrawId = case lookupEdge (edgeId e) k of
+                        Just e' -> True
+                        Nothing -> False
     case (egi, srcN, dstN) of
-      (Just gi, Just src, Just dst) -> renderEdge gi (show (edgeId e)) src dst False (0,0,0) False (0,0,0)
+      (Just gi, Just src, Just dst) -> do
+          renderEdge gi (info) src dst False (0,0,0) False (0,0,0)
+          if shouldDrawId
+            then do
+              let (ae,de) = cPosition gi
+                  (x1, y1) = position src
+                  (x2, y2) = position dst
+                  ang = angle (x1,y1) (x2,y2)
+                  pos = pointAt (ae+ang) de (midPoint (x1,y1) (x2,y2))
+              pL <- GRPC.createLayout (show (edgeId e))
+              desc <- liftIO $ GRP.fontDescriptionFromString "Sans Bold 10"
+              liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
+              setSourceRGB idr idg idb
+              moveTo (fst pos) (snd pos)
+              showLayout pL
+            else return ()
       _ -> return ())
 
   -- draw the nodes
   forM (nodes g) (\n -> do
     let ngi = M.lookup (fromEnum . nodeId $ n) nGI
-        label = show (nodeId n)
+        label = infoLabel (nodeInfo n)
+        shouldDrawId = case lookupNode (nodeId n) k of
+                          Just _ -> True
+                          Nothing -> False
     case (ngi) of
-      Just gi -> renderNode gi label False (0,0,0) False (0,0,0)
+      Just gi -> do
+          renderNode gi label False (0,0,0) False (0,0,0)
+          if shouldDrawId
+            then do
+              let pos = addPoint (position gi) (-(fst . dims $ gi), -(snd . dims $ gi))
+              pL <- GRPC.createLayout (show (nodeId n))
+              desc <- liftIO $ GRP.fontDescriptionFromString "Sans Bold 10"
+              liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
+              setSourceRGB idr idg idb
+              moveTo (fst pos) (snd pos)
+              showLayout pL
+            else return ()
       Nothing -> return ())
 
   drawSelectionBox sq

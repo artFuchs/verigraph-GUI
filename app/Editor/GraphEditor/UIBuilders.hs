@@ -380,18 +380,28 @@ createConfirmDialog window msg = do
   Gtk.widgetDestroy closeD
   return $ toEnum . fromIntegral $ response
 
-buildRuleViewPanel :: IO (Gtk.Paned, Gtk.DrawingArea, Gtk.DrawingArea)
+buildRuleViewPanel :: IO (Gtk.Box, Gtk.Label, Gtk.DrawingArea, Gtk.DrawingArea)
 buildRuleViewPanel = do
+  ruleBox <- new Gtk.Box [#orientation := Gtk.OrientationVertical]
+  nameLabel <- new Gtk.Label [#label := "Name"]
+  Gtk.boxPackStart ruleBox nameLabel False False 0
   rulePaned <- new Gtk.Paned [ #orientation := Gtk.OrientationHorizontal]
+  Gtk.boxPackStart ruleBox rulePaned True True 0
 
+  lhsFrame <- new Gtk.Frame [ #label := "L"
+                            , #shadowType := Gtk.ShadowTypeIn]
+  Gtk.panedPack1 rulePaned lhsFrame True True
   lhsCanvas <- Gtk.drawingAreaNew
-  Gtk.panedPack1 rulePaned lhsCanvas True True
+  Gtk.containerAdd lhsFrame lhsCanvas
   Gtk.widgetSetCanFocus lhsCanvas True
   Gtk.widgetSetEvents lhsCanvas [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
 
+  rhsFrame <- new Gtk.Frame [ #label := "R"
+                            , #shadowType := Gtk.ShadowTypeIn]
+  Gtk.panedPack2 rulePaned rhsFrame True True
   rhsCanvas <- Gtk.drawingAreaNew
-  Gtk.panedPack2 rulePaned rhsCanvas True True
+  Gtk.containerAdd rhsFrame rhsCanvas
   Gtk.widgetSetCanFocus rhsCanvas True
   Gtk.widgetSetEvents rhsCanvas [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
 
-  return (rulePaned, lhsCanvas, rhsCanvas)
+  return (ruleBox, nameLabel, lhsCanvas, rhsCanvas)

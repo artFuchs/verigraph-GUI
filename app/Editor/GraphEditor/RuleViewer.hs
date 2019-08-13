@@ -22,38 +22,46 @@ import Editor.Render.GraphDraw
 import Data.IORef
 
 
-createRuleViewerWindow :: IO (Gtk.Window, Gtk.DrawingArea, Gtk.DrawingArea,
-                              IORef EditorState, IORef EditorState, IORef (Graph String String))
+createRuleViewerWindow :: IO (Gtk.Window, Gtk.Label, Gtk.DrawingArea,
+                              Gtk.DrawingArea, IORef EditorState,
+                              IORef EditorState, IORef (Graph String String),
+                              IORef (Graph String String))
 createRuleViewerWindow = do
 
   lesIOR <- newIORef emptyES
   resIOR <- newIORef emptyES
-  tgIOR <- newIORef empty
-  opIOR <- newIORef (0,0)
-
+  kIOR   <- newIORef empty
+  tgIOR  <- newIORef empty
+  opIOR  <- newIORef (0,0)
 
   rvWindow <- new Gtk.Window [ #destroyWithParent := True
                              , #defaultWidth := 640
                              , #defaultHeight := 240
                              , #title := "RuleViewer"]
 
-  (rulePaned, lhsCanvas, rhsCanvas) <- buildRuleViewPanel
-  Gtk.containerAdd rvWindow rulePaned
+  (ruleBox, nameLabel, lhsCanvas, rhsCanvas) <- buildRuleViewPanel
+  Gtk.containerAdd rvWindow ruleBox
 
   on rvWindow #deleteEvent $ return $ do
       #hide rvWindow
       return True
 
-  connectRuleViewerCanvasSignals lhsCanvas lesIOR tgIOR opIOR
-  connectRuleViewerCanvasSignals rhsCanvas resIOR tgIOR opIOR
-  return (rvWindow, lhsCanvas, rhsCanvas, lesIOR, resIOR, tgIOR)
+  connectRuleViewerCanvasSignals lhsCanvas lesIOR tgIOR kIOR opIOR
+  connectRuleViewerCanvasSignals rhsCanvas resIOR tgIOR kIOR opIOR
+  return (rvWindow, nameLabel, lhsCanvas, rhsCanvas, lesIOR, resIOR, tgIOR, kIOR)
 
-connectRuleViewerCanvasSignals :: Gtk.DrawingArea -> IORef EditorState -> IORef (Graph String String) -> IORef (Double, Double) -> IO ()
-connectRuleViewerCanvasSignals canvas esIOR tgIOR oldPointIOR = do
+connectRuleViewerCanvasSignals :: Gtk.DrawingArea
+                                  -> IORef EditorState
+                                  -> IORef (Graph String String)
+                                  -> IORef (Graph String String)
+                                  -> IORef (Double, Double)
+                                  -> IO ()
+connectRuleViewerCanvasSignals canvas esIOR tgIOR kIOR oldPointIOR = do
   on canvas #draw $ \context -> do
     es <- readIORef esIOR
     tg <- readIORef tgIOR
-    renderWithContext context $ drawRuleSideGraph es Nothing
+    k <- readIORef kIOR
+    renderWithContext context $ drawRuleSideGraph es Nothing k
     return False
 
   on canvas #buttonPressEvent $ \eventButton -> do
