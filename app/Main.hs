@@ -7,12 +7,20 @@ main = startGUI
 Tarefas ---------------------------------------------------------------------
 *Modificar interface para que o painel do inspector não seja mostrado a toda hora.
   *Mostra-lo ao dar 2 cliques em um elemento.
-*Mostrar regras em formato R -> L
 *Criar uma espécie de inferência de tipos de arestas quando criá-las
-*Quando editar o nome de uma aresta ou nodo, fazer update em todos os grafos que usam o objeto
+*Quando editar o nome de uma aresta ou nodo no grafo de tipos, fazer update em todos os grafos que usam o objeto
+*permitir que o usuário escolha como será vista a regra (formato L->R, ou L<-K->R)
+*melhorar janela de ajuda
+*arrumar bug: renomear elemento em RuleGraph faz com que a informação de operação seja perdida
+
+Ideias -------------------------------------------------------------------------
+*criação de nodos através de clique duplo em um espaço em branco
+*criação de arestas dando clique duplo em um nodo e arrastando mouse para outro nodo
+*mostrar um campo de digitação em cima do elemento quando o usuario apertar F2 para renomeá-lo
+*mostrar menu de contexto ao clicar em um elemento com o botão direito
 
 Progresso -------------------------------------------------------------------
-*Exportar nomes dos tipos de nodos e arestas no arquivo ggx
+*Mostrar regras em formato R -> L
 
 Feito -----------------------------------------------------------------------
 *Melhorar menu de Propriedades
@@ -66,4 +74,5 @@ Feito -----------------------------------------------------------------------
 *Arrumar bug - não há informação de erros quando há nodos com mesmo nome no typeGraph
 *Arrumar bug - arestas recém criadas em hostGraphs e ruleGraphs não recebem uma label automática.
 *Permitir que o usuário controle se os elementos irão receber nomes automáticos ou não
+*Exportar nomes dos tipos de nodos e arestas no arquivo ggx
 -}

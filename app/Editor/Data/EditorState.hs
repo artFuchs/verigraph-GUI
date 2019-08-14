@@ -31,7 +31,7 @@ import qualified Data.Map as M
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
 import Editor.Data.GraphicalInfo
-import Editor.Render.Geometry
+import Editor.Helper.Geometry
 import Data.List
 import Editor.Data.Info
 

@@ -1,4 +1,4 @@
-module Editor.GraphValidation (
+module Editor.Helper.GraphValidation (
   nameConflictGraph
 , correctTypeGraph
 , isGraphValid

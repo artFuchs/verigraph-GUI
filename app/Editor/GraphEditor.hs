@@ -12,6 +12,7 @@ import Data.GI.Base.GValue
 import Data.GI.Base.GType
 import Control.Monad
 import Control.Monad.IO.Class
+import Control.Monad.Zip
 import Data.IORef
 import Graphics.Rendering.Cairo
 import Graphics.Rendering.Pango.Layout
@@ -25,7 +26,6 @@ import qualified Data.Text as T
 import qualified Data.Map as M
 import qualified Data.Tree as Tree
 import Data.Monoid
-import Control.Monad.Zip
 
 -- verigraph modules
 import Abstract.Category
@@ -41,16 +41,18 @@ import qualified Data.TypedGraph as TG
 
 -- editor modules
 import Editor.Data.GraphicalInfo
-import Editor.Render.Render
-import Editor.Render.Geometry
-import Editor.GraphEditor.UIBuilders
-import Editor.Data.DiaGraph hiding (empty)
-import qualified Editor.Data.DiaGraph as DG
-import Editor.Data.EditorState
-import Editor.GraphEditor.SaveLoad
 import Editor.Data.Info
-import Editor.GraphValidation
+import Editor.Data.DiaGraph hiding (empty)
+import Editor.Data.EditorState
+import Editor.Render.Render
+import Editor.Render.GraphDraw
+import Editor.GraphEditor.UIBuilders
+import qualified Editor.Data.DiaGraph as DG
+import Editor.GraphEditor.SaveLoad
 import Editor.GraphEditor.GrammarMaker
+import Editor.GraphEditor.RuleViewer
+import Editor.Helper.Geometry
+import Editor.Helper.GraphValidation
 --------------------------------------------------------------------------------
 -- MODULE STRUCTURES -----------------------------------------------------------
 --------------------------------------------------------------------------------
@@ -80,8 +82,9 @@ startGUI = do
 
   ------------------------------------------------------------------------------
   -- GUI definition ------------------------------------------------------------
-  -- help window ---------------------------------------------------------------
+  -- auxiliar windows ---------------------------------------------------------------
   helpWindow <- buildHelpWindow
+  (rvWindow, rvNameLabel, rvlCanvas, rvrCanvas, rvlesIOR, rvresIOR, rvtgIOR, rvkIOR) <- createRuleViewerWindow
 
   -- main window ---------------------------------------------------------------
   -- creates the main window, containing the canvas and the slots to place the panels
@@ -89,8 +92,9 @@ startGUI = do
   (window, canvas, mainBox, treeFrame, inspectorFrame, fileItems, editItems, viewItems, helpItems) <- buildMainWindow
   let (newm,opn,svn,sva,eggx,svg,opg) = fileItems
       (del,udo,rdo,cpy,pst,cut,sla,sln,sle) = editItems
-      (zin,zut,z50,zdf,z150,z200,vdf) = viewItems
+      (zin,zut,z50,zdf,z150,z200,vdf,orv) = viewItems
       (hlp,abt) = helpItems
+  Gtk.widgetSetSensitive orv False
   -- creates the tree panel
   (treeBox, treeview, changesRenderer, nameRenderer, activeRenderer, createBtn, btnRmv) <- buildTreePanel
   Gtk.containerAdd treeFrame treeBox
@@ -113,6 +117,8 @@ startGUI = do
   let
     hostInspWidgets = (nameEntry, nodeTCBox, edgeTCBox)
     ruleInspWidgets = (nameEntry, nodeTCBoxR, edgeTCBoxR, operationCBox)
+
+  -- (rvwindow, lhsCanvas, rhsCanvas) <- buildRuleViewWindow window
 
   #showAll window
 
@@ -467,17 +473,8 @@ startGUI = do
     case (Gdk.ModifierTypeControlMask `elem` ms, Gdk.ModifierTypeShiftMask `elem` ms, toLower k) of
       -- F2 - rename selection
       (False,False,'\65471') -> Gtk.widgetGrabFocus nameEntry
-      (True,False,'p') -> do
-        gt <- readIORef currentGraphType
-        if gt == 3
-          then do
-            g <- readIORef st >>= \es -> return $ editorGetGraph es
-            (lhs,k,rhs) <- return $ graphToRuleGraphs g
-            putStrLn $ "lhs: " ++ show lhs ++ "\n"
-            putStrLn $ "k: " ++ show k ++ "\n"
-            putStrLn $ "rhs: " ++ show rhs ++ "\n"
-          else return ()
-      _ -> return ()
+      (True,False,'p') -> Gtk.menuItemActivate orv
+      (False,False,'\65535') -> Gtk.menuItemActivate del
     return True
 
   -- event bindings for the menu toolbar ---------------------------------------
@@ -805,6 +802,50 @@ startGUI = do
   vdf `on` #activate $ do
     modifyIORef st (\es -> editorSetZoom 1 $ editorSetPan (0,0) es )
     Gtk.widgetQueueDraw canvas
+
+  orv `on` #activate $ do
+    gt <- readIORef currentGraphType
+    if gt == 3
+      then do
+        g <- readIORef st >>= \es -> return $ editorGetGraph es
+        (lhs,k,rhs) <- return $ graphToRuleGraphs g
+
+        gi <- readIORef st >>= return . editorGetGI
+        tg <- readIORef activeTypeGraph
+
+        --change the dimensions of each node
+        context <- Gtk.widgetGetPangoContext canvas
+        let changeGIDims str gi = do
+               dims <- getStringDims str context Nothing
+               gi' <- return $ nodeGiSetDims dims gi
+               return gi'
+        let updateNodesDims nodes = do
+              nodeGiM' <- forM (nodes) (\n -> do
+                    let nid = fromEnum . nodeId $ n
+                        ngi = getNodeGI nid (fst gi)
+                    gi' <- changeGIDims (infoLabel . nodeInfo $ n) ngi
+                    return (nid, gi'))
+              return $ M.fromList nodeGiM'
+        nodeGi <- updateNodesDims (nodes g)
+
+        -- get the name of the current rule
+        path <- readIORef currentPath >>= Gtk.treePathNewFromIndices
+        (valid, iter) <- Gtk.treeModelGetIter store path
+        name <- if valid
+                then Gtk.treeModelGetValue store iter 0 >>= (\n -> fromGValue n :: IO (Maybe String)) >>= return . T.pack . fromJust
+                else return "ruleName should be here"
+
+        writeIORef rvkIOR k
+        modifyIORef rvlesIOR (editorSetGraph lhs . editorSetGI (nodeGi, snd gi))
+        modifyIORef rvresIOR (editorSetGraph rhs . editorSetGI (nodeGi, snd gi))
+        Gtk.labelSetText rvNameLabel name
+        writeIORef rvtgIOR tg
+
+        Gtk.widgetQueueDraw rvlCanvas
+        Gtk.widgetQueueDraw rvrCanvas
+
+        #showAll rvWindow
+      else return ()
 
   -- help
   hlp `on` #activate $ do
@@ -1140,9 +1181,12 @@ startGUI = do
                 writeIORef currentGraph index
               Nothing -> return ()
         case (gType) of
-          0 -> return ()
-          1 -> changeInspector typeInspBox typeNameBox
+          0 -> Gtk.widgetSetSensitive orv False
+          1 -> do
+            Gtk.widgetSetSensitive orv False
+            changeInspector typeInspBox typeNameBox
           2 -> do
+            Gtk.widgetSetSensitive orv False
             changeInspector hostInspBox hostNameBox
             writeIORef currentShape NCircle
             writeIORef currentStyle ENormal
@@ -1168,6 +1212,7 @@ startGUI = do
                 newEdgeGI = M.fromList . map ge . map fe $ edges g
             writeIORef st (editorSetGI (newNodeGI, newEdgeGI) es)
           3 -> do
+            Gtk.widgetSetSensitive orv True
             changeInspector ruleInspBox ruleNameBox
             writeIORef currentShape NCircle
             writeIORef currentStyle ENormal
@@ -1559,201 +1604,7 @@ updateRuleInspector st possibleNT possibleET currentNodeType currentEdgeType (en
 
 
 
--- draw a graph in the canvas --------------------------------------------------
-drawTypeGraph :: EditorState -> Maybe (Double,Double,Double,Double)-> Render ()
-drawTypeGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
-  scale z z
-  translate px py
 
-  let selectColor = (0.29,0.56,0.85)
-      errorColor = (0.9,0.2,0.2)
-      bothColor = (0.47,0.13,0.87)
-
-  let cg = nameConflictGraph g
-
-
-  -- draw the edges
-  forM (edges g) (\e -> do
-    let dstN = M.lookup (fromEnum . targetId $ e) nGI
-        srcN = M.lookup (fromEnum . sourceId $ e) nGI
-        egi  = M.lookup (fromEnum . edgeId   $ e) eGI
-        selected = (edgeId e) `elem` sEdges
-        conflict = case lookupEdge (edgeId e) cg of
-          Just e' -> not $ edgeInfo e'
-          Nothing -> True
-        shadowColor = case (selected, conflict) of
-          (False,False) -> (0,0,0)
-          (False,True) -> errorColor
-          (True,False) -> selectColor
-          (True,True) -> bothColor
-    case (egi, srcN, dstN) of
-      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabel $ edgeInfo e) src dst (selected || conflict) shadowColor False (0,0,0)
-      _ -> return ())
-
-  -- draw the nodes
-  forM (nodes g) (\n -> do
-    let ngi = M.lookup (fromEnum . nodeId $ n) nGI
-        selected = (nodeId n) `elem` (sNodes)
-        conflict = case lookupNode (nodeId n) cg of
-          Just n' -> not $ nodeInfo n'
-          Nothing -> True
-        shadowColor = case (selected, conflict) of
-          (False,False) -> (0,0,0)
-          (False,True) -> errorColor
-          (True,False) -> selectColor
-          (True,True) -> bothColor
-        info = infoLabel $ nodeInfo n
-    case (ngi) of
-      Just gi -> renderNode gi info (selected || conflict) shadowColor False (0,0,0)
-      Nothing -> return ())
-
-  -- draw the selectionBox
-  case sq of
-    Just (x,y,w,h) -> do
-      rectangle x y w h
-      setSourceRGBA 0.29 0.56 0.85 0.5
-      fill
-      rectangle x y w h
-      setSourceRGBA 0.29 0.56 0.85 1
-      stroke
-    Nothing -> return ()
-  return ()
-
-drawHostGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph String String -> Render ()
-drawHostGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
-  scale z z
-  translate px py
-
-  -- specify colors for select and error
-  let selectColor = (0.29,0.56,0.85)
-      errorColor = (0.9,0.2,0.2)
-      bothColor = (0.47,0.13,0.87)
-
-  let vg = correctTypeGraph g tg
-  -- draw the edges
-  forM (edges g) (\e -> do
-    let dstN = M.lookup (fromEnum . targetId $ e) nGI
-        srcN = M.lookup (fromEnum . sourceId $ e) nGI
-        egi  = M.lookup (fromEnum . edgeId   $ e) eGI
-        selected = (edgeId e) `elem` sEdges
-        typeError = case lookupEdge (edgeId e) vg of
-                      Just e' -> not $ edgeInfo e'
-                      Nothing -> True
-        color = case (selected,typeError) of
-                 (False,False) -> (0,0,0)
-                 (False,True) -> errorColor
-                 (True,False) -> selectColor
-                 (True,True) -> bothColor
-    case (egi, srcN, dstN) of
-      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabel (edgeInfo e)) src dst (selected || typeError) color False (0,0,0)
-      _ -> return ())
-
-  -- draw the nodes
-  forM (nodes g) (\n -> do
-    let ngi = M.lookup (fromEnum . nodeId $ n) nGI
-        selected = (nodeId n) `elem` (sNodes)
-        info = nodeInfo n
-        label = infoLabel info
-        typeError = case lookupNode (nodeId n) vg of
-                      Just n' -> not $ nodeInfo n'
-                      Nothing -> True
-        color = case (selected,typeError) of
-                  (False,False) -> (0,0,0)
-                  (False,True) -> errorColor
-                  (True,False) -> selectColor
-                  (True,True) -> bothColor
-    case (ngi) of
-      Just gi -> renderNode gi label (selected || typeError) color False (0,0,0)
-      Nothing -> return ())
-
-  -- draw the selectionBox
-  case sq of
-    Just (x,y,w,h) -> do
-      rectangle x y w h
-      setSourceRGBA 0.29 0.56 0.85 0.5
-      fill
-      rectangle x y w h
-      setSourceRGBA 0.29 0.56 0.85 1
-      stroke
-    Nothing -> return ()
-  return ()
-
-drawRuleGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph String String -> Render ()
-drawRuleGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
-  scale z z
-  translate px py
-
-  -- specify colors for select and error
-  let selectColor = (0.29,0.56,0.85)
-      errorColor = (0.9,0.2,0.2)
-      bothColor = (0.47,0.13,0.87)
-      createColor = (0.12, 0.48, 0.10)
-      deleteColor = (0.17, 0.28, 0.77)
-
-  let vg = correctTypeGraph g tg
-  let ovg = opValidationGraph g
-
-  -- draw the edges
-  forM (edges g) (\e -> do
-    let dstN = M.lookup (fromEnum . targetId $ e) nGI
-        srcN = M.lookup (fromEnum . sourceId $ e) nGI
-        egi  = M.lookup (fromEnum . edgeId   $ e) eGI
-        info = infoVisible (edgeInfo e)
-        selected = (edgeId e) `elem` sEdges
-        typeError = case lookupEdge (edgeId e) vg of
-                      Just e' -> not $ edgeInfo e'
-                      Nothing -> True
-        operationError = case lookupEdge (edgeId e) ovg of
-                          Just e' -> not $ edgeInfo e'
-                          Nothing -> True
-        color = case (selected,typeError || operationError) of
-                 (False,False) -> (0,0,0)
-                 (False,True) -> errorColor
-                 (True,False) -> selectColor
-                 (True,True) -> bothColor
-        (highlight, textColor) = case (infoOperation (edgeInfo e)) of
-          "new" -> (True, createColor)
-          "del" -> (True, deleteColor)
-          ""    -> (False, (0,0,0))
-          _     -> (True, errorColor)
-    case (egi, srcN, dstN) of
-      (Just gi, Just src, Just dst) -> renderEdge gi info src dst (selected || typeError || operationError) color highlight textColor
-      _ -> return ())
-
-  -- draw the nodes
-  forM (nodes g) (\n -> do
-    let ngi = M.lookup (fromEnum . nodeId $ n) nGI
-        selected = (nodeId n) `elem` (sNodes)
-        info = nodeInfo n
-        label = infoVisible info
-        typeError = case lookupNode (nodeId n) vg of
-                      Just n' -> not $ nodeInfo n'
-                      Nothing -> True
-        color = case (selected,typeError) of
-                  (False,False) -> (0,0,0)
-                  (False,True) -> errorColor
-                  (True,False) -> selectColor
-                  (True,True) -> bothColor
-        (highlight, textColor) = case (infoOperation info) of
-          "new" -> (True, createColor)
-          "del" -> (True, deleteColor)
-          ""    -> (False, (0,0,0))
-          _     -> (True, errorColor)
-    case (ngi) of
-      Just gi -> renderNode gi label (selected || typeError) color highlight textColor
-      Nothing -> return ())
-
-  -- draw the selectionBox
-  case sq of
-    Just (x,y,w,h) -> do
-      rectangle x y w h
-      setSourceRGBA 0.29 0.56 0.85 0.5
-      fill
-      rectangle x y w h
-      setSourceRGBA 0.29 0.56 0.85 1
-      stroke
-    Nothing -> return ()
-  return ()
 
 -- update the active typegraph if the corresponding diagraph is valid, set it as empty if not
 updateActiveTG :: IORef EditorState -> IORef (Graph String String) -> IORef (M.Map String (NodeGI, Int32)) -> IORef (M.Map String (EdgeGI, Int32)) -> IO ()
