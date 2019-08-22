@@ -475,6 +475,7 @@ startGUI = do
       (False,False,'\65471') -> Gtk.widgetGrabFocus nameEntry
       (True,False,'p') -> Gtk.menuItemActivate orv
       (False,False,'\65535') -> Gtk.menuItemActivate del
+      _ -> return ()
     return True
 
   -- event bindings for the menu toolbar ---------------------------------------
