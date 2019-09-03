@@ -1,4 +1,4 @@
-# graph-editor
+# Verigraph-GUI
 
 A graph-grammar editor that's intended to be used in the [verigraph tool](https://github.com/Verites/verigraph) in the future.
 For now, it can export a .ggx file (default file format for AGG).
