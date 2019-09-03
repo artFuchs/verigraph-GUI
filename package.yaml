@@ -1,10 +1,10 @@
-name:                graph-editor
+name:                verigraph-GUI
 version:             0.1.0.0
 github:              "artFuchs/graph-editor"
-license:             BSD3
-author:              "Author name here"
-maintainer:          "example@example.com"
-copyright:           "2019 Author name here"
+license:             Apache-2.0
+author:              "Arthur Lucena Fuchs"
+maintainer:          "alfuchs@inf.ufrgs.br"
+copyright:           "2019 Arthur Lucena Fuchs"
 
 extra-source-files:
 - README.md
@@ -45,7 +45,7 @@ library:
   source-dirs: src
 
 executables:
-  graph-editor-exe:
+  verigraph-GUI:
     main:                Main.hs
     source-dirs:         app
     ghc-options:
@@ -53,7 +53,7 @@ executables:
     - -rtsopts
     - -with-rtsopts=-N
     dependencies:
-    - graph-editor
+    - verigraph-GUI
 
 #tests:
 #  graph-editor-gi-gtk-test:

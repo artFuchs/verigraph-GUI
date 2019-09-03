@@ -15,7 +15,7 @@ For install, it's recommended to use the [stack tool](https://docs.haskellstack.
 
 Then to run it, use the command
 ```bash
-  $ graph-editor-exe
+  $ verigraph-GUI
 ```
 
 ## important
