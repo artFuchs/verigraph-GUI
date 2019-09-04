@@ -500,8 +500,8 @@ startGUI = do
                       updateSavedState lastSavedState graphStates
                       filename <- readIORef fileName
                       case filename of
-                        Nothing -> set window [#title := "Graph Editor"]
-                        Just fn -> set window [#title := T.pack ("Graph Editor - " ++ fn)]
+                        Nothing -> set window [#title := "Verigraph-GUI"]
+                        Just fn -> set window [#title := T.pack ("Verigraph-GUI - " ++ fn)]
 
   -- auxiliar function to check if the project was changed
   -- it does the checking and if no, ask the user if them want to save.
@@ -538,7 +538,7 @@ startGUI = do
         writeIORef lastSavedState M.empty
         writeIORef changedProject False
         writeIORef changedGraph [False]
-        set window [#title := "Graph Editor"]
+        set window [#title := "Verigraph-GUI"]
         Gtk.widgetQueueDraw canvas
       else return ()
 
