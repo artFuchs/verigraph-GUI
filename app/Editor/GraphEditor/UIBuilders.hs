@@ -352,7 +352,9 @@ buildHelpWindow = do
 
 
   helpView <- new Gtk.TextView [ #buffer := helpBuffer
-                               , #wrapMode := Gtk.WrapModeWord]
+                               , #wrapMode := Gtk.WrapModeWord
+                               , #editable := False
+                               , #cursorVisible := False]
   scrollWin <- new Gtk.ScrolledWindow []
   Gtk.containerAdd scrollWin helpView
   Gtk.containerAdd helpWindow scrollWin
