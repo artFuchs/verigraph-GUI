@@ -11,7 +11,7 @@ Tarefas ---------------------------------------------------------------------
 *Quando editar o nome de uma aresta ou nodo no grafo de tipos, fazer update em todos os grafos que usam o objeto
 *permitir que o usuário escolha como será vista a regra (formato L->R, ou L<-K->R)
 *melhorar janela de ajuda
-*arrumar bug: renomear elemento em RuleGraph faz com que a informação de operação seja perdida
+
 
 Ideias -------------------------------------------------------------------------
 *criação de nodos através de clique duplo em um espaço em branco
@@ -21,6 +21,7 @@ Ideias -------------------------------------------------------------------------
 
 Progresso -------------------------------------------------------------------
 *Mostrar regras em formato R -> L
+*arrumar bug: renomear elemento em RuleGraph faz com que a informação de operação seja perdida
 
 Feito -----------------------------------------------------------------------
 *Melhorar menu de Propriedades

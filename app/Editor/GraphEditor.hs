@@ -1122,6 +1122,7 @@ startGUI = do
             let newNgiM = foldl (\giM (nid, dim) -> let gi = nodeGiSetDims dim $ getNodeGI (fromEnum nid) giM
                                                     in M.insert (fromEnum nid) gi giM) (fst gi) ndims
             writeIORef st (editorSetGI (newNgiM, snd gi) . editorSetGraph newGraph' $ es)
+            updateRuleInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
             Gtk.widgetQueueDraw canvas
 
   -- event bindings for the graphs' tree ---------------------------------------
@@ -1656,16 +1657,33 @@ createNode' st content autoNaming pos nshape color lcolor context = do
 renameSelected:: IORef EditorState -> String -> P.Context -> IO()
 renameSelected state content context = do
   es <- readIORef state
-  dim <- getStringDims (infoVisible content) context Nothing
+  -- auxiliar function rename
+  let rename oldInfo = case ((infoType content) == "", (infoOperation content) == "", content) of
+                        (True, True, ':':cs) -> infoSetType cs (infoType oldInfo)
+                        (True, True, _) -> infoSetOperation (infoSetType content (infoType oldInfo)) (infoOperation oldInfo)
+                        (True, False, _) -> infoSetType content (infoType oldInfo)
+                        (False, True, ':':cs) -> infoSetOperation content ""
+                        (False, True, _) -> infoSetOperation content (infoOperation oldInfo)
+                        (False, False, _) -> content
   let graph = editorGetGraph es
       (nids,eids) = editorGetSelected es
-      (ngiM,egiM) = editorGetGI es
-  let rename oldInfo = if (infoType content) /= ""
-                        then content
-                        else infoSetType content (infoType oldInfo)
-  let graph' = foldl (\g nid -> updateNodePayload nid g rename) graph nids
+      -- apply rename in the graph elements to get newGraph
+      graph' = foldl (\g nid -> updateNodePayload nid g rename) graph nids
       newGraph  = foldl (\g eid -> updateEdgePayload eid g rename) graph' eids
-      newNgiM = M.mapWithKey (\k gi -> if NodeId k `elem` nids then nodeGiSetDims dim gi else gi) ngiM
+  -- change the GraphicalInfo of the renamed elements
+  let (ngiM,egiM) = editorGetGI es
+  dims <- forM (filter (\n -> nodeId n `elem` nids) (nodes newGraph))
+               (\n -> do
+                     let info = nodeInfo n
+                         op = infoOperation info
+                         fontdesc = if op == "" then Nothing else Just "Sans Bold 10"
+                     dim <- getStringDims (infoVisible info) context fontdesc
+                     return (nodeId n, dim)
+               )
+  let newNgiM = M.mapWithKey (\k gi -> case lookup (NodeId k) dims of
+                                        Just dim -> nodeGiSetDims dim gi
+                                        Nothing -> gi)
+                             ngiM
       newEs   = editorSetGI (newNgiM,egiM) . editorSetGraph newGraph $ es
   writeIORef state newEs
 
