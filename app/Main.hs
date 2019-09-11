@@ -10,8 +10,10 @@ Tarefas ---------------------------------------------------------------------
 *Criar uma espécie de inferência de tipos de arestas quando criá-las
 *Quando editar o nome de uma aresta ou nodo no grafo de tipos, fazer update em todos os grafos que usam o objeto
 *permitir que o usuário escolha como será vista a regra (formato L->R, ou L<-K->R)
-*melhorar janela de ajuda
-
+*permitir a reordenação das regras por drag n' drop
+*criação e associação de NACs.
+  - desenhado como um hostGraph
+  - regras podem ter várias NACs
 
 Ideias -------------------------------------------------------------------------
 *criação de nodos através de clique duplo em um espaço em branco
@@ -21,7 +23,6 @@ Ideias -------------------------------------------------------------------------
 
 Progresso -------------------------------------------------------------------
 *Mostrar regras em formato R -> L
-*arrumar bug: renomear elemento em RuleGraph faz com que a informação de operação seja perdida
 
 Feito -----------------------------------------------------------------------
 *Melhorar menu de Propriedades
@@ -76,4 +77,5 @@ Feito -----------------------------------------------------------------------
 *Arrumar bug - arestas recém criadas em hostGraphs e ruleGraphs não recebem uma label automática.
 *Permitir que o usuário controle se os elementos irão receber nomes automáticos ou não
 *Exportar nomes dos tipos de nodos e arestas no arquivo ggx
+*arrumar bug: renomear elemento em RuleGraph faz com que a informação de operação seja perdida
 -}

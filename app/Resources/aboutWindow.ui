@@ -1,4 +1,18 @@
-
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Generated with glade 3.22.1 -->
+<interface>
+  <requires lib="gtk+" version="3.20"/>
+  <object class="GtkAboutDialog" id="aboutWin">
+    <property name="can_focus">False</property>
+    <property name="window_position">center</property>
+    <property name="destroy_with_parent">True</property>
+    <property name="type_hint">dialog</property>
+    <property name="program_name">Verigraph-GUI</property>
+    <property name="version">0.1.0.0</property>
+    <property name="copyright" translatable="yes">Verites - Grupo de Verificação, Validação e Teste de Sistemas Computacionais</property>
+    <property name="comments" translatable="yes">Graph grammar editor for the Verigraph Tool.</property>
+    <property name="website">https://github.com/artFuchs/graph-editor</property>
+    <property name="license" translatable="yes">
                                  Apache License
                            Version 2.0, January 2004
                         http://www.apache.org/licenses/
@@ -199,4 +213,33 @@
    distributed under the License is distributed on an "AS IS" BASIS,
    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
    See the License for the specific language governing permissions and
-   limitations under the License.
+   limitations under the License.</property>
+    <property name="authors">Arthur L. Fuchs - alfuchs@inf.ufrgs.br</property>
+    <property name="logo_icon_name">application-x-executable</property>
+    <property name="license_type">custom</property>
+    <child type="titlebar">
+      <placeholder/>
+    </child>
+    <child internal-child="vbox">
+      <object class="GtkBox">
+        <property name="can_focus">False</property>
+        <property name="orientation">vertical</property>
+        <property name="spacing">2</property>
+        <child internal-child="action_area">
+          <object class="GtkButtonBox" id="btnBox">
+            <property name="can_focus">False</property>
+            <property name="layout_style">end</property>
+          </object>
+          <packing>
+            <property name="expand">False</property>
+            <property name="fill">False</property>
+            <property name="position">0</property>
+          </packing>
+        </child>
+        <child>
+          <placeholder/>
+        </child>
+      </object>
+    </child>
+  </object>
+</interface>

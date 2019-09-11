@@ -852,6 +852,10 @@ startGUI = do
   hlp `on` #activate $ do
     #showAll helpWindow
 
+  -- about
+  abt `on` #activate $ buildAboutDialog
+
+
 
 
   -- event bindings -- inspector panel -----------------------------------------

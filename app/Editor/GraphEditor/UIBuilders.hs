@@ -7,6 +7,7 @@ module Editor.GraphEditor.UIBuilders(
 , buildHostInspector
 , buildRuleInspector
 , buildTreePanel
+, buildAboutDialog
 , buildHelpWindow
 , showError
 , createSaveDialog
@@ -300,6 +301,15 @@ buildTreePanel = do
 
   return (mainBox, treeview, rendererChanges, rendererProj, rendererActive, btnNew, btnRmv)
 
+buildAboutDialog :: IO ()
+buildAboutDialog = do
+  builder <- new Gtk.Builder []
+  Gtk.builderAddFromFile builder "./Resources/aboutWindow.ui"
+  dialog  <- Gtk.builderGetObject builder "aboutWin" >>= unsafeCastTo Gtk.AboutDialog. fromJust
+  #showAll dialog
+  Gtk.dialogRun dialog
+  Gtk.widgetDestroy dialog
+  return ()
 
 
 buildHelpWindow :: IO Gtk.Window
