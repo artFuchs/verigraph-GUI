@@ -216,6 +216,7 @@ drawRuleSideGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq k = do
     case (egi, srcN, dstN) of
       (Just gi, Just src, Just dst) -> do
           renderEdge gi (info) src dst False (0,0,0) False (0,0,0)
+          -- draw the IDs of the edges to identify the graph morphism
           if shouldDrawId
             then do
               let (ae,de) = cPosition gi
@@ -242,8 +243,16 @@ drawRuleSideGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq k = do
     case (ngi) of
       Just gi -> do
           renderNode gi label False (0,0,0) False (0,0,0)
+          -- draw the IDs of the nodes to identify the graph morphism
           if shouldDrawId
             then do
+              let pos = case shape gi of
+                        NCircle -> let diam = maximum [fst . dims $ gi, snd . dims $ gi]
+                                   in addPoint (position gi) ((-diam/2), 0)
+                        NRect   -> addPoint (position gi) (-(fst . dims $ gi),0)
+                        NSquare -> let a = maximum [fst . dims $ gi, snd . dims $ gi]
+                                 in addPoint (position gi) ((-a/2),0)
+                        _ -> position gi
               let pos = addPoint (position gi) (-(fst . dims $ gi), -(snd . dims $ gi))
               pL <- GRPC.createLayout (show (nodeId n))
               desc <- liftIO $ GRP.fontDescriptionFromString "Sans Bold 10"

@@ -827,7 +827,22 @@ startGUI = do
                     gi' <- changeGIDims (infoLabel . nodeInfo $ n) ngi
                     return (nid, gi'))
               return $ M.fromList nodeGiM'
-        nodeGi <- updateNodesDims (nodes g)
+        nodesGiM <- updateNodesDims (nodes g)
+
+        -- update the elements positions
+        let selectedLhs = map (fromEnum . nodeId) $ nodes lhs
+            selectedRhs = map (fromEnum . nodeId) $ nodes rhs
+            nodesGiMLhs = M.filterWithKey (\k _ -> k `elem` selectedLhs) nodesGiM
+            nodesGiMRhs = M.filterWithKey (\k _ -> k `elem` selectedRhs) nodesGiM
+            getMinX gi = (fst $ position gi) - (maximum [fst $ dims gi, snd $ dims gi])
+            getMinY gi = (snd $ position gi) - (maximum [fst $ dims gi, snd $ dims gi])
+            minXL = minimum $ map getMinX $ M.elems nodesGiMLhs
+            minYL = minimum $ map getMinY $ M.elems nodesGiMLhs
+            minXR = minimum $ map getMinX $ M.elems nodesGiMRhs
+            minYR = minimum $ map getMinY $ M.elems nodesGiMRhs
+            upd (x,y) (minX, minY) = (x-minX+20, y-minY+20)
+            nodesGiML = M.map (\gi -> nodeGiSetPosition (upd (position gi) (minXL, minYL)) gi) nodesGiMLhs
+            nodesGiMR = M.map (\gi -> nodeGiSetPosition (upd (position gi) (minXR, minYR)) gi) nodesGiMRhs
 
         -- get the name of the current rule
         path <- readIORef currentPath >>= Gtk.treePathNewFromIndices
@@ -837,8 +852,8 @@ startGUI = do
                 else return "ruleName should be here"
 
         writeIORef rvkIOR k
-        modifyIORef rvlesIOR (editorSetGraph lhs . editorSetGI (nodeGi, snd gi))
-        modifyIORef rvresIOR (editorSetGraph rhs . editorSetGI (nodeGi, snd gi))
+        modifyIORef rvlesIOR (editorSetGraph lhs . editorSetGI (nodesGiML, snd gi))
+        modifyIORef rvresIOR (editorSetGraph rhs . editorSetGI (nodesGiMR, snd gi))
         Gtk.labelSetText rvNameLabel name
         writeIORef rvtgIOR tg
 
