@@ -534,7 +534,7 @@ startGUI = do
         writeIORef currentPath [0]
         writeIORef currentGraphType 1
         writeIORef currentGraph 0
-        writeIORef graphStates $ M.fromList [(0, (emptyES,[],[])), (1, (emptyES, [], []))]
+        writeIORef graphStates $ M.fromList [(0, (emptyES,[],[])), (1, (emptyES, [], [])), (2, (emptyES, [], []))]
         writeIORef lastSavedState M.empty
         writeIORef changedProject False
         writeIORef changedGraph [False]

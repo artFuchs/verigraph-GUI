@@ -14,7 +14,7 @@ Tarefas ---------------------------------------------------------------------
 *criação e associação de NACs.
   - desenhado como um hostGraph
   - regras podem ter várias NACs
-* arrumar bug de rulegraphs mantendo os grafos do Typegraph ou InitialGraph após iniciar novo projeto
+
 
 Ideias -------------------------------------------------------------------------
 *criação de nodos através de clique duplo em um espaço em branco
@@ -24,6 +24,7 @@ Ideias -------------------------------------------------------------------------
 
 Progresso -------------------------------------------------------------------
 *Mostrar regras em formato R -> L
+*Arrumar bug de rulegraphs mantendo os grafos do Typegraph ou InitialGraph após iniciar novo projeto
 
 Feito -----------------------------------------------------------------------
 *Melhorar menu de Propriedades
