@@ -62,7 +62,7 @@ import Editor.Helper.GraphValidation
  * name,
  * graph changed (0 - no, 1 - yes),
  * graph id,
- * type (0 - topic, 1 - typeGraph, 2 - hostGraph) and
+ * type (0 - topic, 1 - typeGraph, 2 - hostGraph, 3 - ruleGraph, 4 - NAC) and
  * active (valid for rules only)
  * valid (if the current graph is correctly mapped to the typegraph)
 -}
@@ -96,7 +96,7 @@ startGUI = do
       (hlp,abt) = helpItems
   Gtk.widgetSetSensitive orv False
   -- creates the tree panel
-  (treeBox, treeview, changesRenderer, nameRenderer, activeRenderer, createBtn, btnRmv) <- buildTreePanel
+  (treeBox, treeview, changesRenderer, nameRenderer, activeRenderer, createRBtn, removeRBtn, createNBtn, removeNBtn) <- buildTreePanel
   Gtk.containerAdd treeFrame treeBox
   -- creates the inspector panel and add to the window
 
@@ -139,8 +139,8 @@ startGUI = do
       renderer' <- castTo Gtk.CellRendererText renderer
       case (renderer', changed, valid) of
         (Just r, 0, True)  -> set r [#text := ""  ]
-        (Just r, 1, True) -> set r [#text := "*" ]
-        (Just r, 0, False)  -> set r [#text := "!" ]
+        (Just r, 1, True)  -> set r [#text := "*" ]
+        (Just r, 0, False) -> set r [#text := "!" ]
         (Just r, 1, False) -> set r [#text := "!*"]
         _ -> return ()
 
@@ -214,6 +214,9 @@ startGUI = do
       3 -> do
         tg <- readIORef activeTypeGraph
         renderWithContext context $ drawRuleGraph es sq tg
+      4 -> do
+        tg <- readIORef activeTypeGraph
+        renderWithContext context $ drawHostGraph es sq tg
       _ -> return ()
     return False
 
@@ -372,6 +375,7 @@ startGUI = do
           case gType of
             2 -> updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
             3 -> updateRuleInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
+            4 -> updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
             _ -> return ()
         _           -> return ()
       return True
@@ -1201,6 +1205,27 @@ startGUI = do
                 writeIORef redoStack r
                 writeIORef currentGraph index
               Nothing -> return ()
+
+        -- auxiliar function to update nodes and edges elements according to the active typeGraph
+        let updateElements = do
+              pnt <- readIORef possibleNodeTypes
+              pet <- readIORef possibleEdgeTypes
+              es <- readIORef st
+              let g = editorGetGraph es
+                  (ngi, egi) = editorGetGI es
+                  fn node = (nid, infoType (nodeInfo node), getNodeGI nid ngi)
+                            where nid = fromEnum (nodeId node)
+                  gn (i,t,gi) = case M.lookup t pnt of
+                                  Nothing -> (i,gi)
+                                  Just (gi',_) -> (i,nodeGiSetColor (fillColor gi') . nodeGiSetShape (shape gi') $ gi)
+                  fe edge = (eid, infoType (edgeInfo edge), getEdgeGI eid egi)
+                            where eid = fromEnum (edgeId edge)
+                  ge (i,t,gi) = case M.lookup t pet of
+                                  Nothing -> (i,gi)
+                                  Just (gi',_) -> (i,edgeGiSetColor (color gi') . edgeGiSetStyle (style gi') $ gi)
+                  newNodeGI = M.fromList . map gn . map fn $ nodes g
+                  newEdgeGI = M.fromList . map ge . map fe $ edges g
+              writeIORef st (editorSetGI (newNodeGI, newEdgeGI) es)
         case (gType) of
           0 -> Gtk.widgetSetSensitive orv False
           1 -> do
@@ -1213,25 +1238,7 @@ startGUI = do
             writeIORef currentStyle ENormal
             writeIORef currentC (1,1,1)
             writeIORef currentLC (0,0,0)
-            -- update nodes and edges elements according to the active typeGraph
-            pnt <- readIORef possibleNodeTypes
-            pet <- readIORef possibleEdgeTypes
-            es <- readIORef st
-            let g = editorGetGraph es
-                (ngi, egi) = editorGetGI es
-                fn node = (nid, infoType (nodeInfo node), getNodeGI nid ngi)
-                          where nid = fromEnum (nodeId node)
-                gn (i,t,gi) = case M.lookup t pnt of
-                                Nothing -> (i,gi)
-                                Just (gi',_) -> (i,nodeGiSetColor (fillColor gi') . nodeGiSetShape (shape gi') $ gi)
-                fe edge = (eid, infoType (edgeInfo edge), getEdgeGI eid egi)
-                          where eid = fromEnum (edgeId edge)
-                ge (i,t,gi) = case M.lookup t pet of
-                                Nothing -> (i,gi)
-                                Just (gi',_) -> (i,edgeGiSetColor (color gi') . edgeGiSetStyle (style gi') $ gi)
-                newNodeGI = M.fromList . map gn . map fn $ nodes g
-                newEdgeGI = M.fromList . map ge . map fe $ edges g
-            writeIORef st (editorSetGI (newNodeGI, newEdgeGI) es)
+            updateElements
           3 -> do
             Gtk.widgetSetSensitive orv True
             changeInspector ruleInspBox ruleNameBox
@@ -1239,30 +1246,20 @@ startGUI = do
             writeIORef currentStyle ENormal
             writeIORef currentC (1,1,1)
             writeIORef currentLC (0,0,0)
-            -- update nodes and edges elements according to the active typeGraph
-            pnt <- readIORef possibleNodeTypes
-            pet <- readIORef possibleEdgeTypes
-            es <- readIORef st
-            let g = editorGetGraph es
-                (ngi, egi) = editorGetGI es
-                fn node = (nid, infoType (nodeInfo node), getNodeGI nid ngi)
-                          where nid = fromEnum (nodeId node)
-                gn (i,t,gi) = case M.lookup t pnt of
-                                Nothing -> (i,gi)
-                                Just (gi',_) -> (i,nodeGiSetColor (fillColor gi') . nodeGiSetShape (shape gi') $ gi)
-                fe edge = (eid, infoType (edgeInfo edge), getEdgeGI eid egi)
-                          where eid = fromEnum (edgeId edge)
-                ge (i,t,gi) = case M.lookup t pet of
-                                Nothing -> (i,gi)
-                                Just (gi',_) -> (i,edgeGiSetColor (color gi') . edgeGiSetStyle (style gi') $ gi)
-                newNodeGI = M.fromList . map gn . map fn $ nodes g
-                newEdgeGI = M.fromList . map ge . map fe $ edges g
-            writeIORef st (editorSetGI (newNodeGI, newEdgeGI) es)
+            updateElements
+          4 -> do
+            Gtk.widgetSetSensitive orv True
+            changeInspector hostInspBox hostNameBox
+            writeIORef currentShape NCircle
+            writeIORef currentStyle ENormal
+            writeIORef currentC (1,1,1)
+            writeIORef currentLC (0,0,0)
+            updateElements
         Gtk.widgetQueueDraw canvas
 
-  -- pressed the 'new' button on the treeview area
+  -- pressed the 'new rule' button on the treeview area
   -- create a new Rule
-  on createBtn #clicked $ do
+  on createRBtn #clicked $ do
     states <- readIORef graphStates
     let newKey = if M.size states > 0 then maximum (M.keys states) + 1 else 0
     (valid,parent) <- Gtk.treeModelIterNthChild store Nothing 2
@@ -1274,21 +1271,59 @@ startGUI = do
         storeSetGraphStore store iter ("Rule" ++ (show n), 0, newKey, 3, True, True)
         modifyIORef graphStates (M.insert newKey (emptyES,[],[]))
 
-  -- pressed the 'remove' button on the treeview area
+  -- pressed the 'remove rule' button on the treeview area
   -- remove a Rule
-  on btnRmv #clicked $ do
+  on removeRBtn #clicked $ do
     selection <- Gtk.treeViewGetSelection treeview
     (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
     if not sel
       then return ()
       else do
-        (valid, parent) <- Gtk.treeModelIterParent store iter
-        if not valid
-          then showError window "Selected Graph is not a rule"
-          else do
+        gtype <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
+        case gtype of
+          3 -> do
             index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
             Gtk.treeStoreRemove store iter
             modifyIORef graphStates $ M.delete index
+          _ -> showError window "Selected Graph is not a rule."
+
+
+  -- pressed the 'create NAC' vutton on the treeview area
+  -- create NAC for the current rule
+  on createNBtn #clicked $ do
+    states <- readIORef graphStates
+    selection <- Gtk.treeViewGetSelection treeview
+    (sel, model, iterR) <- Gtk.treeSelectionGetSelected selection
+    if not sel
+      then return ()
+      else do
+        gtype <- Gtk.treeModelGetValue store iterR 3 >>= fromGValue :: IO Int32
+        case gtype of
+          3 -> do
+            let newKey = if M.size states > 0 then maximum (M.keys states) + 1 else 0
+            n <- Gtk.treeModelIterNChildren store (Just iterR)
+            iterN <- Gtk.treeStoreAppend store (Just iterR)
+            storeSetGraphStore store iterN ("NAC" ++ (show n), 0, newKey, 4, True, True)
+            modifyIORef graphStates (M.insert newKey (emptyES,[],[]))
+          _ -> showError window "Selected Graph is not a rule, it's not possible to create NACs for it."
+
+  -- pressed the 'remove NAC' button on the treeview area
+  -- remove a NAC
+  on removeNBtn #clicked $ do
+    selection <- Gtk.treeViewGetSelection treeview
+    (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
+    if not sel
+      then return ()
+      else do
+        gtype <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
+        case gtype of
+          4 -> do
+              index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
+              Gtk.treeStoreRemove store iter
+              modifyIORef graphStates $ M.delete index
+          _ -> showError window "Selected Graph is not a NAC"
+
+
 
   -- edited a graph name
   on nameRenderer #edited $ \pathStr newName -> do
