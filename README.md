@@ -5,7 +5,7 @@ For now, it can export a .ggx file (default file format for AGG).
 The editor in this repository makes use of the module Data.Graphs from the Verigraph source.
 
 
-# Usage Instructions
+# Install Instructions
 
 For install, it's recommended to use the [stack tool](https://docs.haskellstack.org/en/stable/README/).
 
