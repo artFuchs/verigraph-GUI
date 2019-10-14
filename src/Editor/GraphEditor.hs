@@ -198,6 +198,11 @@ startGUI = do
   currentNodeType     <- newIORef Nothing
   currentEdgeType     <- newIORef Nothing
 
+  -- variables to specify NACs
+  -- Diagraph from the rule - togetter with lhs it make the editor state
+  nacDiaGraphs <- newIORef (M.empty :: M.Map Int32 DiaGraph )
+
+
   ------------------------------------------------------------------------------
   -- EVENT BINDINGS ------------------------------------------------------------
   -- event bindings for the canvas ---------------------------------------------
@@ -487,11 +492,12 @@ startGUI = do
   -- event bindings for the menu toolbar ---------------------------------------
   -- auxiliar functions to create/open/save the project
       -- auxiliar function to prepare the treeStore to save
-  let prepToSave = do es <- readIORef st
-                      undo <- readIORef undoStack
-                      redo <- readIORef redoStack
-                      index <- readIORef currentGraph
-                      modifyIORef graphStates $ M.insert index (es,undo,redo)
+      -- auxiliar function, add the current editor state in the graphStates list
+  let storeCurrentES = do es <- readIORef st
+                          undo <- readIORef undoStack
+                          redo <- readIORef redoStack
+                          index <- readIORef currentGraph
+                          modifyIORef graphStates $ M.insert index (es,undo,redo)
 
       -- auxiliar function to clean the flags after saving
   let afterSave = do  writeIORef changedProject False
@@ -522,7 +528,7 @@ startGUI = do
                               r -> case r of
                                 Gtk.ResponseTypeNo -> return True
                                 Gtk.ResponseTypeYes -> do
-                                  prepToSave
+                                  storeCurrentES
                                   structs <- getStructsToSave store graphStates
                                   saveFile structs saveProject fileName window True -- returns True if saved the file
 
@@ -601,7 +607,7 @@ startGUI = do
 
   -- save project
   on svn #activate $ do
-    prepToSave
+    storeCurrentES
     structs <- getStructsToSave store graphStates
     saved <- saveFile structs saveProject fileName window True
     if saved
@@ -610,7 +616,7 @@ startGUI = do
 
   -- save project as
   sva `on` #activate $ do
-    prepToSave
+    storeCurrentES
     structs <- getStructsToSave store graphStates
     saved <- saveFileAs structs saveProject fileName window True
     if saved
@@ -1192,10 +1198,7 @@ startGUI = do
             -- update the current path
             writeIORef currentPath path
             -- update the current graph in the tree
-            currentES <- readIORef st
-            u <- readIORef undoStack
-            r <- readIORef redoStack
-            modifyIORef graphStates (M.insert cIndex (currentES,u,r))
+            storeCurrentES
             -- load the selected graph from the tree
             writeIORef currentGraphType gType
             states <- readIORef graphStates
@@ -1300,13 +1303,22 @@ startGUI = do
       then return ()
       else do
         gtype <- Gtk.treeModelGetValue store iterR 3 >>= fromGValue :: IO Int32
+        index <- Gtk.treeModelGetValue store iterR 2 >>= fromGValue :: IO Int32
         case gtype of
           3 -> do
+            storeCurrentES
+            states <- readIORef graphStates
+            let state = fromMaybe (emptyES,[],[]) $ M.lookup index states
+                (es,_,_) = state
+                (lhs,_,_) = graphToRuleGraphs (editorGetGraph es)
+                gi = editorGetGI es
+                gi' = (M.filterWithKey (\k a -> (NodeId k) `elem` (nodeIds lhs)) (fst gi), M.filterWithKey (\k a -> (EdgeId k) `elem` (edgeIds lhs)) (snd gi))
             let newKey = if M.size states > 0 then maximum (M.keys states) + 1 else 0
             n <- Gtk.treeModelIterNChildren store (Just iterR)
             iterN <- Gtk.treeStoreAppend store (Just iterR)
             storeSetGraphStore store iterN ("NAC" ++ (show n), 0, newKey, 4, True, True)
-            modifyIORef graphStates (M.insert newKey (emptyES,[],[]))
+            modifyIORef nacDiaGraphs (M.insert newKey DG.empty)
+            modifyIORef graphStates (M.insert newKey (editorSetGraph lhs . editorSetGI gi $ emptyES,[],[]))
           _ -> showError window "Selected Graph is not a rule, it's not possible to create NACs for it."
 
   -- pressed the 'remove NAC' button on the treeview area

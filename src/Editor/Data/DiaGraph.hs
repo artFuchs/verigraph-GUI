@@ -14,6 +14,9 @@ import Editor.Data.GraphicalInfo
 -- A pair containing a graph and it's graphical information
 type DiaGraph = (Graph String String ,GraphicalInfo)
 
+empty :: DiaGraph
+empty = (G.empty, (M.empty, M.empty))
+
 isDiaGraphEqual :: DiaGraph -> DiaGraph -> Bool
 isDiaGraphEqual (g1,gi1) (g2,gi2) = g1 == g2 && nodesGiEq && edgesGiEq
   where
@@ -41,9 +44,7 @@ diagrDisjointUnion diagr1@(g1,(ngiM1,egiM1)) (g2,(ngiM2,egiM2)) = diagrUnion dia
     ngiM2' = M.foldrWithKey (\k a m -> M.insert (fromEnum . fn . toEnum $ k) a m) M.empty ngiM2
     egiM2' = M.foldrWithKey (\k a m -> M.insert (fromEnum . fe . toEnum $ k) a m) M.empty egiM2
 
-
-
-
+-- diagraph union
 diagrUnion :: DiaGraph -> DiaGraph -> DiaGraph
 diagrUnion (g1,(ngiM1,egiM1)) (g2,(ngiM2,egiM2)) = (g3,(ngiM3,egiM3))
   where
@@ -52,9 +53,3 @@ diagrUnion (g1,(ngiM1,egiM1)) (g2,(ngiM2,egiM2)) = (g3,(ngiM3,egiM3))
     g3 = fromNodesAndEdges ns3 es3
     ngiM3 = M.union ngiM1 ngiM2
     egiM3 = M.union egiM1 egiM2
-
-
-
-
-empty :: DiaGraph
-empty = (G.empty, (M.empty, M.empty))
