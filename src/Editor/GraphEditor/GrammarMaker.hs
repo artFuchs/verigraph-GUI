@@ -1,24 +1,32 @@
 module Editor.GraphEditor.GrammarMaker (
   graphToRuleGraphs
 , makeTypeGraph
+, makeTypedGraph
+, formatNac
 , makeGrammar
 )where
 
 import Data.Maybe
 import Data.Graphs
+import Category.TypedGraph
+import Category.TypedGraph.Limit
 import qualified Data.List as L
+import qualified Data.Map as M
 import Editor.Data.Info
 import Base.Valid
 import Abstract.Rewriting.DPO
 import Rewriting.DPO.TypedGraph
 import Data.Graphs.Morphism
+import Abstract.Category.Limit
 import qualified Data.TypedGraph as TG
 import qualified Data.TypedGraph.Morphism as TGM
+
 
 type RuleGraphs = (Graph String String, Graph String String, Graph String String)
 type TypeGraph a b = Graph (Maybe a) (Maybe b) -- may delete this if import span
 
-graphToRuleGraphs :: Graph String String -> RuleGraphs
+graphToRuleGraphs :: Graph String String
+                  -> RuleGraphs
 graphToRuleGraphs g = (lhs, k, rhs)
   where
     nods = nodes g
@@ -41,7 +49,33 @@ mkpairs xs ys = do x <- xs
                    y <- ys
                    return (x,y)
 
-makeTypedGraph :: Graph String String -> Graph (Maybe String) (Maybe String) -> TG.TypedGraph String String
+formatNac :: TypedGraph String String
+          -> TypedGraph String String
+          -> (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
+          -> TypedGraphMorphism String String
+formatNac nac lhs (nmap, emap) = nacTgm'
+  where
+    -- auxiliar functions to generate typeGraph and typedGraphs and to return from them
+    nodeToJust = \n -> Node (nodeId n) (Just $ nodeInfo n)
+    edgeToJust = \e -> Edge (edgeId e) (sourceId e) (targetId e) (Just $ edgeInfo e)
+    nodeFromJust = \n -> Node (nodeId n) (fromJust $ nodeInfo n)
+    edgeFromJust = \e -> Edge (edgeId e) (sourceId e) (targetId e) (fromJust $ edgeInfo e)
+    -- get the mapped elements from lhs
+    knodeIds = M.keys nmap
+    kedgeIds = M.keys emap
+    knodes = map nodeFromJust $ filter (\n -> nodeId n `elem` knodeIds) $ nodes $ domainGraph lhs
+    kedges = map edgeFromJust $ filter (\e -> edgeId e `elem` kedgeIds) $ edges $ domainGraph lhs
+    -- generate a interface typed graph k
+    k = makeTypedGraph (fromNodesAndEdges knodes kedges) (TG.typeGraph lhs)
+    -- generate two morphisms
+    lhsTgm = TGM.fromGraphsAndLists k lhs (map (\n -> (n,n)) knodeIds) (map (\n -> (n,n)) kedgeIds)
+    nacTgm = TGM.fromGraphsAndLists k nac (M.toList nmap) (M.toList emap)
+    -- calculate the pushout between them
+    (nacTgm',_) = calculatePushout nacTgm lhsTgm
+
+makeTypedGraph :: Graph String String
+               -> Graph (Maybe String) (Maybe String)
+               -> TG.TypedGraph String String
 makeTypedGraph g tg = fromGraphsAndLists g' tg npairs epairs
   where
     -- auxiliar functions to define the typedGraph

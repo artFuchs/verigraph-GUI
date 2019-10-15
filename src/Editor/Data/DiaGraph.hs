@@ -1,8 +1,10 @@
 module Editor.Data.DiaGraph
 ( DiaGraph
+, empty
 , isDiaGraphEqual
 , diagrDisjointUnion
-, empty
+, diagrUnion
+, diagrSubtract
 )where
 
 import qualified Data.Map as M
@@ -53,3 +55,15 @@ diagrUnion (g1,(ngiM1,egiM1)) (g2,(ngiM2,egiM2)) = (g3,(ngiM3,egiM3))
     g3 = fromNodesAndEdges ns3 es3
     ngiM3 = M.union ngiM1 ngiM2
     egiM3 = M.union egiM1 egiM2
+
+-- subtract a diagraph dg2 from diagraph dg1
+diagrSubtract :: DiaGraph -> DiaGraph -> DiaGraph
+diagrSubtract (g1, (ngiM1, egiM1)) (g2, (ngiM2,egiM2)) = (g3,(ngiM3,egiM3))
+  where
+    eds3 = filter (\e -> notElem (edgeId e) (edgeIds g2)) $ edges g1
+    nds3 = filter (\n -> (notElem (nodeId n) (nodeIds g2)) || isEssential (nodeId n)) $ nodes g1
+    g3 = fromNodesAndEdges nds3 eds3
+    ngiM3 = M.filterWithKey (\k a -> (NodeId k) `elem` nodeIds g3) ngiM1
+    egiM3 = M.filterWithKey (\k a -> (EdgeId k) `elem` edgeIds g3) egiM1
+
+    isEssential nid = nid `elem` (map sourceId eds3) || nid `elem` (map targetId eds3)

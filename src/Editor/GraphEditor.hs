@@ -200,8 +200,7 @@ startGUI = do
 
   -- variables to specify NACs
   -- Diagraph from the rule - togetter with lhs it make the editor state
-  nacDiaGraphs <- newIORef (M.empty :: M.Map Int32 DiaGraph )
-
+  nacDiaGraphs <- newIORef (M.empty :: M.Map Int32 DiaGraph)
 
   ------------------------------------------------------------------------------
   -- EVENT BINDINGS ------------------------------------------------------------
@@ -1174,6 +1173,26 @@ startGUI = do
         #showAll inspectorFrame
 
 
+  -- auxiliar function to load parent graph
+  let getParentDiaGraph pathIndices = do
+          path <- Gtk.treePathNewFromIndices pathIndices
+          (validIter, iter) <- Gtk.treeModelGetIter store path
+          (valid, parent) <- if validIter
+                                then Gtk.treeModelIterParent store iter
+                                else return (False,iter)
+          if valid
+            then do
+              index <- Gtk.treeModelGetValue store parent 2 >>= fromGValue :: IO Int32
+              states <- readIORef graphStates
+              state <- return $ M.lookup index states
+              case state of
+                Nothing -> return DG.empty
+                Just (es,_,_) -> return (lhs, (ngi,egi))
+                            where (lhs,_,_) = graphToRuleGraphs $ editorGetGraph es
+                                  ngi = M.filterWithKey (\k a -> (NodeId k) `elem` (nodeIds lhs)) $ fst (editorGetGI es)
+                                  egi = M.filterWithKey (\k a -> (EdgeId k) `elem` (edgeIds lhs)) $ snd (editorGetGI es)
+            else return DG.empty
+
   on treeview #cursorChanged $ do
     selection <- Gtk.treeViewGetSelection treeview
     (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
@@ -1183,12 +1202,28 @@ startGUI = do
         -- get the current path for update
         mpath <- Gtk.treeModelGetPath model iter >>= Gtk.treePathGetIndices
         path <- case mpath of
-          Nothing -> return [0,0]
+          Nothing -> return [0]
           Just p -> return p
         -- compare the selected graph with the current one
         cIndex <- readIORef currentGraph
+        cGType <- readIORef currentGraphType
         index <- Gtk.treeModelGetValue model iter 2 >>= fromGValue  :: IO Int32
         gType <- Gtk.treeModelGetValue model iter 3 >>= fromGValue  :: IO Int32
+
+        -- if current graph is a nac, divide st graph in two - lhs & nac'
+        case cGType of
+          4 -> do
+            pathIndices <- readIORef currentPath
+            lhs <- getParentDiaGraph pathIndices
+            es <- readIORef st
+            let g = editorGetGraph es
+                gi = editorGetGI es
+                dg = diagrSubtract (g,gi) (lhs)
+            modifyIORef nacDiaGraphs (M.insert cIndex dg)
+            print (fst dg)
+          _ -> return ()
+
+        -- change the graph
         case (cIndex == index, gType) of
           (True, _)  -> do
             -- just update the current path
