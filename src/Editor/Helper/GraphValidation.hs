@@ -10,6 +10,7 @@ import Data.Graphs
 import qualified Data.Graphs.Morphism as Morph
 import qualified Data.TypedGraph as TG
 import Editor.Data.Info
+import Editor.Helper.Helper
 
 -- validation ------------------------------------------------------------------
 -- generate a mask graph that informs if a node/edge has a unique name
@@ -35,10 +36,6 @@ correctTypeGraph g tg = fromNodesAndEdges vn ve
   where
     vn = map nodeIsValid $ nodes g
     ve = map edgeIsValid $ edges g
-    -- auxiliar functions to define the typedGraph
-    mkpairs xs ys = do x <- xs
-                       y <- ys
-                       return (x,y)
     nodeToJust = \n -> Node (nodeId n) (Just $ nodeInfo n)
     edgeToJust = \e -> Edge (edgeId e) (sourceId e) (targetId e) (Just $ edgeInfo e)
 

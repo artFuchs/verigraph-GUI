@@ -31,10 +31,11 @@ import Data.Monoid
 import Abstract.Category
 import Abstract.Rewriting.DPO
 import Data.Graphs hiding (null, empty)
-import Data.TypedGraph.Morphism
 import qualified Data.Graphs as G
 import qualified Data.Graphs.Morphism as Morph
 import qualified Data.TypedGraph as TG
+import qualified Data.TypedGraph.Morphism as TGM
+import qualified Data.Relation as R
 
 
 
@@ -51,6 +52,7 @@ import qualified Editor.Data.DiaGraph as DG
 import Editor.GraphEditor.SaveLoad
 import Editor.GraphEditor.GrammarMaker
 import Editor.GraphEditor.RuleViewer
+import Editor.Helper.Helper
 import Editor.Helper.Geometry
 import Editor.Helper.GraphValidation
 import Editor.GraphEditor.UpdateInspector
@@ -1220,7 +1222,6 @@ startGUI = do
                 gi = editorGetGI es
                 dg = diagrSubtract (g,gi) (lhs)
             modifyIORef nacDiaGraphs (M.insert cIndex dg)
-            print (fst dg)
           _ -> return ()
 
         -- change the graph
@@ -1229,6 +1230,74 @@ startGUI = do
             -- just update the current path
             writeIORef currentPath path
           (False, 0) -> return ()
+          (False, 4) -> do
+            -- update the current path
+            writeIORef currentPath path
+            -- update the current graph in the tree
+            storeCurrentES
+            -- build the graph for the nac
+            writeIORef currentGraphType gType
+            states <- readIORef graphStates
+            let maybeState = M.lookup index states
+            case maybeState of
+              Just (es,u,r) -> do
+                tg <- readIORef activeTypeGraph
+                (ruleLG, ruleLGI) <- getParentDiaGraph path
+                nacDGs <- readIORef nacDiaGraphs
+                (nG,gi) <- case M.lookup index $ nacDGs of
+                  Nothing -> return (ruleLG,ruleLGI)
+                  Just (nacG, nacGI) -> case (G.null nacG) of
+                    True -> return (ruleLG,ruleLGI)
+                    False -> do
+                      let tg' = makeTypeGraph tg
+                          lm = makeTypedGraph ruleLG tg'
+                          nm = makeTypedGraph nacG tg'
+                          nodeM = M.fromList $ filter (\(a,b) -> a == b) $ mkpairs (nodeIds ruleLG) (nodeIds nacG)
+                          edgeM = M.fromList $ filter (\(a,b) -> a == b) $ mkpairs (edgeIds ruleLG) (edgeIds nacG)
+                          (nacTgmLhs,nacTgmNac) = getNacPushout nm lm (nodeM, edgeM)
+                          nIRLHS = R.inverseRelation $ Morph.nodeRelation $ TGM.mapping nacTgmLhs
+                          eIRLHS = R.inverseRelation $ Morph.edgeRelation $ TGM.mapping nacTgmLhs
+                          nIRNAC = R.inverseRelation $ Morph.nodeRelation $ TGM.mapping nacTgmNac
+                          eIRNAC = R.inverseRelation $ Morph.edgeRelation $ TGM.mapping nacTgmNac
+                          nacTg = TGM.codomainGraph nacTgmLhs
+                          nGJust = TG.toUntypedGraph nacTg
+                          swapNodeId n = let nids = R.apply nIRLHS (nodeId n) ++ R.apply nIRNAC (nodeId n)
+                                          in if null nids
+                                            then n
+                                            else Node (head nids) (nodeInfo n)
+                          swapNodeId' n = let nids = R.apply nIRLHS n ++ R.apply nIRNAC n
+                                          in if null nids
+                                            then n
+                                            else head nids
+                          swapEdgeId e = let eids = R.apply eIRLHS (edgeId e) ++ R.apply eIRNAC (edgeId e)
+                                          in if null eids
+                                            then e
+                                            else Edge (head eids) (swapNodeId' $ sourceId e) (swapNodeId' $ targetId e) (edgeInfo e)
+                          nGnodes = map swapNodeId . map nodeFromJust $ nodes nGJust
+                          nGedges = map swapEdgeId . map edgeFromJust $ edges nGJust
+                          nG = fromNodesAndEdges nGnodes nGedges
+                          gi = (M.union (fst ruleLGI) (fst nacGI), M.union (snd ruleLGI) (snd nacGI))
+                      putStrLn "---------- lhs ------------"
+                      print lm
+                      putStrLn "---------- nac ------------"
+                      print nm
+                      putStrLn "---------- mappings ------------"
+                      print nodeM
+                      print edgeM
+                      putStrLn "---------- lhs -> nac' ------------"
+                      print nacTgmLhs
+                      print nG
+                      return (nG,gi)
+                      putStrLn "---------- nac -> nac' ------------"
+                      print nacTgmNac
+                      print nG
+                      return (nG,gi)
+                writeIORef st $ editorSetGI gi . editorSetGraph nG $ es
+                writeIORef undoStack u
+                writeIORef redoStack r
+                writeIORef currentGraph index
+              Nothing -> return ()
+
           (False, _) -> do
             -- update the current path
             writeIORef currentPath path
