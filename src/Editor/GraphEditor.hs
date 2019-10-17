@@ -223,7 +223,7 @@ startGUI = do
         renderWithContext context $ drawRuleGraph es sq tg
       4 -> do
         tg <- readIORef activeTypeGraph
-        renderWithContext context $ drawHostGraph es sq tg
+        renderWithContext context $ drawNACGraph es sq tg
       _ -> return ()
     return False
 
@@ -1244,7 +1244,10 @@ startGUI = do
             case maybeState of
               Just (es,u,r) -> do
                 tg <- readIORef activeTypeGraph
-                ruledg@(ruleLG, ruleLGI) <- getParentDiaGraph path
+                lhsdg <- getParentDiaGraph path
+                let ruleLG' = foldr (\n g -> G.updateNodePayload n g (\info -> infoSetLocked info True)) (fst lhsdg) (nodeIds . fst $ lhsdg)
+                    ruleLG = foldr (\e g -> G.updateEdgePayload e g (\info -> infoSetLocked info True)) ruleLG' (edgeIds . fst $ lhsdg)
+                    ruleLGI = snd lhsdg
                 nacDGs <- readIORef nacDiaGraphs
                 (nG,gi) <- case M.lookup index $ nacDGs of
                   Nothing -> return (ruleLG,ruleLGI)
@@ -1252,7 +1255,7 @@ startGUI = do
                     True -> return (ruleLG,ruleLGI)
                     False -> do
                       let tg' = makeTypeGraph tg
-                          (nacG,nacGI) = remapElementsWithConflict ruledg nacdg (nodeM,edgeM)
+                          (nacG,nacGI) = remapElementsWithConflict lhsdg nacdg (nodeM,edgeM)
                           lm = makeTypedGraph ruleLG tg'
                           nm = makeTypedGraph nacG tg'
                           (nacTgmLhs,nacTgmNac) = getNacPushout nm lm (nodeM, edgeM)

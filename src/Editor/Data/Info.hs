@@ -4,15 +4,18 @@ module Editor.Data.Info(
 , infoLabel
 , infoType
 , infoOperation
+, infoLocked
 , infoSetLabel
 , infoSetType
 , infoSetOperation
+, infoSetLocked
 )where
 
--- An info is a string in the format "[operation:]label{type}", where
+-- An info is a string in the format "[operation:]label{type}[L]", where
 --    [operation:]label is the text of the node/edge
 --    type is a label of a node/edge of the typegraph
 --    operation is: "", "new" or "del"
+--    [L] indicates if the object is locked
 type Info = String
 
 infoVisible :: Info -> String
@@ -55,6 +58,10 @@ infoOperationAux (':':cs) = Just []
 infoOperationAux ('{':cs) = Nothing
 infoOperationAux (c:cs) = Just (c:) <*> infoOperationAux cs
 
+infoLocked :: Info -> Bool
+infoLocked info = let c:cs = reverse info
+                  in c == 'L'
+
 infoSetLabel :: Info -> String -> Info
 infoSetLabel i l = case infoOperation i of
   [] -> l ++ "{" ++ infoType i ++ "}"
@@ -68,3 +75,11 @@ infoSetType i t = case infoOperation i of
 infoSetOperation :: Info -> String -> Info
 infoSetOperation i "" = infoLabel i ++ "{" ++ infoType i ++ "}"
 infoSetOperation i o = o ++ ":" ++ infoLabel i ++ "{" ++ infoType i ++ "}"
+
+infoSetLocked :: Info -> Bool -> Info
+infoSetLocked info True = case infoLocked info of
+  True -> info
+  False -> reverse $ 'L':(reverse info)
+infoSetLocked info False = case infoLocked info of
+  False -> info
+  True -> reverse $ tail (reverse info)

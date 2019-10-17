@@ -11,9 +11,7 @@ Tarefas ---------------------------------------------------------------------
 *Quando editar o nome de uma aresta ou nodo no grafo de tipos, fazer update em todos os grafos que usam o objeto
 *permitir que o usuário escolha como será vista a regra (formato L->R, ou L<-K->R)
 *permitir a reordenação das regras por drag n' drop
-*criação e associação de NACs.
-  - desenhado como um hostGraph
-  - regras podem ter várias NACs
+
 
 
 Ideias -------------------------------------------------------------------------
@@ -24,7 +22,10 @@ Ideias -------------------------------------------------------------------------
 
 Progresso -------------------------------------------------------------------
 *Mostrar regras em formato R -> L
-*Arrumar bug de rulegraphs mantendo os grafos do Typegraph ou InitialGraph após iniciar novo projeto
+*criação e associação de NACs.
+  - indicar quais são os elementos da nac que são do lhs e não permitir a deleção
+  - concatenação de elementos do lhs na nac.
+
 
 Feito -----------------------------------------------------------------------
 *Melhorar menu de Propriedades
@@ -80,4 +81,8 @@ Feito -----------------------------------------------------------------------
 *Permitir que o usuário controle se os elementos irão receber nomes automáticos ou não
 *Exportar nomes dos tipos de nodos e arestas no arquivo ggx
 *arrumar bug: renomear elemento em RuleGraph faz com que a informação de operação seja perdida
+*criação e associação de NACs.
+  - criar grafo que inicia com o lado esquerdo da regra.
+  - as mudanças de uma regra devem propagar para as nacs.
+    - dividir nac de forma a pegar apenas a forma da nac e juntar com o lhs quando for edita-la novamente
 -}

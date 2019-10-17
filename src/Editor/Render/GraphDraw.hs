@@ -3,6 +3,7 @@ module Editor.Render.GraphDraw (
 , drawHostGraph
 , drawRuleGraph
 , drawRuleSideGraph
+, drawNACGraph
 ) where
 
 import qualified Data.Map as M
@@ -22,15 +23,15 @@ import Graphics.Rendering.Pango.Cairo as GRPC
 import Graphics.Rendering.Pango.Layout as GRPL
 import Editor.Helper.Geometry
 
+selectColor = (0.29,0.56,0.85)
+errorColor = (0.9,0.2,0.2)
+bothColor = (0.47,0.13,0.87)
+
 -- draw a graph in the canvas --------------------------------------------------
 drawTypeGraph :: EditorState -> Maybe (Double,Double,Double,Double)-> Render ()
 drawTypeGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
   scale z z
   translate px py
-
-  let selectColor = (0.29,0.56,0.85)
-      errorColor = (0.9,0.2,0.2)
-      bothColor = (0.47,0.13,0.87)
 
   let cg = nameConflictGraph g
 
@@ -79,11 +80,6 @@ drawHostGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
   scale z z
   translate px py
 
-  -- specify colors for select and error
-  let selectColor = (0.29,0.56,0.85)
-      errorColor = (0.9,0.2,0.2)
-      bothColor = (0.47,0.13,0.87)
-
   let vg = correctTypeGraph g tg
   -- draw the edges
   forM (edges g) (\e -> do
@@ -131,10 +127,7 @@ drawRuleGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
   translate px py
 
   -- specify colors for select and error
-  let selectColor = (0.29,0.56,0.85)
-      errorColor = (0.9,0.2,0.2)
-      bothColor = (0.47,0.13,0.87)
-      createColor = (0.12, 0.48, 0.10)
+  let createColor = (0.12, 0.48, 0.10)
       deleteColor = (0.17, 0.28, 0.77)
 
   let vg = correctTypeGraph g tg
@@ -198,11 +191,7 @@ drawRuleSideGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq k = do
   scale z z
   translate px py
 
-  -- specify colors for select and error
-  let selectColor = (0.29, 0.56, 0.85)
-      errorColor =  (0.90, 0.20, 0.20)
-      bothColor =   (0.47, 0.13, 0.87)
-      (idr, idg, idb) = (0.5,0.5,0.5)--(0.57, 0.47, 0)
+  let (idr, idg, idb) = (0.5,0.5,0.5) --(0.57, 0.47, 0)
 
   -- draw the edges
   forM (edges g) (\e -> do
@@ -261,6 +250,59 @@ drawRuleSideGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq k = do
               moveTo (fst pos) (snd pos)
               showLayout pL
             else return ()
+      Nothing -> return ())
+
+  drawSelectionBox sq
+  return ()
+
+drawNACGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph String String -> Render ()
+drawNACGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
+  scale z z
+  translate px py
+
+  -- color for elements from the rule lhs that are "locked"
+  let lockedColor = (0.90,0.75,0.05)
+      lockedAndSelectedColor = (0.1,0.8,0.01)
+      lockedAndErrorColor = (0.9,0.3,0.0)
+
+  let chooseColor s t l = case (s,t,l) of
+        (False,False,False) -> (0,0,0)
+        (False,True,False) -> errorColor
+        (True,False,False) -> selectColor
+        (True,True,False) -> bothColor
+        (False,False,True) -> lockedColor
+        (True,False,True) -> lockedAndSelectedColor
+        (False,True,True) -> lockedAndErrorColor
+
+  let vg = correctTypeGraph g tg
+  -- draw the edges
+  forM (edges g) (\e -> do
+    let dstN = M.lookup (fromEnum . targetId $ e) nGI
+        srcN = M.lookup (fromEnum . sourceId $ e) nGI
+        egi  = M.lookup (fromEnum . edgeId   $ e) eGI
+        selected = (edgeId e) `elem` sEdges
+        typeError = case lookupEdge (edgeId e) vg of
+                      Just e' -> not $ edgeInfo e'
+                      Nothing -> True
+        locked = infoLocked $ edgeInfo e
+        color = chooseColor selected typeError locked
+    case (egi, srcN, dstN) of
+      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabel (edgeInfo e)) src dst (selected || typeError || locked) color False (0,0,0)
+      _ -> return ())
+
+  -- draw the nodes
+  forM (nodes g) (\n -> do
+    let ngi = M.lookup (fromEnum . nodeId $ n) nGI
+        selected = (nodeId n) `elem` (sNodes)
+        info = nodeInfo n
+        label = infoLabel info
+        typeError = case lookupNode (nodeId n) vg of
+                      Just n' -> not $ nodeInfo n'
+                      Nothing -> True
+        locked = infoLocked $ nodeInfo n
+        color = chooseColor selected typeError locked
+    case (ngi) of
+      Just gi -> renderNode gi label (selected || typeError || locked) color False (0,0,0)
       Nothing -> return ())
 
   drawSelectionBox sq
