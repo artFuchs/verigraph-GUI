@@ -202,7 +202,7 @@ startGUI = do
 
   -- variables to specify NACs
   -- Diagraph from the rule - togetter with lhs it make the editor state
-  nacDiaGraphs <- newIORef (M.empty :: M.Map Int32 DiaGraph)
+  nacDiaGraphs <- newIORef (M.empty :: M.Map Int32 (DiaGraph, (M.Map NodeId NodeId, M.Map EdgeId EdgeId)))
 
   ------------------------------------------------------------------------------
   -- EVENT BINDINGS ------------------------------------------------------------
@@ -1216,12 +1216,14 @@ startGUI = do
         case cGType of
           4 -> do
             pathIndices <- readIORef currentPath
-            lhs <- getParentDiaGraph pathIndices
+            (lhs,lhsGI) <- getParentDiaGraph pathIndices
             es <- readIORef st
             let g = editorGetGraph es
                 gi = editorGetGI es
-                dg = diagrSubtract (g,gi) (lhs)
-            modifyIORef nacDiaGraphs (M.insert cIndex dg)
+                dg@(nacG,nacGI) = diagrSubtract (g,gi) (lhs,lhsGI)
+                nodeM = M.fromList $ filter (\(a,b) -> a == b) $ mkpairs (nodeIds lhs) (nodeIds nacG)
+                edgeM = M.fromList $ filter (\(a,b) -> a == b) $ mkpairs (edgeIds lhs) (edgeIds nacG)
+            modifyIORef nacDiaGraphs (M.insert cIndex (dg,(nodeM,edgeM)))
           _ -> return ()
 
         -- change the graph
@@ -1242,18 +1244,17 @@ startGUI = do
             case maybeState of
               Just (es,u,r) -> do
                 tg <- readIORef activeTypeGraph
-                (ruleLG, ruleLGI) <- getParentDiaGraph path
+                ruledg@(ruleLG, ruleLGI) <- getParentDiaGraph path
                 nacDGs <- readIORef nacDiaGraphs
                 (nG,gi) <- case M.lookup index $ nacDGs of
                   Nothing -> return (ruleLG,ruleLGI)
-                  Just (nacG, nacGI) -> case (G.null nacG) of
+                  Just (nacdg,(nodeM,edgeM)) -> case (G.null $ fst nacdg) of
                     True -> return (ruleLG,ruleLGI)
                     False -> do
                       let tg' = makeTypeGraph tg
+                          (nacG,nacGI) = remapElementsWithConflict ruledg nacdg (nodeM,edgeM)
                           lm = makeTypedGraph ruleLG tg'
                           nm = makeTypedGraph nacG tg'
-                          nodeM = M.fromList $ filter (\(a,b) -> a == b) $ mkpairs (nodeIds ruleLG) (nodeIds nacG)
-                          edgeM = M.fromList $ filter (\(a,b) -> a == b) $ mkpairs (edgeIds ruleLG) (edgeIds nacG)
                           (nacTgmLhs,nacTgmNac) = getNacPushout nm lm (nodeM, edgeM)
                           nIRLHS = R.inverseRelation $ Morph.nodeRelation $ TGM.mapping nacTgmLhs
                           eIRLHS = R.inverseRelation $ Morph.edgeRelation $ TGM.mapping nacTgmLhs
@@ -1261,36 +1262,17 @@ startGUI = do
                           eIRNAC = R.inverseRelation $ Morph.edgeRelation $ TGM.mapping nacTgmNac
                           nacTg = TGM.codomainGraph nacTgmLhs
                           nGJust = TG.toUntypedGraph nacTg
-                          swapNodeId n = let nids = R.apply nIRLHS (nodeId n) ++ R.apply nIRNAC (nodeId n)
-                                          in if null nids
-                                            then n
-                                            else Node (head nids) (nodeInfo n)
-                          swapNodeId' n = let nids = R.apply nIRLHS n ++ R.apply nIRNAC n
-                                          in if null nids
-                                            then n
-                                            else head nids
-                          swapEdgeId e = let eids = R.apply eIRLHS (edgeId e) ++ R.apply eIRNAC (edgeId e)
-                                          in if null eids
-                                            then e
-                                            else Edge (head eids) (swapNodeId' $ sourceId e) (swapNodeId' $ targetId e) (edgeInfo e)
+                          swapNodeId' n = case (R.apply nIRLHS n ++ R.apply nIRNAC n) of
+                                            []       -> n
+                                            nid:nids -> nid
+                          swapNodeId n = Node (swapNodeId' (nodeId n)) (nodeInfo n)
+                          swapEdgeId e = case (R.apply eIRLHS (edgeId e) ++ R.apply eIRNAC (edgeId e)) of
+                                            []       -> e
+                                            eid:eids -> Edge eid (swapNodeId' $ sourceId e) (swapNodeId' $ targetId e) (edgeInfo e)
                           nGnodes = map swapNodeId . map nodeFromJust $ nodes nGJust
                           nGedges = map swapEdgeId . map edgeFromJust $ edges nGJust
                           nG = fromNodesAndEdges nGnodes nGedges
-                          gi = (M.union (fst ruleLGI) (fst nacGI), M.union (snd ruleLGI) (snd nacGI))
-                      putStrLn "---------- lhs ------------"
-                      print lm
-                      putStrLn "---------- nac ------------"
-                      print nm
-                      putStrLn "---------- mappings ------------"
-                      print nodeM
-                      print edgeM
-                      putStrLn "---------- lhs -> nac' ------------"
-                      print nacTgmLhs
-                      print nG
-                      return (nG,gi)
-                      putStrLn "---------- nac -> nac' ------------"
-                      print nacTgmNac
-                      print nG
+                          gi = (M.union (fst nacGI) (fst ruleLGI), M.union (snd nacGI) (snd ruleLGI))
                       return (nG,gi)
                 writeIORef st $ editorSetGI gi . editorSetGraph nG $ es
                 writeIORef undoStack u
@@ -1421,7 +1403,7 @@ startGUI = do
             n <- Gtk.treeModelIterNChildren store (Just iterR)
             iterN <- Gtk.treeStoreAppend store (Just iterR)
             storeSetGraphStore store iterN ("NAC" ++ (show n), 0, newKey, 4, True, True)
-            modifyIORef nacDiaGraphs (M.insert newKey DG.empty)
+            modifyIORef nacDiaGraphs (M.insert newKey (DG.empty,(M.empty,M.empty)))
             modifyIORef graphStates (M.insert newKey (editorSetGraph lhs . editorSetGI gi $ emptyES,[],[]))
           _ -> showError window "Selected Graph is not a rule, it's not possible to create NACs for it."
 
@@ -1835,6 +1817,7 @@ setValidFlags store tg states = do
       1 -> return ()
       2 -> setValidFlag store iter states tg
       3 -> setValidFlag store iter states tg
+      4 -> setValidFlag store iter states tg
     return False
 
 -- Change the valid flag for the graph that is being edited
