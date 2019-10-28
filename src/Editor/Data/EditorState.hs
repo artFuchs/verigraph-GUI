@@ -28,6 +28,7 @@ module Editor.Data.EditorState(
 ) where
 
 import qualified Data.Map as M
+import Data.Maybe
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
 import Editor.Data.GraphicalInfo
@@ -151,11 +152,15 @@ deleteSelected:: EditorState -> EditorState
 deleteSelected es = editorSetSelected ([],[]) . editorSetGI (newngiM, newegiM) . editorSetGraph newGraph $ es
   where graph = editorGetGraph es
         (nids,eids) = editorGetSelected es
+        foundNodes = map (\nid -> fromMaybe (Node (NodeId 0) "") $ lookupNode nid graph) nids
+        foundEdges = map (\eid -> fromMaybe (Edge (EdgeId 0) (NodeId 0) (NodeId 0) "") $ lookupEdge eid graph) eids
+        nids' = map nodeId $ filter (\n -> not $ infoLocked $ nodeInfo n) foundNodes
+        eids' = map edgeId $ filter (\e -> not $ infoLocked $ edgeInfo e) foundEdges
         (ngiM, egiM) = editorGetGI es
-        newngiM = foldl (\giM n -> M.delete n giM) ngiM (map fromEnum nids)
-        newegiM = foldl (\giM n -> M.delete n giM) egiM (map fromEnum eids)
-        graph' = foldl (\g e -> removeEdge e g) graph eids
-        newGraph = foldl (\g n -> removeNodeAndIncidentEdges n g) graph' nids
+        newngiM = foldl (\giM n -> M.delete n giM) ngiM (map fromEnum nids')
+        newegiM = foldl (\giM n -> M.delete n giM) egiM (map fromEnum eids')
+        graph' = foldl (\g e -> removeEdge e g) graph eids'
+        newGraph = foldl (\g n -> removeNodeAndIncidentEdges n g) graph' nids'
 
 -- auxiliar functions to createEdges
 -- return a list of numbers

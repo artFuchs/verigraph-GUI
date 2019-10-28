@@ -1723,8 +1723,14 @@ copySelected  es = (cg,(ngiM',egiM'))
     (nids,eids) = editorGetSelected es
     g = editorGetGraph es
     (ngiM, egiM) = editorGetGI es
-    cnodes = filter (\n -> nodeId n `elem` nids) $ nodes g
-    cedges = filter (\e -> edgeId e `elem` eids) $ edges g
+    cnodes = foldr (\n ns -> if nodeId n `elem` nids
+                              then (Node (nodeId n) (infoSetLocked (nodeInfo n) False)):ns
+                              else ns) [] (nodes g)
+    cedges = foldr (\e es -> if edgeId e `elem` eids
+                              then (Edge (edgeId e) (sourceId e) (targetId e) (infoSetLocked (edgeInfo e) False):es)
+                              else es) [] (edges g)
+    -- cnodes = map (\n -> Node (nodeId n) (infoSetLocked (nodeInfo n) False)) $ filter (\n -> nodeId n `elem` nids) $ nodes g
+    -- cedges = filter (\e -> edgeId e `elem` eids) $ edges g
     cg = fromNodesAndEdges cnodes cedges
     ngiM' = M.filterWithKey (\k _ -> NodeId k `elem` nids) ngiM
     egiM' = M.filterWithKey (\k _ -> EdgeId k `elem` eids) egiM
