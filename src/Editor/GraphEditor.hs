@@ -487,6 +487,36 @@ startGUI = do
       (False,False,'\65471') -> Gtk.widgetGrabFocus nameEntry
       (True,False,'p') -> Gtk.menuItemActivate orv
       (False,False,'\65535') -> Gtk.menuItemActivate del
+      (True,False,'m') -> do
+        gtype <- readIORef currentGraphType
+        if (gtype /= 4)
+          then return ()
+          else do
+            gid <- readIORef currentGraph
+            nacDiags <- readIORef nacDiaGraphs
+            es <- readIORef st
+            -- modify mapping, merging elements
+            let (nacDiag, (nodeMapping, edgeMapping)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup gid nacDiags
+                (snodes, sedges) = editorGetSelected es
+                minNID = if null snodes then 0 else minimum snodes
+                -- minEID = if null sedges then 0 else minimum sedges
+                nPairs = if minNID > 0 then foldr (\n nps -> (n,minNID):nps) [] snodes else []
+                -- ePairs = if minEID > 0 then foldr (\e eps -> (e,minEID):eps) [] sedges else []
+                nodeMapping' = foldr (\(a,b) m -> M.insert a b m) nodeMapping nPairs
+            modifyIORef nacDiaGraphs (M.insert gid (nacDiag, (nodeMapping', edgeMapping)))
+
+            let g = editorGetGraph es
+                nodesToMerge = filter (\n -> nodeId n `elem` snodes) (nodes g)
+                mergedLabel = concat $ (\(l:ls) -> if null ls then l:ls else (l ++ ", ") : ls) $ map (infoLabel . nodeInfo) nodesToMerge
+                mergedInfo = infoSetLabel (nodeInfo $ head nodesToMerge) mergedLabel
+                mergedNode = Node minNID mergedInfo
+                newNodes = mergedNode:(filter (\n -> nodeId n `notElem` snodes) (nodes g))
+                updateNodeId n = if n `elem` snodes then minNID else n
+                newEdges = map (\e -> Edge (edgeId e) (updateNodeId $ sourceId e) (updateNodeId $ targetId e) (edgeInfo e)) (edges g)
+                g' = fromNodesAndEdges newNodes newEdges
+            modifyIORef st (editorSetGraph g' . editorSetSelected ([minNID], sedges))
+            Gtk.widgetQueueDraw canvas
+
       _ -> return ()
     return True
 
