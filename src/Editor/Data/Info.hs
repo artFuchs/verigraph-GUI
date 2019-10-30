@@ -24,7 +24,7 @@ infoVisible info = unwords . words $ infoVisibleAux info
 infoVisibleAux :: Info -> String
 infoVisibleAux [] = []
 infoVisibleAux ('{':cs) = []
-infoVisibleAux (c:cs) = c : infoVisible cs
+infoVisibleAux (c:cs) = c : infoVisibleAux cs
 
 infoLabel :: Info -> String
 infoLabel [] = []
