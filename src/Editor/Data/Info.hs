@@ -59,27 +59,30 @@ infoOperationAux ('{':cs) = Nothing
 infoOperationAux (c:cs) = Just (c:) <*> infoOperationAux cs
 
 infoLocked :: Info -> Bool
-infoLocked info = let c:cs = reverse info
-                  in c == 'L'
+infoLocked info = if (null info) then False
+                                 else (last info) == 'L'
 
 infoSetLabel :: Info -> String -> Info
-infoSetLabel i l = case infoOperation i of
-  [] -> l ++ "{" ++ infoType i ++ "}"
-  o  -> o ++ ":" ++ l ++ "{" ++ infoType i ++ "}"
+infoSetLabel i l = let i' = case infoOperation i of
+                              [] -> l ++ "{" ++ infoType i ++ "}"
+                              o  -> o ++ ":" ++ l ++ "{" ++ infoType i ++ "}"
+                   in infoSetLocked i' (infoLocked i)
+
 
 infoSetType :: Info -> String -> Info
-infoSetType i t = case infoOperation i of
-  [] -> infoLabel i ++ "{" ++ t ++ "}"
-  o  -> o ++ ":" ++ infoLabel i ++ "{" ++ t ++ "}"
+infoSetType i t = let i' = case infoOperation i of
+                              [] -> infoLabel i ++ "{" ++ t ++ "}"
+                              o  -> o ++ ":" ++ infoLabel i ++ "{" ++ t ++ "}"
+                  in infoSetLocked i' (infoLocked i)
 
 infoSetOperation :: Info -> String -> Info
-infoSetOperation i "" = infoLabel i ++ "{" ++ infoType i ++ "}"
-infoSetOperation i o = o ++ ":" ++ infoLabel i ++ "{" ++ infoType i ++ "}"
+infoSetOperation i "" = infoSetLocked (infoLabel i ++ "{" ++ infoType i ++ "}") (infoLocked i)
+infoSetOperation i o = infoSetLocked (o ++ ":" ++ infoLabel i ++ "{" ++ infoType i ++ "}") (infoLocked i)
 
 infoSetLocked :: Info -> Bool -> Info
 infoSetLocked info True = case infoLocked info of
   True -> info
-  False -> reverse $ 'L':(reverse info)
+  False -> info ++ "L"
 infoSetLocked info False = case infoLocked info of
   False -> info
   True -> reverse $ tail (reverse info)
