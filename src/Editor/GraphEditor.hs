@@ -495,27 +495,33 @@ startGUI = do
             gid <- readIORef currentGraph
             nacDiags <- readIORef nacDiaGraphs
             es <- readIORef st
-            -- modify mapping, merging elements
-            let (nacDiag, (nodeMapping, edgeMapping)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup gid nacDiags
-                (snodes, sedges) = editorGetSelected es
-                minNID = if null snodes then 0 else minimum snodes
-                -- minEID = if null sedges then 0 else minimum sedges
-                nPairs = if minNID > 0 then foldr (\n nps -> (n,minNID):nps) [] snodes else []
-                -- ePairs = if minEID > 0 then foldr (\e eps -> (e,minEID):eps) [] sedges else []
-                nodeMapping' = foldr (\(a,b) m -> M.insert a b m) nodeMapping nPairs
-            modifyIORef nacDiaGraphs (M.insert gid (nacDiag, (nodeMapping', edgeMapping)))
+            let (snids, seids) = editorGetSelected es
+                g = editorGetGraph es
+                nodesToMerge = filter (\n -> nodeId n `elem` snids && infoLocked (nodeInfo n)) (nodes g)
+            if (null nodesToMerge)
+              then return ()
+              else do
+                -- modify mapping to specify merging of elements
+                let (nacDiag, (nodeMapping, edgeMapping)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup gid nacDiags
+                    nidsToMerge = map nodeId nodesToMerge
+                    minNID = minimum nidsToMerge
+                    -- minEID = if null seids then 0 else minimum seids
+                    nPairs = foldr (\n nps -> (n,minNID):nps) [] (map nodeId nodesToMerge)
+                    -- ePairs = if minEID > 0 then foldr (\e eps -> (e,minEID):eps) [] seids else []
+                    nodeMapping' = foldr (\(a,b) m -> M.insert a b m) nodeMapping nPairs
 
-            let g = editorGetGraph es
-                nodesToMerge = filter (\n -> nodeId n `elem` snodes) (nodes g)
-                mergedLabel = concat $ (\(l:ls) -> if null ls then l:ls else (l ++ ", ") : ls) $ map (infoLabel . nodeInfo) nodesToMerge
-                mergedInfo = infoSetLabel (nodeInfo $ head nodesToMerge) mergedLabel
-                mergedNode = Node minNID mergedInfo
-                newNodes = mergedNode:(filter (\n -> nodeId n `notElem` snodes) (nodes g))
-                updateNodeId n = if n `elem` snodes then minNID else n
-                newEdges = map (\e -> Edge (edgeId e) (updateNodeId $ sourceId e) (updateNodeId $ targetId e) (edgeInfo e)) (edges g)
-                g' = fromNodesAndEdges newNodes newEdges
-            modifyIORef st (editorSetGraph g' . editorSetSelected ([minNID], sedges))
-            Gtk.widgetQueueDraw canvas
+                modifyIORef nacDiaGraphs (M.insert gid (nacDiag, (nodeMapping', edgeMapping)))
+
+                -- modify current graph
+                let mergedLabel = concat $ (\(l:ls) -> if null ls then l:ls else (l ++ ", ") : ls) $ map (infoLabel . nodeInfo) nodesToMerge
+                    mergedInfo = infoSetLabel (nodeInfo $ head nodesToMerge) mergedLabel
+                    mergedNode = Node minNID mergedInfo
+                    newNodes = if null mergedInfo then nodes g else mergedNode:(filter (\n -> nodeId n `notElem` nidsToMerge) (nodes g))
+                    updateNodeId n = if n `elem` nidsToMerge then minNID else n
+                    newEdges = map (\e -> Edge (edgeId e) (updateNodeId $ sourceId e) (updateNodeId $ targetId e) (edgeInfo e)) (edges g)
+                    g' = fromNodesAndEdges newNodes newEdges
+                modifyIORef st (editorSetGraph g' . editorSetSelected ([minNID], seids))
+                Gtk.widgetQueueDraw canvas
 
       _ -> return ()
     return True
@@ -1306,6 +1312,9 @@ startGUI = do
                           nGedges = map swapEdgeId . map edgeFromJust $ edges nGJust
                           nG = fromNodesAndEdges nGnodes nGedges
                           gi = (M.union (fst nacGI) (fst ruleLGI), M.union (snd nacGI) (snd ruleLGI))
+                      print nodeM
+                      print nIRLHS
+                      print nIRNAC
                       return (nG,gi)
                 writeIORef st $ editorSetGI gi . editorSetGraph nG $ es
                 writeIORef undoStack u
