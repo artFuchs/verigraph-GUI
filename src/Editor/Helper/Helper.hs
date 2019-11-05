@@ -1,6 +1,7 @@
 module Editor.Helper.Helper(
   mkpairs
 , remapElementsWithConflict
+, joinElementsFromMapping
 )
 where
 
@@ -8,6 +9,7 @@ import Editor.Data.DiaGraph
 import Data.Graphs
 import qualified Data.Map as M
 import qualified Data.Maybe as Maybe
+import Editor.Data.Info
 
 -- create a list of pairs
 mkpairs :: [a] -> [b] -> [(a,b)]
@@ -43,3 +45,42 @@ remapElementsWithConflict (g1,(ngi1,egi1)) (g2,(ngi2,egi2)) (nodeMapping, edgeMa
                              eid = Maybe.fromMaybe (edgeId e) $ M.lookup (edgeId e) newEids
                           in Edge eid srcNid tgtNid (edgeInfo e))
                   (edges g2)
+
+removeDuplicates :: Eq a => [a] -> [a]
+removeDuplicates [] = []
+removeDuplicates (x:xs) = let xs' = filter (\x' -> x' /= x) xs
+                          in x:(removeDuplicates xs')
+
+updateNodeId :: NodeId -> M.Map NodeId NodeId -> NodeId
+updateNodeId nid m = Maybe.fromMaybe nid $ M.lookup nid m
+
+updateEdgeId :: EdgeId -> M.Map EdgeId EdgeId -> EdgeId
+updateEdgeId eid m = Maybe.fromMaybe eid $ M.lookup eid m
+
+joinElementsFromMapping :: Graph Info Info -> (M.Map NodeId NodeId, M.Map EdgeId EdgeId) -> Graph Info Info
+joinElementsFromMapping g (nMapping, eMapping) = fromNodesAndEdges newNodes newEdges
+  where nMappingElems = removeDuplicates (M.elems nMapping)
+        eMappingElems = removeDuplicates (M.elems eMapping)
+        -- 1st: remove nodes not listed
+        nodes' = filter (\n -> nodeId n `elem` nMappingElems) (nodes g)
+        edges' = map (\e -> Edge (edgeId e)
+                                 (updateNodeId (sourceId e) nMapping)
+                                 (updateNodeId (targetId e) nMapping)
+                                 (edgeInfo e))
+                     (edges g)
+        -- 2nd: remove edges not listed in the mapping
+        edges'' = filter (\e -> edgeId e `elem` eMappingElems) (edges')
+        -- 3rd: join elements infos
+        nodesInfos = M.fromListWith (\a b -> infoSetLabel a ((infoLabel b) ++ ", " ++ (infoLabel a)))
+                                     $ map (\n -> (updateNodeId (nodeId n) nMapping, nodeInfo n)) (nodes g)
+        edgesInfos = M.fromListWith (\a b -> infoSetLabel a ((infoLabel b) ++ ", " ++ (infoLabel a)))
+                                     $ map (\e -> (updateEdgeId (edgeId e) eMapping, edgeInfo e)) (edges g)
+        newNodes = map (\n -> let nid = nodeId n
+                              in Node nid (Maybe.fromMaybe (nodeInfo n) $ M.lookup nid nodesInfos))
+                       nodes'
+        newEdges = map (\e -> let eid = edgeId e
+                              in Edge eid
+                                      (sourceId e)
+                                      (targetId e)
+                                      (Maybe.fromMaybe (edgeInfo e) $ M.lookup eid edgesInfos))
+                       edges''

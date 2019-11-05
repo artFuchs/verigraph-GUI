@@ -498,29 +498,41 @@ startGUI = do
             let (snids, seids) = editorGetSelected es
                 g = editorGetGraph es
                 nodesToMerge = filter (\n -> nodeId n `elem` snids && infoLocked (nodeInfo n)) (nodes g)
+                edgesToMerge = filter (\e -> edgeId e `elem` seids && infoLocked (edgeInfo e)) (edges g)
             if (null nodesToMerge)
               then return ()
               else do
                 -- modify mapping to specify merging of elements
                 let (nacDiag, (nodeMapping, edgeMapping)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup gid nacDiags
                     nidsToMerge = map nodeId nodesToMerge
-                    minNID = minimum nidsToMerge
-                    -- minEID = if null seids then 0 else minimum seids
-                    nPairs = foldr (\n nps -> (n,minNID):nps) [] (map nodeId nodesToMerge)
-                    -- ePairs = if minEID > 0 then foldr (\e eps -> (e,minEID):eps) [] seids else []
+                    eidsToMerge = map edgeId edgesToMerge
+                    maxNID = maximum nidsToMerge
+                    --minEID = minimum eidsToMerge
+                    nPairs = foldr (\n nps -> (n,maxNID):nps) [] (map nodeId nodesToMerge)
+                    --ePairs = foldr (\e eps -> (e,minEID):eps) [] (map edgeId edgesToMerge)
                     nodeMapping' = foldr (\(a,b) m -> M.insert a b m) nodeMapping nPairs
+                    --edgeMapping' = foldr (\(a,b) m -> M.insert a b m) edgeMapping ePairs
+                    g' = joinElementsFromMapping g (nodeMapping', edgeMapping)
 
                 modifyIORef nacDiaGraphs (M.insert gid (nacDiag, (nodeMapping', edgeMapping)))
-
+                putStrLn "merging nodes"
+                putStrLn "nodeM"
+                print nodeMapping'
+                putStrLn "edgeM"
+                print edgeMapping
                 -- modify current graph
-                let mergedLabel = concat $ (\(l:ls) -> if null ls then l:ls else (l ++ ", ") : ls) $ map (infoLabel . nodeInfo) nodesToMerge
+                let mergedLabel = concat $ (\labels -> case labels of
+                                                        [] -> []
+                                                        [l] -> [l]
+                                                        l:ls -> (l ++ ", ") : ls)
+                                         $ map (infoLabel . nodeInfo) nodesToMerge
                     mergedInfo = infoSetLabel (nodeInfo $ head nodesToMerge) mergedLabel
-                    mergedNode = Node minNID mergedInfo
+                    mergedNode = Node maxNID mergedInfo
                     newNodes = if null mergedInfo then nodes g else mergedNode:(filter (\n -> nodeId n `notElem` nidsToMerge) (nodes g))
-                    updateNodeId n = if n `elem` nidsToMerge then minNID else n
+                    updateNodeId n = if n `elem` nidsToMerge then maxNID else n
                     newEdges = map (\e -> Edge (edgeId e) (updateNodeId $ sourceId e) (updateNodeId $ targetId e) (edgeInfo e)) (edges g)
                     g' = fromNodesAndEdges newNodes newEdges
-                modifyIORef st (editorSetGraph g' . editorSetSelected ([minNID], seids))
+                modifyIORef st (editorSetGraph g' . editorSetSelected ([maxNID], seids))
                 Gtk.widgetQueueDraw canvas
 
       _ -> return ()
@@ -1251,14 +1263,16 @@ startGUI = do
         -- if current graph is a nac, divide st graph in two - lhs & nac'
         case cGType of
           4 -> do
+            nacDiags <- readIORef nacDiaGraphs
             pathIndices <- readIORef currentPath
             (lhs,lhsGI) <- getParentDiaGraph pathIndices
             es <- readIORef st
-            let g = editorGetGraph es
+            let (diag,(nM,eM)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup cIndex nacDiags
+                g = editorGetGraph es
                 gi = editorGetGI es
                 dg@(nacG,nacGI) = diagrSubtract (g,gi) (lhs,lhsGI)
-                nodeM = M.fromList $ filter (\(a,b) -> a == b) $ mkpairs (nodeIds lhs) (nodeIds nacG)
-                edgeM = M.fromList $ filter (\(a,b) -> a == b) $ mkpairs (edgeIds lhs) (edgeIds nacG)
+                nodeM = foldr (\(a,b) m -> M.insert a b m) nM $ filter (\(a,b) -> a == b) $ mkpairs (nodeIds lhs) (nodeIds nacG)
+                edgeM = foldr (\(a,b) m -> M.insert a b m) eM $ filter (\(a,b) -> a == b) $ mkpairs (edgeIds lhs) (edgeIds nacG)
             modifyIORef nacDiaGraphs (M.insert cIndex (dg,(nodeM,edgeM)))
           _ -> return ()
 
@@ -1288,7 +1302,8 @@ startGUI = do
                 (nG,gi) <- case M.lookup index $ nacDGs of
                   Nothing -> return (ruleLG,ruleLGI)
                   Just (nacdg,(nodeM,edgeM)) -> case (G.null $ fst nacdg) of
-                    True -> return (ruleLG,ruleLGI)
+                    True -> let ruleJoinedG = joinElementsFromMapping ruleLG (nodeM,edgeM)
+                            in return (ruleJoinedG, ruleLGI)
                     False -> do
                       let tg' = makeTypeGraph tg
                           (nacG,nacGI) = remapElementsWithConflict lhsdg nacdg (nodeM,edgeM)
@@ -1312,6 +1327,7 @@ startGUI = do
                           nGedges = map swapEdgeId . map edgeFromJust $ edges nGJust
                           nG = fromNodesAndEdges nGnodes nGedges
                           gi = (M.union (fst nacGI) (fst ruleLGI), M.union (snd nacGI) (snd ruleLGI))
+                      putStrLn "Join graphs"
                       print nodeM
                       print nIRLHS
                       print nIRNAC
@@ -1439,13 +1455,15 @@ startGUI = do
             let state = fromMaybe (emptyES,[],[]) $ M.lookup index states
                 (es,_,_) = state
                 (lhs,_,_) = graphToRuleGraphs (editorGetGraph es)
+                nodeMap = M.fromList $ map (\a -> (a,a)) $ nodeIds lhs
+                edgeMap = M.fromList $ map (\a -> (a,a)) $ edgeIds lhs
                 gi = editorGetGI es
                 gi' = (M.filterWithKey (\k a -> (NodeId k) `elem` (nodeIds lhs)) (fst gi), M.filterWithKey (\k a -> (EdgeId k) `elem` (edgeIds lhs)) (snd gi))
             let newKey = if M.size states > 0 then maximum (M.keys states) + 1 else 0
             n <- Gtk.treeModelIterNChildren store (Just iterR)
             iterN <- Gtk.treeStoreAppend store (Just iterR)
             storeSetGraphStore store iterN ("NAC" ++ (show n), 0, newKey, 4, True, True)
-            modifyIORef nacDiaGraphs (M.insert newKey (DG.empty,(M.empty,M.empty)))
+            modifyIORef nacDiaGraphs (M.insert newKey (DG.empty,(nodeMap,edgeMap)))
             modifyIORef graphStates (M.insert newKey (editorSetGraph lhs . editorSetGI gi $ emptyES,[],[]))
           _ -> showError window "Selected Graph is not a rule, it's not possible to create NACs for it."
 
