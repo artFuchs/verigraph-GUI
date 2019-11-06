@@ -500,34 +500,34 @@ startGUI = do
                 g = editorGetGraph es
                 nodesToMerge = filter (\n -> nodeId n `elem` snids && infoLocked (nodeInfo n)) (nodes g)
                 edgesToMerge = filter (\e -> edgeId e `elem` seids && infoLocked (edgeInfo e)) (edges g)
-            if (null nodesToMerge)
+            if (null nodesToMerge && null edgesToMerge)
               then return ()
               else do
                 -- modify mapping to specify merging of elements
                 let (nacDiag, (nodeMapping, edgeMapping), injectionM) = fromMaybe (DG.empty, (M.empty,M.empty), (M.empty,M.empty)) $ M.lookup gid nacDiags
                     nidsToMerge = map nodeId nodesToMerge
-                    eidsToMerge = map edgeId edgesToMerge
-                    maxNID = maximum nidsToMerge
-                    --minEID = minimum eidsToMerge
+                    maxNID = if null nodesToMerge then NodeId 0 else maximum nidsToMerge
                     nPairs = foldr (\n nps -> (n,maxNID):nps) [] (map nodeId nodesToMerge)
-                    --ePairs = foldr (\e eps -> (e,minEID):eps) [] (map edgeId edgesToMerge)
                     nodeMapping' = foldr (\(a,b) m -> M.insert a b m) nodeMapping nPairs
-                    --edgeMapping' = foldr (\(a,b) m -> M.insert a b m) edgeMapping ePairs
-                    g' = joinElementsFromMapping g (nodeMapping', edgeMapping)
-
-                modifyIORef nacInfoMapIORef (M.insert gid (nacDiag, (nodeMapping', edgeMapping), injectionM))
+                    eidsToMerge = map edgeId edgesToMerge
+                    maxEID = if null edgesToMerge then EdgeId 0 else maximum eidsToMerge
+                    edgesToMerge' = map (\e -> updateEdgeEndsIds e nodeMapping') edgesToMerge
+                    ePairs = foldr (\e eps -> (e,maxEID):eps) [] (map edgeId edgesToMerge)
+                    edgeMapping' = foldr (\(a,b) m -> M.insert a b m) edgeMapping ePairs
+                    g' = joinElementsFromMapping g (nodeMapping', edgeMapping')
+                modifyIORef nacInfoMapIORef (M.insert gid (nacDiag, (nodeMapping', edgeMapping'), injectionM))
                 -- modify current graph
-                let mergedLabel = concat $ (\labels -> case labels of
-                                                        [] -> []
-                                                        [l] -> [l]
-                                                        l:ls -> (l ++ ", ") : ls)
-                                         $ map (infoLabel . nodeInfo) nodesToMerge
-                    mergedInfo = infoSetLabel (nodeInfo $ head nodesToMerge) mergedLabel
-                    mergedNode = Node maxNID mergedInfo
-                    newNodes = if null mergedInfo then nodes g else mergedNode:(filter (\n -> nodeId n `notElem` nidsToMerge) (nodes g))
-                    updateNodeId n = if n `elem` nidsToMerge then maxNID else n
-                    newEdges = map (\e -> Edge (edgeId e) (updateNodeId $ sourceId e) (updateNodeId $ targetId e) (edgeInfo e)) (edges g)
-                    g' = fromNodesAndEdges newNodes newEdges
+                -- let mergedLabel = concat $ (\labels -> case labels of
+                --                                         [] -> []
+                --                                         [l] -> [l]
+                --                                         l:ls -> (l ++ ", ") : ls)
+                --                          $ map (infoLabel . nodeInfo) nodesToMerge
+                --     mergedInfo = infoSetLabel (nodeInfo $ head nodesToMerge) mergedLabel
+                --     mergedNode = Node maxNID mergedInfo
+                --     newNodes = if null mergedInfo then nodes g else mergedNode:(filter (\n -> nodeId n `notElem` nidsToMerge) (nodes g))
+                --     updateNodeId n = if n `elem` nidsToMerge then maxNID else n
+                --     newEdges = map (\e -> Edge (edgeId e) (updateNodeId $ sourceId e) (updateNodeId $ targetId e) (edgeInfo e)) (edges g)
+                --     g' = fromNodesAndEdges newNodes newEdges
                 modifyIORef st (editorSetGraph g' . editorSetSelected ([maxNID], seids))
                 Gtk.widgetQueueDraw canvas
 
@@ -1326,6 +1326,7 @@ startGUI = do
                             nGedges = map swapEdgeId . map edgeFromJust $ edges nGJust
                             nG = fromNodesAndEdges nGnodes nGedges
                             gi = (M.union (fst nacGI) (fst ruleLGI), M.union (snd nacGI) (snd ruleLGI))
+                        return (nG,gi)
                 writeIORef st $ editorSetGI gi . editorSetGraph nG $ es
                 writeIORef undoStack u
                 writeIORef redoStack r

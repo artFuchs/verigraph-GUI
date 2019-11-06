@@ -11,7 +11,11 @@ Tarefas ---------------------------------------------------------------------
 *Quando editar o nome de uma aresta ou nodo no grafo de tipos, fazer update em todos os grafos que usam o objeto
 *permitir que o usuário escolha como será vista a regra (formato L->R, ou L<-K->R)
 *permitir a reordenação das regras por drag n' drop
-
+*criação e associação de NACs.
+  - modificar informações visuais quando ficar merging dos elementos do lhs
+    - arestas retas devem ter posição modificada para não ficarem atrás dos nodos
+    - nodos devem ter tamanh modificado para englobar texto
+  - recuperar informações visuais quando fizer a separação dos elementos do lhs
 
 
 Ideias -------------------------------------------------------------------------
@@ -23,8 +27,10 @@ Ideias -------------------------------------------------------------------------
 Progresso -------------------------------------------------------------------
 *Mostrar regras em formato R -> L
 *criação e associação de NACs.
-  - indicar quais são os elementos da nac que são do lhs e não permitir a deleção
+  - indicar quais são os elementos da nac que são do lhs e não permitir a deleção/renomeação de elementos do lhs
   - concatenação de elementos do lhs na nac.
+  - separação de elementos concatenados
+
 
 
 Feito -----------------------------------------------------------------------
