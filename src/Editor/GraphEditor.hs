@@ -70,7 +70,8 @@ import Editor.GraphEditor.UpdateInspector
  * valid (if the current graph is correctly mapped to the typegraph)
 -}
 type GraphStore = (String, Int32, Int32, Int32, Bool, Bool)
-
+type MergeMapping = (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
+type InjectionMapping = (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
 
 --------------------------------------------------------------------------------
 -- FUNCTIONS ------------------------------------------------------------
@@ -202,7 +203,7 @@ startGUI = do
 
   -- variables to specify NACs
   -- Diagraph from the rule - togetter with lhs it make the editor state
-  nacDiaGraphs <- newIORef (M.empty :: M.Map Int32 (DiaGraph, (M.Map NodeId NodeId, M.Map EdgeId EdgeId)))
+  nacInfoMapIORef <- newIORef (M.empty :: M.Map Int32 (DiaGraph, MergeMapping, InjectionMapping))
 
   ------------------------------------------------------------------------------
   -- EVENT BINDINGS ------------------------------------------------------------
@@ -493,7 +494,7 @@ startGUI = do
           then return ()
           else do
             gid <- readIORef currentGraph
-            nacDiags <- readIORef nacDiaGraphs
+            nacDiags <- readIORef nacInfoMapIORef
             es <- readIORef st
             let (snids, seids) = editorGetSelected es
                 g = editorGetGraph es
@@ -503,7 +504,7 @@ startGUI = do
               then return ()
               else do
                 -- modify mapping to specify merging of elements
-                let (nacDiag, (nodeMapping, edgeMapping)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup gid nacDiags
+                let (nacDiag, (nodeMapping, edgeMapping), injectionM) = fromMaybe (DG.empty, (M.empty,M.empty), (M.empty,M.empty)) $ M.lookup gid nacDiags
                     nidsToMerge = map nodeId nodesToMerge
                     eidsToMerge = map edgeId edgesToMerge
                     maxNID = maximum nidsToMerge
@@ -514,12 +515,7 @@ startGUI = do
                     --edgeMapping' = foldr (\(a,b) m -> M.insert a b m) edgeMapping ePairs
                     g' = joinElementsFromMapping g (nodeMapping', edgeMapping)
 
-                modifyIORef nacDiaGraphs (M.insert gid (nacDiag, (nodeMapping', edgeMapping)))
-                putStrLn "merging nodes"
-                putStrLn "nodeM"
-                print nodeMapping'
-                putStrLn "edgeM"
-                print edgeMapping
+                modifyIORef nacInfoMapIORef (M.insert gid (nacDiag, (nodeMapping', edgeMapping), injectionM))
                 -- modify current graph
                 let mergedLabel = concat $ (\labels -> case labels of
                                                         [] -> []
@@ -1260,20 +1256,20 @@ startGUI = do
         index <- Gtk.treeModelGetValue model iter 2 >>= fromGValue  :: IO Int32
         gType <- Gtk.treeModelGetValue model iter 3 >>= fromGValue  :: IO Int32
 
-        -- if current graph is a nac, divide st graph in two - lhs & nac'
+        -- if current graph is a nac, remove lhs part, letting only a piece that will be glued togetter
         case cGType of
           4 -> do
-            nacDiags <- readIORef nacDiaGraphs
+            nacInfoMap <- readIORef nacInfoMapIORef
             pathIndices <- readIORef currentPath
             (lhs,lhsGI) <- getParentDiaGraph pathIndices
             es <- readIORef st
-            let (diag,(nM,eM)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup cIndex nacDiags
+            let (diag,mergeMapping,_) = fromMaybe (DG.empty, (M.empty,M.empty), (M.empty, M.empty)) $ M.lookup cIndex nacInfoMap
                 g = editorGetGraph es
                 gi = editorGetGI es
                 dg@(nacG,nacGI) = diagrSubtract (g,gi) (lhs,lhsGI)
-                nodeM = foldr (\(a,b) m -> M.insert a b m) nM $ filter (\(a,b) -> a == b) $ mkpairs (nodeIds lhs) (nodeIds nacG)
-                edgeM = foldr (\(a,b) m -> M.insert a b m) eM $ filter (\(a,b) -> a == b) $ mkpairs (edgeIds lhs) (edgeIds nacG)
-            modifyIORef nacDiaGraphs (M.insert cIndex (dg,(nodeM,edgeM)))
+                nodeM = M.fromList $ filter (\(a,b) -> a == b) $ mkpairs (nodeIds lhs) (nodeIds nacG)
+                edgeM = M.fromList $ filter (\(a,b) -> a == b) $ mkpairs (edgeIds lhs) (edgeIds nacG)
+            modifyIORef nacInfoMapIORef (M.insert cIndex (dg,mergeMapping,(nodeM,edgeM)))
           _ -> return ()
 
         -- change the graph
@@ -1295,43 +1291,41 @@ startGUI = do
               Just (es,u,r) -> do
                 tg <- readIORef activeTypeGraph
                 lhsdg <- getParentDiaGraph path
-                let ruleLG' = foldr (\n g -> G.updateNodePayload n g (\info -> infoSetLocked info True)) (fst lhsdg) (nodeIds . fst $ lhsdg)
-                    ruleLG = foldr (\e g -> G.updateEdgePayload e g (\info -> infoSetLocked info True)) ruleLG' (edgeIds . fst $ lhsdg)
+                let ruleLGNodesLock = foldr (\n g -> G.updateNodePayload n g (\info -> infoSetLocked info True)) (fst lhsdg) (nodeIds . fst $ lhsdg)
+                    ruleLG = foldr (\e g -> G.updateEdgePayload e g (\info -> infoSetLocked info True)) ruleLGNodesLock (edgeIds . fst $ lhsdg)
                     ruleLGI = snd lhsdg
-                nacDGs <- readIORef nacDiaGraphs
-                (nG,gi) <- case M.lookup index $ nacDGs of
+                nacInfoMap <- readIORef nacInfoMapIORef
+                (nG,gi) <- case M.lookup index $ nacInfoMap of
                   Nothing -> return (ruleLG,ruleLGI)
-                  Just (nacdg,(nodeM,edgeM)) -> case (G.null $ fst nacdg) of
-                    True -> let ruleJoinedG = joinElementsFromMapping ruleLG (nodeM,edgeM)
-                            in return (ruleJoinedG, ruleLGI)
-                    False -> do
-                      let tg' = makeTypeGraph tg
-                          (nacG,nacGI) = remapElementsWithConflict lhsdg nacdg (nodeM,edgeM)
-                          lm = makeTypedGraph ruleLG tg'
-                          nm = makeTypedGraph nacG tg'
-                          (nacTgmLhs,nacTgmNac) = getNacPushout nm lm (nodeM, edgeM)
-                          nIRLHS = R.inverseRelation $ Morph.nodeRelation $ TGM.mapping nacTgmLhs
-                          eIRLHS = R.inverseRelation $ Morph.edgeRelation $ TGM.mapping nacTgmLhs
-                          nIRNAC = R.inverseRelation $ Morph.nodeRelation $ TGM.mapping nacTgmNac
-                          eIRNAC = R.inverseRelation $ Morph.edgeRelation $ TGM.mapping nacTgmNac
-                          nacTg = TGM.codomainGraph nacTgmLhs
-                          nGJust = TG.toUntypedGraph nacTg
-                          swapNodeId' n = case (R.apply nIRLHS n ++ R.apply nIRNAC n) of
-                                            []       -> n
-                                            nid:nids -> nid
-                          swapNodeId n = Node (swapNodeId' (nodeId n)) (nodeInfo n)
-                          swapEdgeId e = case (R.apply eIRLHS (edgeId e) ++ R.apply eIRNAC (edgeId e)) of
-                                            []       -> e
-                                            eid:eids -> Edge eid (swapNodeId' $ sourceId e) (swapNodeId' $ targetId e) (edgeInfo e)
-                          nGnodes = map swapNodeId . map nodeFromJust $ nodes nGJust
-                          nGedges = map swapEdgeId . map edgeFromJust $ edges nGJust
-                          nG = fromNodesAndEdges nGnodes nGedges
-                          gi = (M.union (fst nacGI) (fst ruleLGI), M.union (snd nacGI) (snd ruleLGI))
-                      putStrLn "Join graphs"
-                      print nodeM
-                      print nIRLHS
-                      print nIRNAC
-                      return (nG,gi)
+                  Just (nacdg,(nM,eM),(nI,eI)) -> do
+                    let nodeM = foldr (\n m -> if M.notMember n m then M.insert n n m else m) nM (nodeIds ruleLG)
+                        edgeM = foldr (\n m -> if M.notMember n m then M.insert n n m else m) eM (edgeIds ruleLG)
+                        ruleLG' = joinElementsFromMapping ruleLG (nodeM,edgeM)
+                    case (G.null $ fst nacdg) of
+                      True -> return (ruleLG', ruleLGI)
+                      False -> do
+                        let tg' = makeTypeGraph tg
+                            (nacG,nacGI) = remapElementsWithConflict lhsdg nacdg (nI,eI)
+                            lm = makeTypedGraph ruleLG' tg'
+                            nm = makeTypedGraph nacG tg'
+                            (nacTgmLhs,nacTgmNac) = getNacPushout nm lm (nI, eI)
+                            nIRLHS = R.inverseRelation $ Morph.nodeRelation $ TGM.mapping nacTgmLhs
+                            eIRLHS = R.inverseRelation $ Morph.edgeRelation $ TGM.mapping nacTgmLhs
+                            nIRNAC = R.inverseRelation $ Morph.nodeRelation $ TGM.mapping nacTgmNac
+                            eIRNAC = R.inverseRelation $ Morph.edgeRelation $ TGM.mapping nacTgmNac
+                            nacTg = TGM.codomainGraph nacTgmLhs
+                            nGJust = TG.toUntypedGraph nacTg
+                            swapNodeId' n = case (R.apply nIRLHS n ++ R.apply nIRNAC n) of
+                                              []       -> n
+                                              nid:nids -> nid
+                            swapNodeId n = Node (swapNodeId' (nodeId n)) (nodeInfo n)
+                            swapEdgeId e = case (R.apply eIRLHS (edgeId e) ++ R.apply eIRNAC (edgeId e)) of
+                                              []       -> e
+                                              eid:eids -> Edge eid (swapNodeId' $ sourceId e) (swapNodeId' $ targetId e) (edgeInfo e)
+                            nGnodes = map swapNodeId . map nodeFromJust $ nodes nGJust
+                            nGedges = map swapEdgeId . map edgeFromJust $ edges nGJust
+                            nG = fromNodesAndEdges nGnodes nGedges
+                            gi = (M.union (fst nacGI) (fst ruleLGI), M.union (snd nacGI) (snd ruleLGI))
                 writeIORef st $ editorSetGI gi . editorSetGraph nG $ es
                 writeIORef undoStack u
                 writeIORef redoStack r
@@ -1463,7 +1457,7 @@ startGUI = do
             n <- Gtk.treeModelIterNChildren store (Just iterR)
             iterN <- Gtk.treeStoreAppend store (Just iterR)
             storeSetGraphStore store iterN ("NAC" ++ (show n), 0, newKey, 4, True, True)
-            modifyIORef nacDiaGraphs (M.insert newKey (DG.empty,(nodeMap,edgeMap)))
+            modifyIORef nacInfoMapIORef (M.insert newKey (DG.empty,(nodeMap,edgeMap),(M.empty,M.empty)))
             modifyIORef graphStates (M.insert newKey (editorSetGraph lhs . editorSetGI gi $ emptyES,[],[]))
           _ -> showError window "Selected Graph is not a rule, it's not possible to create NACs for it."
 
