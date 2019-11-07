@@ -61,7 +61,10 @@ updateEdgeId eid m = Maybe.fromMaybe eid $ M.lookup eid m
 updateEdgeEndsIds :: Edge a -> M.Map NodeId NodeId -> Edge a
 updateEdgeEndsIds e m = Edge (edgeId e) (updateNodeId (sourceId e) m) (updateNodeId (targetId e) m) (edgeInfo e)
 
-joinElementsFromMapping :: Graph Info Info -> (M.Map NodeId NodeId, M.Map EdgeId EdgeId) -> Graph Info Info
+type MergeMapping = (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
+type InjectionMapping = (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
+
+joinElementsFromMapping :: Graph Info Info -> MergeMapping -> Graph Info Info
 joinElementsFromMapping g (nMapping, eMapping) = fromNodesAndEdges newNodes newEdges
   where nMappingElems = removeDuplicates (M.elems nMapping)
         eMappingElems = removeDuplicates (M.elems eMapping)

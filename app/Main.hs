@@ -12,10 +12,11 @@ Tarefas ---------------------------------------------------------------------
 *permitir que o usuário escolha como será vista a regra (formato L->R, ou L<-K->R)
 *permitir a reordenação das regras por drag n' drop
 *criação e associação de NACs.
-  - modificar informações visuais quando ficar merging dos elementos do lhs
+  - modificar informações visuais quando fizer merging dos elementos do lhs
     - arestas retas devem ter posição modificada para não ficarem atrás dos nodos
-    - nodos devem ter tamanh modificado para englobar texto
-  - recuperar informações visuais quando fizer a separação dos elementos do lhs
+    - nodos devem ter tamanho modificado para englobar texto
+    - modificações de posiciconamento devem ser preservadas
+
 
 
 Ideias -------------------------------------------------------------------------
