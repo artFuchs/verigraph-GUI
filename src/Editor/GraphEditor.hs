@@ -500,23 +500,29 @@ startGUI = do
                 g = editorGetGraph es
                 nodesToMerge = filter (\n -> nodeId n `elem` snids && infoLocked (nodeInfo n)) (nodes g)
                 edgesToMerge = filter (\e -> edgeId e `elem` seids && infoLocked (edgeInfo e)) (edges g)
-            if (null nodesToMerge && null edgesToMerge)
+            if (length nodesToMerge < 2 && length edgesToMerge < 2)
               then return ()
               else do
                 -- modify mapping to specify merging of elements
                 let (nacDG, (nM, eM), injectionM) = fromMaybe (DG.empty, (M.empty,M.empty), (M.empty,M.empty)) $ M.lookup gid nacInfoMap
+                    -- genereate the merging map for nodes
                     nidsToMerge = map nodeId nodesToMerge
                     maxNID = if null nodesToMerge then NodeId 0 else maximum nidsToMerge
+                    -- specify the merging in the map - having (2,3) and (3,3) means that the nodes 2 and 3 are merged
                     nPairs = foldr (\n nps -> (n,maxNID):nps) [] (map nodeId nodesToMerge)
                     nM' = foldr (\(a,b) m -> M.insert a b m) nM nPairs
+                    -- extend the map so that the nodes that aren't in the lhs don't be deleted
+                    nMExt = foldr (\nid m -> if nid `M.member` m then m else M.insert nid nid m) nM' (nodeIds g)
                     eidsToMerge = map edgeId edgesToMerge
+
                     maxEID = if null edgesToMerge then EdgeId 0 else maximum eidsToMerge
                     edgesToMerge' = map (\e -> updateEdgeEndsIds e nM') edgesToMerge
                     ePairs = foldr (\e eps -> (e,maxEID):eps) [] (map edgeId edgesToMerge)
                     eM' = foldr (\(a,b) m -> M.insert a b m) eM ePairs
+                    eMExt = foldr (\eid m -> if eid `M.member` m then m else M.insert eid eid m) eM' (edgeIds g)
                 modifyIORef nacInfoMapIORef (M.insert gid (nacDG, (nM', eM'), injectionM))
                 -- join elements
-                let g' = joinElementsFromMapping g (nM', eM')
+                let g' = joinElementsFromMapping g (nMExt, eMExt)
                 modifyIORef st (editorSetGraph g' . editorSetSelected ([maxNID], seids))
                 Gtk.widgetQueueDraw canvas
       (True,True,'m') -> do
@@ -532,16 +538,24 @@ startGUI = do
                 (nacDG, (nM,eM), (nI,eI)) = fromMaybe (DG.empty, (M.empty,M.empty), (M.empty,M.empty)) $ M.lookup gid nacInfoMap
                 nM' = M.mapWithKey (\k a -> if a `elem` snids then k else a) nM
                 eM' = M.mapWithKey (\k a -> if a `elem` seids then k else a) eM
-            modifyIORef nacInfoMapIORef (M.insert gid (nacDG, (nM',eM'),(nI,eI)))
-            -- reload graph
-            tg <- readIORef activeTypeGraph
+            -- reload lhs
             path <- readIORef currentPath
             lhsdg <- getParentDiaGraph store path graphStates
             let ruleLGNodesLock = foldr (\n g -> G.updateNodePayload n g (\info -> infoSetLocked info True)) (fst lhsdg) (nodeIds . fst $ lhsdg)
                 ruleLG = foldr (\e g -> G.updateEdgePayload e g (\info -> infoSetLocked info True)) ruleLGNodesLock (edgeIds . fst $ lhsdg)
                 ruleLGI = snd lhsdg
                 ruleLG' = joinElementsFromMapping ruleLG (nM',eM')
-                (g',gi') = joinNAC (nacDG,(nM,eM),(nI,eI)) (ruleLG', ruleLGI) tg
+            -- remove the elements of lhs from the current graph
+            let g = editorGetGraph es
+                gi = editorGetGI es
+                dg@(nacG,nacGI) = diagrSubtract (g,gi) (fst lhsdg,ruleLGI)
+                nI' = M.fromList $ filter (\(a,b) -> a == b) $ mkpairs (nodeIds ruleLG) (nodeIds nacG)
+                eI' = M.fromList $ filter (\(a,b) -> a == b) $ mkpairs (edgeIds ruleLG) (edgeIds nacG)
+            -- glue NAC part into the LHS
+            tg <- readIORef activeTypeGraph
+            let (g',gi') = joinNAC (dg,(nM',eM'),(nI',eI')) (ruleLG', ruleLGI) tg
+
+            modifyIORef nacInfoMapIORef (M.insert gid (dg, (nM',eM'),(nI',eI')))
             modifyIORef st (editorSetGraph g' . editorSetGI gi')
             Gtk.widgetQueueDraw canvas
 

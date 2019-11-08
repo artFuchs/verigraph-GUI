@@ -29,8 +29,13 @@ Progresso -------------------------------------------------------------------
 *Mostrar regras em formato R -> L
 *criação e associação de NACs.
   - indicar quais são os elementos da nac que são do lhs e não permitir a deleção/renomeação de elementos do lhs
+    - [X] deleção
+    - [ ] renomeação
   - concatenação de elementos do lhs na nac.
+    - checar se as arestas a serem concatenadas têm as mesmas origens e destinos.
+    - verificar os tipos dos elementos a serem concatenados.
   - separação de elementos concatenados
+    - recuperar nome correto do elemento
 
 
 
