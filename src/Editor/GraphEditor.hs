@@ -486,7 +486,9 @@ startGUI = do
     case (Gdk.ModifierTypeControlMask `elem` ms, Gdk.ModifierTypeShiftMask `elem` ms, toLower k) of
       -- F2 - rename selection
       (False,False,'\65471') -> Gtk.widgetGrabFocus nameEntry
-      (True,False,'p') -> Gtk.menuItemActivate orv
+      (True,False,'p') -> do -- Gtk.menuItemActivate orv
+        es <- readIORef st
+        print $ editorGetGraph es
       (False,False,'\65535') -> Gtk.menuItemActivate del
       (True,False,'m') -> do
         gtype <- readIORef currentGraphType
@@ -503,7 +505,7 @@ startGUI = do
             if (length nodesToMerge < 2 && length edgesToMerge < 2)
               then return ()
               else do
-                -- modify mapping to specify merging of elements
+                -- modify mapping to specify merging of nodes
                 let (nacDG, (nM, eM), injectionM) = fromMaybe (DG.empty, (M.empty,M.empty), (M.empty,M.empty)) $ M.lookup gid nacInfoMap
                     -- genereate the merging map for nodes
                     nidsToMerge = map nodeId nodesToMerge
@@ -515,11 +517,12 @@ startGUI = do
                     nMExt = foldr (\nid m -> if nid `M.member` m then m else M.insert nid nid m) nM' (nodeIds g)
                     eidsToMerge = map edgeId edgesToMerge
 
-                    maxEID = if null edgesToMerge then EdgeId 0 else maximum eidsToMerge
+                -- modify mapping to specify merging of edges
+                let maxEID = if null edgesToMerge then EdgeId 0 else maximum eidsToMerge
                     edgesToMerge' = map (\e -> updateEdgeEndsIds e nM') edgesToMerge
                     ePairs = foldr (\e eps -> (e,maxEID):eps) [] (map edgeId edgesToMerge)
                     eM' = foldr (\(a,b) m -> M.insert a b m) eM ePairs
-                    eMExt = foldr (\eid m -> if eid `M.member` m then m else M.insert eid eid m) eM' (edgeIds g)
+                    eMExt = foldr (\eid m -> if eid `M.member` m then m else M.insert eid eid m) eM' (edgeIds g)                
                 modifyIORef nacInfoMapIORef (M.insert gid (nacDG, (nM', eM'), injectionM))
                 -- join elements
                 let g' = joinElementsFromMapping g (nMExt, eMExt)
@@ -553,10 +556,10 @@ startGUI = do
                 eI' = M.fromList $ filter (\(a,b) -> a == b) $ mkpairs (edgeIds ruleLG) (edgeIds nacG)
             -- glue NAC part into the LHS
             tg <- readIORef activeTypeGraph
-            let (g',gi') = joinNAC (dg,(nM',eM'),(nI',eI')) (ruleLG', ruleLGI) tg
-
+            let (g',gi') = joinNAC (dg,(nM',eM'),(nI',eI')) (ruleLG, ruleLGI) tg
+                g'' = splitNodesLabels g'
             modifyIORef nacInfoMapIORef (M.insert gid (dg, (nM',eM'),(nI',eI')))
-            modifyIORef st (editorSetGraph g' . editorSetGI gi')
+            modifyIORef st (editorSetGraph g'' . editorSetGI gi')
             Gtk.widgetQueueDraw canvas
 
 

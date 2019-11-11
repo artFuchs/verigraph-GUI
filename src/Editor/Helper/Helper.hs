@@ -3,6 +3,7 @@ module Editor.Helper.Helper(
 , remapElementsWithConflict
 , joinElementsFromMapping
 , updateEdgeEndsIds
+, splitNodesLabels
 )
 where
 
@@ -11,6 +12,8 @@ import Data.Graphs
 import qualified Data.Map as M
 import qualified Data.Maybe as Maybe
 import Editor.Data.Info
+import qualified Data.Text as T
+import Data.List
 
 -- create a list of pairs
 mkpairs :: [a] -> [b] -> [(a,b)]
@@ -78,9 +81,9 @@ joinElementsFromMapping g (nMapping, eMapping) = fromNodesAndEdges newNodes newE
         -- 2nd: remove edges not listed in the mapping
         edges'' = filter (\e -> edgeId e `elem` eMappingElems) (edges')
         -- 3rd: join elements infos
-        nodesInfos = M.fromListWith (\a b -> infoSetLabel a ((infoLabel a) ++ ", " ++ (infoLabel b)))
-                                     $ map (\n -> (updateNodeId (nodeId n) nMapping, nodeInfo n)) (nodes g)
-        edgesInfos = M.fromListWith (\a b -> infoSetLabel a ((infoLabel a) ++ ", " ++ (infoLabel b)))
+        nodesInfos = M.fromListWith (\a b -> infoSetLabel a ((infoLabel b) ++ "; " ++ (infoLabel a)))
+                                     $ map (\n -> (updateNodeId (nodeId n) nMapping, nodeInfo n)) (sortBy (\a b -> compare (nodeId a) (nodeId b)) $ nodes g)
+        edgesInfos = M.fromListWith (\a b -> infoSetLabel a ((infoLabel a) ++ "; " ++ (infoLabel b)))
                                      $ map (\e -> (updateEdgeId (edgeId e) eMapping, edgeInfo e)) (edges g)
         newNodes = map (\n -> let nid = nodeId n
                               in Node nid (Maybe.fromMaybe (nodeInfo n) $ M.lookup nid nodesInfos))
@@ -91,3 +94,26 @@ joinElementsFromMapping g (nMapping, eMapping) = fromNodesAndEdges newNodes newE
                                       (targetId e)
                                       (Maybe.fromMaybe (edgeInfo e) $ M.lookup eid edgesInfos))
                        edges''
+
+
+splitNodesLabels :: Graph Info Info -> Graph Info Info
+-- change elements info according to changes in the mappings
+-- examples:
+--  splitNodesLabels {nodes: [Node 1 "1", Node 2 "2"], edges: []}
+--    should result in {nodes: [Node 1 "1", Node 2 "2"], edges: []}
+
+--  splitNodesLabels {nodes: [Node 1 "1", Node 2 "1;2"], edges: []}
+--    should result in {nodes: [Node 1 "1", Node 2 "2"], edges: []}
+
+--  splitNodesLabels {nodes: [Node 1 "1", Node 2 "2", Node 3 "2;3"], edges: [Edge 1 1 2 "1", Edge 2 1 3 "2"]}
+--    should result in {nodes: [Node 1 "1", Node 2 "2", Node 3 "3"], edges: [Edge 1 1 2 "1", Edge 2 1 3 "2"]}
+splitNodesLabels g = fromNodesAndEdges newNodes (edges g)
+    where
+      getLastLabel lbl = T.unpack $ last $ T.splitOn (T.pack ";") (T.pack lbl)
+      newNodes = map (\n -> let lbl = (infoLabel . nodeInfo $ n) 
+                            in if elem ';' lbl 
+                              then Node (nodeId n) (infoSetLabel (nodeInfo n) $ getLastLabel lbl)
+                              else n)
+                     $ nodes g
+
+
