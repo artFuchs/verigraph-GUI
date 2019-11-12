@@ -517,18 +517,21 @@ startGUI = do
                     nM' = foldr (\(a,b) m -> M.insert a b m) nM nPairs
                     -- extend the map so that the nodes that aren't in the lhs don't be deleted
                     nMExt = foldr (\nid m -> if nid `M.member` m then m else M.insert nid nid m) nM' (nodeIds g)
-                    eidsToMerge = map edgeId edgesToMerge
 
                 -- modify mapping to specify merging of edges
-                let maxEID = if null edgesToMerge then EdgeId 0 else maximum eidsToMerge
+                let eidsToMerge = map edgeId edgesToMerge
+                    maxEID = if null edgesToMerge then EdgeId 0 else maximum eidsToMerge
+                    -- update Ids of source and target nodes from edges that the user want to merge
                     edgesToMerge' = map (\e -> updateEdgeEndsIds e nM') edgesToMerge
+                    -- check if the edges to merge have the same source and targets nodes
                     edgesToMerge'' = filter (\e -> sourceId e == sourceId (head edgesToMerge') && targetId e == targetId (head edgesToMerge')) edgesToMerge'
                     ePairs = foldr (\e eps -> (e,maxEID):eps) [] (map edgeId edgesToMerge'')
                     eM' = foldr (\(a,b) m -> M.insert a b m) eM ePairs
                     eMExt = foldr (\eid m -> if eid `M.member` m then m else M.insert eid eid m) eM' (edgeIds g)
-                modifyIORef nacInfoMapIORef (M.insert gid (nacDG, (nM', eM'), injectionM))
+                modifyIORef nacInfoMapIORef (M.insert gid (nacDG, (nMExt, eMExt), injectionM))
                 -- join elements
                 let g' = joinElementsFromMapping g (nMExt, eMExt)
+                -- modify editor state
                 modifyIORef st (editorSetGraph g' . editorSetSelected ([maxNID], [maxEID]))
                 Gtk.widgetQueueDraw canvas
       (True,True,'m') -> do
@@ -559,10 +562,13 @@ startGUI = do
                 eI' = M.fromList $ filter (\(a,b) -> a == b) $ mkpairs (edgeIds ruleLG) (edgeIds nacG)
             -- glue NAC part into the LHS
             tg <- readIORef activeTypeGraph
-            let (g',gi') = joinNAC (dg,(nM',eM'),(nI',eI')) (ruleLG, ruleLGI) tg
-                g'' = splitNodesLabels g'
+            let (g',gi') = joinNAC (dg,(nM',eM'),(nI',eI')) (ruleLG', ruleLGI) tg
+                g'' = splitNodesLabels g' nM'
+            -- write editor State
+            let newNids = M.keys $ M.filter (\a -> a `elem` snids) nM
+                newEids = M.keys $ M.filter (\a -> a `elem` seids) eM
             modifyIORef nacInfoMapIORef (M.insert gid (dg, (nM',eM'),(nI',eI')))
-            modifyIORef st (editorSetGraph g'' . editorSetGI gi')
+            modifyIORef st (editorSetSelected (newNids, newEids) . editorSetGraph g'' . editorSetGI gi')
             Gtk.widgetQueueDraw canvas
 
 

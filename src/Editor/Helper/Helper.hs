@@ -96,24 +96,22 @@ joinElementsFromMapping g (nMapping, eMapping) = fromNodesAndEdges newNodes newE
                        edges''
 
 
-splitNodesLabels :: Graph Info Info -> Graph Info Info
+splitNodesLabels :: Graph Info Info -> M.Map NodeId NodeId -> Graph Info Info
 -- change elements info according to changes in the mappings
 -- examples:
---  splitNodesLabels {nodes: [Node 1 "1", Node 2 "2"], edges: []}
+--  splitNodesLabels {nodes: [Node 1 "1", Node 2 "2"], edges: []} [(1,1),(2,2)]
 --    should result in {nodes: [Node 1 "1", Node 2 "2"], edges: []}
-
---  splitNodesLabels {nodes: [Node 1 "1", Node 2 "1;2"], edges: []}
+--  splitNodesLabels {nodes: [Node 1 "1", Node 2 "1;2"], edges: []} [(1,1),(2,2)]
 --    should result in {nodes: [Node 1 "1", Node 2 "2"], edges: []}
-
---  splitNodesLabels {nodes: [Node 1 "1", Node 2 "2", Node 3 "2;3"], edges: [Edge 1 1 2 "1", Edge 2 1 3 "2"]}
+--  splitNodesLabels {nodes: [Node 1 "1", Node 2 "2", Node 3 "2;3"], edges: [Edge 1 1 2 "1", Edge 2 1 3 "2"]} [(1,1),(2,2),(3,3)]
 --    should result in {nodes: [Node 1 "1", Node 2 "2", Node 3 "3"], edges: [Edge 1 1 2 "1", Edge 2 1 3 "2"]}
-splitNodesLabels g = fromNodesAndEdges newNodes (edges g)
+-- splitNodesLabels {Nodes: [Node 1 "1", Node 2 "1;2", Node 4 "3;4"], edges [Edge 1 1 2 "1", Edge 2 4 4 "2"]} [(1,1),(2,2),(3,4),(4,4)]
+--    should result in {nodes: [Node 1 "1", Node 2 "2", Node 4 "3;4"], edges: [Edge 1 1 2 "1", Edge 2 4 4 "2"]}
+splitNodesLabels g nodeMapping = fromNodesAndEdges newNodes (edges g)
     where
       getLastLabel lbl = T.unpack $ last $ T.splitOn (T.pack ";") (T.pack lbl)
-      newNodes = map (\n -> let lbl = (infoLabel . nodeInfo $ n) 
-                            in if elem ';' lbl 
+      newNodes = map (\n -> let lbl = (infoLabel . nodeInfo $ n)
+                            in if elem ';' lbl  && length (M.toList $ M.filter (== nodeId n) nodeMapping) == 1
                               then Node (nodeId n) (infoSetLabel (nodeInfo n) $ getLastLabel lbl)
                               else n)
                      $ nodes g
-
-
