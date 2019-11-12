@@ -522,13 +522,14 @@ startGUI = do
                 -- modify mapping to specify merging of edges
                 let maxEID = if null edgesToMerge then EdgeId 0 else maximum eidsToMerge
                     edgesToMerge' = map (\e -> updateEdgeEndsIds e nM') edgesToMerge
-                    ePairs = foldr (\e eps -> (e,maxEID):eps) [] (map edgeId edgesToMerge)
+                    edgesToMerge'' = filter (\e -> sourceId e == sourceId (head edgesToMerge') && targetId e == targetId (head edgesToMerge')) edgesToMerge'
+                    ePairs = foldr (\e eps -> (e,maxEID):eps) [] (map edgeId edgesToMerge'')
                     eM' = foldr (\(a,b) m -> M.insert a b m) eM ePairs
                     eMExt = foldr (\eid m -> if eid `M.member` m then m else M.insert eid eid m) eM' (edgeIds g)
                 modifyIORef nacInfoMapIORef (M.insert gid (nacDG, (nM', eM'), injectionM))
                 -- join elements
                 let g' = joinElementsFromMapping g (nMExt, eMExt)
-                modifyIORef st (editorSetGraph g' . editorSetSelected ([maxNID], seids))
+                modifyIORef st (editorSetGraph g' . editorSetSelected ([maxNID], [maxEID]))
                 Gtk.widgetQueueDraw canvas
       (True,True,'m') -> do
         gtype <- readIORef currentGraphType
