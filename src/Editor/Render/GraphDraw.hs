@@ -264,15 +264,17 @@ drawNACGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
   let lockedColor = (0.90,0.75,0.05)
       lockedAndSelectedColor = (0.1,0.8,0.01)
       lockedAndErrorColor = (0.9,0.3,0.0)
+      theThreeColor = (0.42,0.22,0.14)
 
-  let chooseColor s t l = case (s,t,l) of
+  let chooseColor s e l = case (s,e,l) of
         (False,False,False) -> (0,0,0)
-        (False,True,False) -> errorColor
         (True,False,False) -> selectColor
+        (False,True,False) -> errorColor
         (True,True,False) -> bothColor
         (False,False,True) -> lockedColor
-        (True,False,True) -> lockedAndSelectedColor
-        (False,True,True) -> lockedAndErrorColor
+        (True,False,True) -> selectColor
+        (False,True,True) -> errorColor
+        (True,True,True) -> bothColor
 
   let vg = correctTypeGraph g tg
   -- draw the edges

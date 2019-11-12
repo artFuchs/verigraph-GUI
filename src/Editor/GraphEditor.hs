@@ -500,8 +500,10 @@ startGUI = do
             es <- readIORef st
             let (snids, seids) = editorGetSelected es
                 g = editorGetGraph es
-                nodesToMerge = filter (\n -> nodeId n `elem` snids && infoLocked (nodeInfo n)) (nodes g)
-                edgesToMerge = filter (\e -> edgeId e `elem` seids && infoLocked (edgeInfo e)) (edges g)
+                nodesFromLHS = filter (\n -> nodeId n `elem` snids && infoLocked (nodeInfo n)) (nodes g)
+                edgesFromLHS = filter (\e -> edgeId e `elem` seids && infoLocked (edgeInfo e)) (edges g)
+                nodesToMerge = filter (\n -> (infoType $ nodeInfo n) == (infoType $ nodeInfo $ head nodesFromLHS)) nodesFromLHS
+                edgesToMerge = filter (\e -> (infoType $ edgeInfo e) == (infoType $ edgeInfo $ head edgesFromLHS)) edgesFromLHS
             if (length nodesToMerge < 2 && length edgesToMerge < 2)
               then return ()
               else do
@@ -522,7 +524,7 @@ startGUI = do
                     edgesToMerge' = map (\e -> updateEdgeEndsIds e nM') edgesToMerge
                     ePairs = foldr (\e eps -> (e,maxEID):eps) [] (map edgeId edgesToMerge)
                     eM' = foldr (\(a,b) m -> M.insert a b m) eM ePairs
-                    eMExt = foldr (\eid m -> if eid `M.member` m then m else M.insert eid eid m) eM' (edgeIds g)                
+                    eMExt = foldr (\eid m -> if eid `M.member` m then m else M.insert eid eid m) eM' (edgeIds g)
                 modifyIORef nacInfoMapIORef (M.insert gid (nacDG, (nM', eM'), injectionM))
                 -- join elements
                 let g' = joinElementsFromMapping g (nMExt, eMExt)
