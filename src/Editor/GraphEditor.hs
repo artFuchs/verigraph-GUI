@@ -70,8 +70,11 @@ import Editor.GraphEditor.UpdateInspector
  * valid (if the current graph is correctly mapped to the typegraph)
 -}
 type GraphStore = (String, Int32, Int32, Int32, Bool, Bool)
+
 type MergeMapping = (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
 type InjectionMapping = (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
+
+type ChangeStack = [(DiaGraph,Maybe MergeMapping)]
 
 --------------------------------------------------------------------------------
 -- FUNCTIONS ------------------------------------------------------------
@@ -175,14 +178,16 @@ startGUI = do
   st              <- newIORef emptyES -- actual state: all the necessary info to draw the graph
   oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
   squareSelection <- newIORef Nothing -- selection box : Maybe (x,y,w,h)
-  undoStack       <- newIORef ([] :: [DiaGraph])
-  redoStack       <- newIORef ([] :: [DiaGraph])
+  undoStack       <- newIORef ([] :: ChangeStack )
+  redoStack       <- newIORef ([] :: ChangeStack )
   movingGI        <- newIORef False -- if the user started moving some object - necessary to add a position to the undoStack
   clipboard       <- newIORef DG.empty -- clipboard - DiaGraph
   fileName        <- newIORef (Nothing :: Maybe String) -- name of the opened file
-  currentPath     <- newIORef [0] -- indices of path to current graph being edited
-  currentGraph    <- newIORef 0 -- indice of the current graph being edited
-  graphStates     <- newIORef $ M.fromList [(0, (emptyES,[],[])), (1, (emptyES, [], [])), (2, (emptyES, [], []))] -- map of states foreach graph in the editor
+  currentPath     <- newIORef [0] -- index of path to current graph being edited
+  currentGraph    <- newIORef 0 -- index of the current graph being edited
+  -- map of states foreach graph in the editor
+  graphStates     <- newIORef (M.empty :: M.Map Int32 (EditorState, ChangeStack, ChangeStack) )
+  writeIORef graphStates $ M.fromList [(0, (emptyES,[],[])), (1, (emptyES, [], [])), (2, (emptyES, [], []))]
   changedProject  <- newIORef False -- set this flag as True when the graph is changed somehow
   changedGraph    <- newIORef [False] -- when modify a graph, set the flag in the 'currentGraph' to True
   lastSavedState  <- newIORef (M.empty :: M.Map Int32 DiaGraph)
@@ -204,6 +209,8 @@ startGUI = do
   -- variables to specify NACs
   -- Diagraph from the rule - togetter with lhs it make the editor state
   nacInfoMapIORef <- newIORef (M.empty :: M.Map Int32 (DiaGraph, MergeMapping, InjectionMapping))
+  mergeMappingIORef <- newIORef (Nothing :: Maybe MergeMapping)
+
 
   ------------------------------------------------------------------------------
   -- EVENT BINDINGS ------------------------------------------------------------
@@ -323,7 +330,10 @@ startGUI = do
               gi = editorGetGI es
               dstNode = selectNodeInPosition gi (x',y')
           context <- Gtk.widgetGetPangoContext canvas
-          stackUndo undoStack redoStack es
+          case gType of
+            4 -> do mergeM <- readIORef mergeMappingIORef
+                    stackUndo undoStack redoStack es mergeM
+            _ -> stackUndo undoStack redoStack es Nothing
           cShape <- readIORef currentShape
           cColor <- readIORef currentC
           cLColor <- readIORef currentLC
@@ -394,8 +404,9 @@ startGUI = do
     ms <- get eventMotion #state
     x <- get eventMotion #x
     y <- get eventMotion #y
-    (ox,oy) <- liftIO $ readIORef oldPoint
-    es <- liftIO $ readIORef st
+    (ox,oy) <- readIORef oldPoint
+    es <- readIORef st
+    gtype <- readIORef currentGraphType
     let leftButton = Gdk.ModifierTypeButton1Mask `elem` ms
         -- in case of the editor being used in a notebook or with a mouse with just two buttons, ctrl + right button can be used instead of the middle button.
         middleButton = Gdk.ModifierTypeButton2Mask `elem` ms || Gdk.ModifierTypeButton3Mask `elem` ms && Gdk.ModifierTypeControlMask `elem` ms
@@ -419,7 +430,11 @@ startGUI = do
         if not mv
           then do
             writeIORef movingGI True
-            stackUndo undoStack redoStack es
+            case gtype of
+              4 -> do
+                mergeM <- readIORef mergeMappingIORef
+                stackUndo undoStack redoStack es mergeM
+              _ -> stackUndo undoStack redoStack es Nothing
           else return ()
         Gtk.widgetQueueDraw canvas
       -- if middle button is pressed, then move the view
@@ -533,6 +548,7 @@ startGUI = do
                 let g' = joinElementsFromMapping g (nMExt, eMExt)
                 -- modify editor state
                 modifyIORef st (editorSetGraph g' . editorSetSelected ([maxNID], [maxEID]))
+                stackUndo undoStack redoStack es (Just (nM,eM))
                 Gtk.widgetQueueDraw canvas
       (True,True,'m') -> do
         gtype <- readIORef currentGraphType
@@ -569,12 +585,8 @@ startGUI = do
                 newEids = M.keys $ M.filter (\a -> a `elem` seids) eM
             modifyIORef nacInfoMapIORef (M.insert gid (dg, (nM',eM'),(nI',eI')))
             modifyIORef st (editorSetSelected (newNids, newEids) . editorSetGraph g'' . editorSetGI gi')
+            stackUndo undoStack redoStack es (Just (nM,eM))
             Gtk.widgetQueueDraw canvas
-
-
-
-
-
       _ -> return ()
     return True
 
@@ -782,7 +794,12 @@ startGUI = do
   -- delete item
   on del #activate $ do
     es <- readIORef st
-    stackUndo undoStack redoStack es
+    gtype <- readIORef currentGraphType
+    case gtype of
+      4 -> do
+        mergeM <- readIORef mergeMappingIORef
+        stackUndo undoStack redoStack es mergeM
+      _ -> stackUndo undoStack redoStack es Nothing
     modifyIORef st (\es -> deleteSelected es)
     setChangeFlags window store changedProject changedGraph currentPath currentGraph True
     updateByType
@@ -791,30 +808,42 @@ startGUI = do
 
   -- undo
   on udo #activate $ do
-    applyUndo undoStack redoStack st
+    applyUndo undoStack redoStack st mergeMappingIORef
     -- indicate changes
     sst <- readIORef lastSavedState
     index <- readIORef currentGraph
     es <- readIORef st
+    nacInfoMap <- readIORef nacInfoMapIORef
+    mergeMapping <- readIORef mergeMappingIORef
     let (g,gi) = (editorGetGraph es, editorGetGI es)
-        x = case M.lookup (fromIntegral index) $ sst of
-              Just diag -> diag
-              Nothing -> DG.empty
+        x = fromMaybe DG.empty $ M.lookup index sst
+        (nacdg, _, iM) = fromMaybe (DG.empty, (M.empty, M.empty), (M.empty, M.empty)) $ M.lookup index nacInfoMap
+    case mergeMapping of
+      Nothing -> return ()
+      Just m -> do
+        print m
+        modifyIORef nacInfoMapIORef (M.insert index (nacdg, m, iM))
     setChangeFlags window store changedProject changedGraph currentPath currentGraph $ not (isDiaGraphEqual (g,gi) x)
     Gtk.widgetQueueDraw canvas
     updateByType
 
   -- redo
   on rdo #activate $ do
-    applyRedo undoStack redoStack st
+    applyRedo undoStack redoStack st mergeMappingIORef
     -- indicate changes
     sst <- readIORef lastSavedState
     index <- readIORef currentGraph
     es <- readIORef st
+    nacInfoMap <- readIORef nacInfoMapIORef
+    mergeMapping <- readIORef mergeMappingIORef
     let (g,gi) = (editorGetGraph es, editorGetGI es)
-        x = case M.lookup (fromIntegral index) $ sst of
-              Just diag -> diag
-              Nothing -> DG.empty
+        x = fromMaybe DG.empty $ M.lookup index sst
+        (nacdg, _, iM) = fromMaybe (DG.empty, (M.empty, M.empty), (M.empty, M.empty)) $ M.lookup index nacInfoMap
+    case mergeMapping of
+      Nothing -> return ()
+      Just m -> do
+        print m
+        modifyIORef nacInfoMapIORef (M.insert index (nacdg, m, iM))
     setChangeFlags window store changedProject changedGraph currentPath currentGraph $ not (isDiaGraphEqual (g,gi) x)
     Gtk.widgetQueueDraw canvas
     updateByType
@@ -829,7 +858,12 @@ startGUI = do
   on pst #activate $ do
     es <- readIORef st
     clip <- readIORef clipboard
-    stackUndo undoStack redoStack es
+    gtype <- readIORef currentGraphType
+    case gtype of
+      4 -> do
+        mergeM <- readIORef mergeMappingIORef
+        stackUndo undoStack redoStack es mergeM
+      _ -> stackUndo undoStack redoStack es Nothing
     setChangeFlags window store changedProject changedGraph currentPath currentGraph True
     modifyIORef st (pasteClipBoard clip)
     Gtk.widgetQueueDraw canvas
@@ -838,9 +872,15 @@ startGUI = do
   -- cut
   on cut #activate $ do
     es <- readIORef st
+    gtype <- readIORef currentGraphType
     writeIORef clipboard $ copySelected es
     modifyIORef st (\es -> deleteSelected es)
-    stackUndo undoStack redoStack es
+    gtype <- readIORef currentGraphType
+    case gtype of
+      4 -> do
+        mergeM <- readIORef mergeMappingIORef
+        stackUndo undoStack redoStack es mergeM
+      _ -> stackUndo undoStack redoStack es Nothing
     setChangeFlags window store changedProject changedGraph currentPath currentGraph  True
     Gtk.widgetQueueDraw canvas
     updateByType
@@ -988,7 +1028,7 @@ startGUI = do
   -- when the entry lose focus
   on nameEntry #focusOutEvent $ \event -> do
     es <- readIORef st
-    stackUndo undoStack redoStack es
+    stackUndo undoStack redoStack es Nothing
     setChangeFlags window store changedProject changedGraph currentPath currentGraph True
     name <- Gtk.entryGetText nameEntry >>= return . T.unpack
     context <- Gtk.widgetGetPangoContext canvas
@@ -1032,7 +1072,7 @@ startGUI = do
       else do
         let (ngiM, egiM) = editorGetGI es
             newngiM = M.mapWithKey (\k ngi -> if NodeId k `elem` nds then nodeGiSetColor color ngi else ngi) ngiM
-        stackUndo undoStack redoStack es
+        stackUndo undoStack redoStack es Nothing
         setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> editorSetGI (newngiM, egiM) es)
         Gtk.widgetQueueDraw canvas
@@ -1055,7 +1095,7 @@ startGUI = do
         let (ngiM, egiM) = editorGetGI es
             newngiM = M.mapWithKey (\k ngi -> if NodeId k `elem` nds then nodeGiSetLineColor color ngi else ngi) ngiM
             newegiM = M.mapWithKey (\k egi -> if EdgeId k `elem` edgs then edgeGiSetColor color egi else egi) egiM
-        stackUndo undoStack redoStack es
+        stackUndo undoStack redoStack es Nothing
         setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> editorSetGI (newngiM, newegiM) es)
         Gtk.widgetQueueDraw canvas
@@ -1072,7 +1112,7 @@ startGUI = do
     if not active || M.null (M.filterWithKey (\k gi -> NodeId k `elem` nds && shape gi /= NCircle) giM)
       then return ()
       else do
-        stackUndo undoStack redoStack es
+        stackUndo undoStack redoStack es Nothing
         setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> changeNodeShape es NCircle)
         Gtk.widgetQueueDraw canvas
@@ -1087,7 +1127,7 @@ startGUI = do
     if not active || M.null (M.filterWithKey (\k gi -> NodeId k `elem` nds && shape gi /= NRect) giM)
       then return ()
       else do
-        stackUndo undoStack redoStack es
+        stackUndo undoStack redoStack es Nothing
         setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> changeNodeShape es NRect)
         Gtk.widgetQueueDraw canvas
@@ -1102,7 +1142,7 @@ startGUI = do
     if not active || M.null (M.filterWithKey (\k gi -> NodeId k `elem` nds && shape gi /= NSquare) giM)
       then return ()
       else do
-        stackUndo undoStack redoStack es
+        stackUndo undoStack redoStack es Nothing
         setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> changeNodeShape es NSquare)
         Gtk.widgetQueueDraw canvas
@@ -1119,7 +1159,7 @@ startGUI = do
     if not active || M.null (M.filterWithKey (\k gi -> EdgeId k `elem` edgs && style gi /= ENormal) giM)
       then return ()
       else do
-        stackUndo undoStack redoStack es
+        stackUndo undoStack redoStack es Nothing
         setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> changeEdgeStyle es ENormal)
         Gtk.widgetQueueDraw canvas
@@ -1134,7 +1174,7 @@ startGUI = do
     if not active || M.null (M.filterWithKey (\k gi -> EdgeId k `elem` edgs && style gi /= EPointed) giM)
       then return ()
       else do
-        stackUndo undoStack redoStack es
+        stackUndo undoStack redoStack es Nothing
         setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> changeEdgeStyle es EPointed)
         Gtk.widgetQueueDraw canvas
@@ -1149,7 +1189,7 @@ startGUI = do
     if not active || M.null (M.filterWithKey (\k gi -> EdgeId k `elem` edgs && style gi /= ESlashed) giM)
       then return ()
       else do
-        stackUndo undoStack redoStack es
+        stackUndo undoStack redoStack es Nothing
         setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef st (\es -> changeEdgeStyle es ESlashed)
         Gtk.widgetQueueDraw canvas
@@ -1283,13 +1323,13 @@ startGUI = do
             pathIndices <- readIORef currentPath
             (lhs,lhsGI) <- getParentDiaGraph store pathIndices graphStates
             es <- readIORef st
-            let (diag,mergeMapping,_) = fromMaybe (DG.empty, (M.empty,M.empty), (M.empty, M.empty)) $ M.lookup cIndex nacInfoMap
+            let (diag,mergeM,_) = fromMaybe (DG.empty, (M.empty,M.empty), (M.empty, M.empty)) $ M.lookup cIndex nacInfoMap
                 g = editorGetGraph es
                 gi = editorGetGI es
                 dg@(nacG,nacGI) = diagrSubtract (g,gi) (lhs,lhsGI)
                 nodeM = M.fromList $ filter (\(a,b) -> a == b) $ mkpairs (nodeIds lhs) (nodeIds nacG)
                 edgeM = M.fromList $ filter (\(a,b) -> a == b) $ mkpairs (edgeIds lhs) (edgeIds nacG)
-            modifyIORef nacInfoMapIORef (M.insert cIndex (dg,mergeMapping,(nodeM,edgeM)))
+            modifyIORef nacInfoMapIORef (M.insert cIndex (dg,mergeM,(nodeM,edgeM)))
           _ -> return ()
 
         -- change the graph
@@ -1323,6 +1363,7 @@ startGUI = do
                     let nodeM = foldr (\n m -> if M.notMember n m then M.insert n n m else m) nM (nodeIds ruleLG)
                         edgeM = foldr (\n m -> if M.notMember n m then M.insert n n m else m) eM (edgeIds ruleLG)
                         ruleLG' = joinElementsFromMapping ruleLG (nodeM,edgeM)
+                    writeIORef mergeMappingIORef $ Just (nM,eM)
                     case (G.null $ fst nacdg) of
                       True -> return (ruleLG', ruleLGI)
                       False -> return $ joinNAC (nacdg,(nM,eM),(nI,eI)) (ruleLG', ruleLGI) tg
@@ -1347,6 +1388,7 @@ startGUI = do
                 writeIORef undoStack u
                 writeIORef redoStack r
                 writeIORef currentGraph index
+                writeIORef mergeMappingIORef Nothing
               Nothing -> return ()
 
         -- auxiliar function to update nodes and edges elements according to the active typeGraph
@@ -1588,7 +1630,7 @@ getTreeStoreValues store iter = do
                 return $ (Tree.Node (valT, (valN, valI, valA)) []) : newVals
               else return $ (Tree.Node (valT, (valN, valI, valA)) []) : []
 
-getStructsToSave :: Gtk.TreeStore -> IORef (M.Map Int32 (EditorState, [DiaGraph], [DiaGraph]))-> IO (Tree.Forest SaveInfo)
+getStructsToSave :: Gtk.TreeStore -> IORef (M.Map Int32 (EditorState, ChangeStack, ChangeStack))-> IO (Tree.Forest SaveInfo)
 getStructsToSave store graphStates = do
   (valid, fstIter) <- Gtk.treeModelGetIterFirst store
   if not valid
@@ -1609,7 +1651,7 @@ getStructsToSave store graphStates = do
       return structs
 
 -- auxiliar function to load parent graph
-getParentDiaGraph :: Gtk.TreeStore -> [Int32] -> IORef (M.Map Int32 (EditorState, [DiaGraph], [DiaGraph])) -> IO DiaGraph
+getParentDiaGraph :: Gtk.TreeStore -> [Int32] -> IORef (M.Map Int32 (EditorState, ChangeStack, ChangeStack)) -> IO DiaGraph
 getParentDiaGraph store pathIndices graphStates = do
   path <- Gtk.treePathNewFromIndices pathIndices
   (validIter, iter) <- Gtk.treeModelGetIter store path
@@ -1629,7 +1671,7 @@ getParentDiaGraph store pathIndices graphStates = do
                           egi = M.filterWithKey (\k a -> (EdgeId k) `elem` (edgeIds lhs)) $ snd (editorGetGI es)
     else return DG.empty
 
-getRuleList :: Gtk.TreeStore ->  Gtk.TreeIter -> M.Map Int32 (EditorState, [DiaGraph], [DiaGraph]) -> IO [(Graph String String, String)]
+getRuleList :: Gtk.TreeStore ->  Gtk.TreeIter -> M.Map Int32 (EditorState, ChangeStack, ChangeStack) -> IO [(Graph String String, String)]
 getRuleList model iter gStates = do
   name <- Gtk.treeModelGetValue model iter 0 >>= fromGValue >>= return . fromJust :: IO String
   index <- Gtk.treeModelGetValue model iter 2 >>= fromGValue :: IO Int32
@@ -1643,7 +1685,7 @@ getRuleList model iter gStates = do
       return $ res ++ rest
     else return res
 
-getRules :: Gtk.TreeStore -> IORef (M.Map Int32 (EditorState, [DiaGraph], [DiaGraph])) -> IO [(Graph String String,String)]
+getRules :: Gtk.TreeStore -> IORef (M.Map Int32 (EditorState, ChangeStack, ChangeStack)) -> IO [(Graph String String,String)]
 getRules model graphStates = do
   (valid, iter) <- Gtk.treeModelGetIterFromString model "2:0"
   if not valid
@@ -1749,42 +1791,58 @@ getStringDims str context font = do
 
 
 -- Undo / Redo -----------------------------------------------------------------
-stackUndo :: IORef [DiaGraph] -> IORef [DiaGraph] -> EditorState -> IO ()
-stackUndo undo redo es = do
+stackUndo :: IORef ChangeStack
+          -> IORef ChangeStack
+          -> EditorState
+          -> Maybe MergeMapping
+          -> IO ()
+stackUndo undo redo es mergeM = do
   let g = editorGetGraph es
       gi = editorGetGI es
-  modifyIORef undo (\u -> (g,gi):u )
+  modifyIORef undo (\u -> ((g,gi), mergeM):u )
   modifyIORef redo (\_ -> [])
 
-applyUndo :: IORef [DiaGraph] -> IORef [DiaGraph] -> IORef EditorState -> IO ()
-applyUndo undoStack redoStack st = do
+applyUndo :: IORef ChangeStack
+          -> IORef ChangeStack
+          -> IORef EditorState
+          -> IORef (Maybe MergeMapping)
+          -> IO ()
+applyUndo undoStack redoStack st mergeMappingIORef = do
   es <- readIORef st
   undo <- readIORef undoStack
   redo <- readIORef redoStack
-  let apply [] r es = ([],r, es)
-      apply ((g,gi):u) r es = (u, (eg,egi):r, editorSetGI gi . editorSetGraph g $ es)
+  mergeM <- readIORef mergeMappingIORef
+  let apply [] r es = ([], r, es, Nothing)
+      apply (((g,gi),m):u) r es = (u, ((eg,egi), mergeM):r, editorSetGI gi . editorSetGraph g $ es, m)
                             where
                               eg = editorGetGraph es
                               egi = editorGetGI es
-      (nu, nr, nes) = apply undo redo es
+      (nu, nr, nes, nm) = apply undo redo es
   writeIORef undoStack nu
   writeIORef redoStack nr
   writeIORef st nes
+  writeIORef mergeMappingIORef nm
 
-applyRedo :: IORef [DiaGraph] -> IORef [DiaGraph] -> IORef EditorState -> IO ()
-applyRedo undoStack redoStack st = do
+applyRedo :: IORef ChangeStack
+          -> IORef ChangeStack
+          -> IORef EditorState
+          -> IORef (Maybe MergeMapping)
+          -> IO ()
+applyRedo undoStack redoStack st mergeMappingIORef = do
   undo <- readIORef undoStack
   redo <- readIORef redoStack
   es <- readIORef st
-  let apply u [] es = (u, [], es)
-      apply u ((g,gi):r) es = ((eg,egi):u, r, editorSetGI gi . editorSetGraph g $ es)
+  mergeM <- readIORef mergeMappingIORef
+  let apply u [] es = (u, [], es, Nothing)
+      apply u (((g,gi),m):r) es = (((eg,egi), mergeM):u , r, editorSetGI gi . editorSetGraph g $ es, m)
                             where
                               eg = editorGetGraph es
                               egi = editorGetGI es
-      (nu, nr, nes) = apply undo redo es
+      (nu, nr, nes, nm) = apply undo redo es
   writeIORef undoStack nu
   writeIORef redoStack nr
   writeIORef st nes
+  writeIORef mergeMappingIORef nm
 
 
 -- Copy / Paste / Cut ----------------------------------------------------------
@@ -1875,7 +1933,7 @@ setChangeFlags window store changedProject changedGraph currentPath currentGraph
     else return ()
 
 -- Analise a graph and change the flags that inform if a graph is valid/invalid
-setValidFlag :: Gtk.TreeStore -> Gtk.TreeIter -> M.Map Int32 (EditorState, [DiaGraph], [DiaGraph]) -> Graph String String -> IO ()
+setValidFlag :: Gtk.TreeStore -> Gtk.TreeIter -> M.Map Int32 (EditorState, ChangeStack, ChangeStack) -> Graph String String -> IO ()
 setValidFlag store iter states tg = do
   index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
   mst <- return $ M.lookup index states
@@ -1888,7 +1946,7 @@ setValidFlag store iter states tg = do
 
 -- walk in the treeStore, applying setValidFalg for all the hostGraphs and RuleGraphs
 -- should be called when occur an update to the typeGraph
-setValidFlags :: Gtk.TreeStore -> Graph String String -> M.Map Int32 (EditorState, [DiaGraph], [DiaGraph]) -> IO ()
+setValidFlags :: Gtk.TreeStore -> Graph String String -> M.Map Int32 (EditorState, ChangeStack, ChangeStack) -> IO ()
 setValidFlags store tg states = do
   Gtk.treeModelForeach store $ \model path iter -> do
     t <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
@@ -1915,7 +1973,7 @@ setCurrentValidFlag store st typeGraph currentPath = do
         else return ()
 
 -- change updatedState
-updateSavedState :: IORef (M.Map Int32 DiaGraph) -> IORef (M.Map Int32 (EditorState, [DiaGraph], [DiaGraph])) -> IO ()
+updateSavedState :: IORef (M.Map Int32 DiaGraph) -> IORef (M.Map Int32 (EditorState, ChangeStack, ChangeStack)) -> IO ()
 updateSavedState sst graphStates = do
   states <- readIORef graphStates
   writeIORef sst $ (M.map (\(es,_,_) -> (editorGetGraph es, editorGetGI es) ) states)
