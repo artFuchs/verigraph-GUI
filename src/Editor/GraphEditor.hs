@@ -209,7 +209,7 @@ startGUI = do
   -- variables to specify NACs
   -- Diagraph from the rule - togetter with lhs it make the editor state
   nacInfoMapIORef <- newIORef (M.empty :: M.Map Int32 (DiaGraph, MergeMapping, InjectionMapping))
-  mergeMappingIORef <- newIORef (Nothing :: Maybe MergeMapping)
+  mergeMappingIORef <- newIORef (Nothing :: Maybe MergeMapping) -- current merge mapping. important to undo/redo with nacs
 
 
   ------------------------------------------------------------------------------
@@ -732,11 +732,11 @@ startGUI = do
         tg = editorGetGraph tes
         hg = editorGetGraph hes
 
-    rules <- getRules store graphStates
-    let rulesNames = map snd rules
-        rgs = map fst rules
+    rules <- getRules store graphStates nacInfoMapIORef
+    let rulesNames = map (\(_,_,name) -> name) rules
+        rulesNnacs = map (\(r,ns,_) -> (r,ns)) rules
 
-    mfstOrderGG <- makeGrammar tg hg rgs rulesNames
+    mfstOrderGG <- makeGrammar tg hg rulesNnacs rulesNames
     case mfstOrderGG of
       Nothing -> showError window "No first-order productions were found, at least one is needed."
       Just fstOrderGG -> do
@@ -1671,28 +1671,64 @@ getParentDiaGraph store pathIndices graphStates = do
                           egi = M.filterWithKey (\k a -> (EdgeId k) `elem` (edgeIds lhs)) $ snd (editorGetGI es)
     else return DG.empty
 
-getRuleList :: Gtk.TreeStore ->  Gtk.TreeIter -> M.Map Int32 (EditorState, ChangeStack, ChangeStack) -> IO [(Graph String String, String)]
-getRuleList model iter gStates = do
-  name <- Gtk.treeModelGetValue model iter 0 >>= fromGValue >>= return . fromJust :: IO String
+type NAC = (Graph Info Info, (M.Map NodeId NodeId, M.Map EdgeId EdgeId))
+
+getNacList :: Gtk.TreeStore
+           -> Gtk.TreeIter
+           -> M.Map Int32 (DiaGraph, MergeMapping, InjectionMapping)
+           -> IO [NAC]
+getNacList model iter nacInfoMap = do
   index <- Gtk.treeModelGetValue model iter 2 >>= fromGValue :: IO Int32
-  res <- case M.lookup index gStates of
+  ans <- case M.lookup index nacInfoMap of
     Nothing -> return []
-    Just (es, _, _) -> return $ [(editorGetGraph es, name)]
+    Just (diag, (nM, eM), (nI, eI)) -> do
+      let nMapping = M.foldrWithKey (\k a m -> M.insert k a m) nI nM
+          eMapping = M.foldrWithKey (\k a m -> M.insert k a m) eI eM
+      print (nMapping, eMapping)
+      return [(fst diag, (nMapping,eMapping))]
   continue <- Gtk.treeModelIterNext model iter
   if continue
     then do
-      rest <- getRuleList model iter gStates
-      return $ res ++ rest
-    else return res
+      rest <- getNacList model iter nacInfoMap
+      return $ ans ++ rest
+    else return ans
 
-getRules :: Gtk.TreeStore -> IORef (M.Map Int32 (EditorState, ChangeStack, ChangeStack)) -> IO [(Graph String String,String)]
-getRules model graphStates = do
+getRuleList :: Gtk.TreeStore
+            ->  Gtk.TreeIter
+            -> M.Map Int32 (EditorState, ChangeStack, ChangeStack)
+            -> IORef (M.Map Int32 (DiaGraph, MergeMapping, InjectionMapping))
+            -> IO [(Graph String String, [NAC], String)]
+getRuleList model iter gStates nacInfoMapIORef = do
+  name <- Gtk.treeModelGetValue model iter 0 >>= fromGValue >>= return . fromJust :: IO String
+  index <- Gtk.treeModelGetValue model iter 2 >>= fromGValue :: IO Int32
+  ans <- case M.lookup index gStates of
+    Nothing -> return []
+    Just (es, _, _) -> do
+      (hasNac,nacIter) <- Gtk.treeModelIterChildren model (Just iter)
+      nacs <- case hasNac of
+        True -> do
+          nacInfoMap <- readIORef nacInfoMapIORef
+          getNacList model nacIter nacInfoMap
+        False -> return []
+      return $ [(editorGetGraph es, nacs, name)]
+  continue <- Gtk.treeModelIterNext model iter
+  if continue
+    then do
+      rest <- getRuleList model iter gStates nacInfoMapIORef
+      return $ ans ++ rest
+    else return ans
+
+getRules :: Gtk.TreeStore
+         -> IORef (M.Map Int32 (EditorState, ChangeStack, ChangeStack))
+         -> IORef (M.Map Int32 (DiaGraph, MergeMapping, InjectionMapping))
+         -> IO [(Graph String String, [NAC], String)]
+getRules model gStatesIORef nacInfoMapIORef = do
   (valid, iter) <- Gtk.treeModelGetIterFromString model "2:0"
   if not valid
     then return []
     else do
-      gStates <- readIORef graphStates
-      getRuleList model iter gStates
+      gStates <- readIORef gStatesIORef
+      getRuleList model iter gStates nacInfoMapIORef
 
 -- update the active typegraph if the corresponding diagraph is valid, set it as empty if not
 updateActiveTG :: IORef EditorState -> IORef (Graph String String) -> IORef (M.Map String (NodeGI, Int32)) -> IORef (M.Map String (EdgeGI, Int32)) -> IO ()

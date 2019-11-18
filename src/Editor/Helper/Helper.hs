@@ -97,7 +97,7 @@ joinElementsFromMapping g (nMapping, eMapping) = fromNodesAndEdges newNodes newE
 
 
 splitNodesLabels :: Graph Info Info -> M.Map NodeId NodeId -> Graph Info Info
--- change elements info according to changes in the mappings
+-- change nodes information according to changes in the node merge mapping
 -- examples:
 --  splitNodesLabels {nodes: [Node 1 "1", Node 2 "2"], edges: []} [(1,1),(2,2)]
 --    should result in {nodes: [Node 1 "1", Node 2 "2"], edges: []}

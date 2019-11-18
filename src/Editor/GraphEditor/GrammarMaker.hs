@@ -30,6 +30,7 @@ import qualified Data.TypedGraph.Morphism as TGM
 
 type RuleGraphs = (Graph String String, Graph String String, Graph String String)
 type TypeGraph a b = Graph (Maybe a) (Maybe b) -- may delete this if import span
+type NAC = (Graph Info Info, (M.Map NodeId NodeId, M.Map EdgeId EdgeId))
 
 nodeToJust :: Node a -> Node (Maybe a)
 nodeToJust = \n -> Node (nodeId n) (Just $ nodeInfo n)
@@ -67,8 +68,15 @@ graphToRuleGraphs g = (lhs, k, rhs)
 formatNac :: TypedGraph String String
           -> TypedGraph String String
           -> (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
-          -> TypedGraphMorphism String String
-formatNac nac lhs (nmap, emap) = nacTgm'
+          -> IO (TypedGraphMorphism String String)
+formatNac nac lhs (nmap, emap) = do
+  putStrLn "---------\nK"
+  print k
+  putStrLn "---------\nnacTgm"
+  print nacTgm
+  putStrLn "---------\nlhsTgm"
+  print lhsTgm
+  return nacTgm'
   where
     -- get the mapped elements from lhs
     knodeIds = M.keys nmap
@@ -83,6 +91,12 @@ formatNac nac lhs (nmap, emap) = nacTgm'
     -- calculate the pushout between them
     (nacTgm',_) = calculatePushout nacTgm lhsTgm
 
+-- getNacPushout nac lhs (nmap, emap)
+-- given two TypedGraphs - nac and lhs
+-- and a tuple of maps of ids - (nmap, emap),
+-- calculate the pushout of nac <- k -> lhs, where
+--  k is the interface between nac and lhs
+--  the pushout is given by two typedGraphMorphisms (tgmNac',tgmLhs')
 getNacPushout :: TypedGraph String String
               -> TypedGraph String String
               -> (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
@@ -101,18 +115,11 @@ getNacPushout nac lhs (nmap, emap) = calculatePushout nacTgm lhsTgm
     nacTgm = TGM.fromGraphsAndLists k nac (M.toList nmap) (M.toList emap)
 
 
-
-
-
 makeTypedGraph :: Graph String String
                -> Graph (Maybe String) (Maybe String)
                -> TG.TypedGraph String String
 makeTypedGraph g tg = fromGraphsAndLists g' tg npairs epairs
   where
-    -- auxiliar functions to define the typedGraph
-    nodeToJust = \n -> Node (nodeId n) (Just $ nodeInfo n)
-    edgeToJust = \e -> Edge (edgeId e) (sourceId e) (targetId e) (Just $ edgeInfo e)
-
     -- auxiliar structs to define the typedGraph
     epairs = map (\(e, et) -> (edgeId e, edgeId et)) .
             filter (\(e,et) -> infoLabel (fromJust $ edgeInfo et) == infoType (edgeInfo e)) $ mkpairs (edges g) (edges tg)
@@ -121,14 +128,19 @@ makeTypedGraph g tg = fromGraphsAndLists g' tg npairs epairs
     g' = fromNodesAndEdges (map nodeToJust (nodes g)) (map edgeToJust (edges g))
 
 
-
-graphToRule :: Graph String String -> TypeGraph String String -> TypedGraphRule String String
-graphToRule ruleGraph typeGraph = Production lhsTgm rhsTgm []
+graphToRule :: Graph String String -- rule graph
+            -> [NAC] -- nac graphs for rules
+            -> TypeGraph String String
+            -> IO (TypedGraphRule String String)
+graphToRule ruleGraph nacs typeGraph = do
+  nmsTgm <- mapM (\(n,m) -> formatNac n lm m) nms
+  return $ Production lhsTgm rhsTgm nmsTgm
   where
     (lhs, k, rhs) = graphToRuleGraphs ruleGraph
     lm = makeTypedGraph lhs typeGraph
     rm = makeTypedGraph rhs typeGraph
     km = makeTypedGraph k typeGraph
+    nms = map (\(n,m) -> (makeTypedGraph n typeGraph, m)) nacs
 
     lhsTgm = TGM.fromGraphsAndLists km lm leftNodeMapping leftEdgeMapping
     rhsTgm = TGM.fromGraphsAndLists km rm rightNodeMapping rightEdgeMapping
@@ -148,13 +160,12 @@ makeTypeGraph g = fromNodesAndEdges nds edgs
     edgs = map (\e -> Edge (edgeId e) (sourceId e) (targetId e) (Just $ edgeInfo e)) $ edges g
 
 
-
-makeGrammar :: Graph String String -> Graph String String -> [Graph String String] -> [String] -> IO (Maybe (Grammar (TGM.TypedGraphMorphism String String)))
+makeGrammar :: Graph Info Info -> Graph Info Info -> [(Graph Info Info, [NAC])] -> [String] -> IO (Maybe (Grammar (TGM.TypedGraphMorphism String String)))
 makeGrammar tg hg rgs rulesNames = do
 
   let typegraph = makeTypeGraph tg
       initGraph = makeTypedGraph hg typegraph
-      productions = map (\r -> graphToRule r typegraph) rgs
+  productions <- mapM (\(r,ns) -> graphToRule r ns typegraph) rgs
 
   ensureValid $ validateNamed (\name -> "Rule '"++name++"'") (zip rulesNames productions)
   if (L.null productions)
