@@ -4,6 +4,7 @@ module Editor.Helper.Helper(
 , joinElementsFromMapping
 , updateEdgeEndsIds
 , splitNodesLabels
+, removeDuplicates
 )
 where
 
@@ -51,9 +52,7 @@ remapElementsWithConflict (g1,(ngi1,egi1)) (g2,(ngi2,egi2)) (nodeMapping, edgeMa
                   (edges g2)
 
 removeDuplicates :: Eq a => [a] -> [a]
-removeDuplicates [] = []
-removeDuplicates (x:xs) = let xs' = filter (\x' -> x' /= x) xs
-                          in x:(removeDuplicates xs')
+removeDuplicates l = foldr (\x xs -> if x `elem` xs then xs else x:xs) [] l
 
 updateNodeId :: NodeId -> M.Map NodeId NodeId -> NodeId
 updateNodeId nid m = Maybe.fromMaybe nid $ M.lookup nid m
@@ -68,23 +67,25 @@ type MergeMapping = (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
 type InjectionMapping = (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
 
 joinElementsFromMapping :: Graph Info Info -> MergeMapping -> Graph Info Info
-joinElementsFromMapping g (nMapping, eMapping) = fromNodesAndEdges newNodes newEdges
-  where nMappingElems = removeDuplicates (M.elems nMapping)
-        eMappingElems = removeDuplicates (M.elems eMapping)
+joinElementsFromMapping g (nM, eM) = fromNodesAndEdges newNodes newEdges
+  where nMExt = foldr (\nid m -> if nid `M.member` m then m else M.insert nid nid m) nM (nodeIds g)
+        eMExt = foldr (\eid m -> if eid `M.member` m then m else M.insert eid eid m) eM (edgeIds g)
+        nMappingElems = removeDuplicates (M.elems nMExt)
+        eMappingElems = removeDuplicates (M.elems eMExt)
         -- 1st: remove nodes not listed
         nodes' = filter (\n -> nodeId n `elem` nMappingElems) (nodes g)
         edges' = map (\e -> Edge (edgeId e)
-                                 (updateNodeId (sourceId e) nMapping)
-                                 (updateNodeId (targetId e) nMapping)
+                                 (updateNodeId (sourceId e) nM)
+                                 (updateNodeId (targetId e) nM)
                                  (edgeInfo e))
                      (edges g)
         -- 2nd: remove edges not listed in the mapping
         edges'' = filter (\e -> edgeId e `elem` eMappingElems) (edges')
         -- 3rd: join elements infos
         nodesInfos = M.fromListWith (\a b -> infoSetLabel a ((infoLabel b) ++ "; " ++ (infoLabel a)))
-                                     $ map (\n -> (updateNodeId (nodeId n) nMapping, nodeInfo n)) (sortBy (\a b -> compare (nodeId a) (nodeId b)) $ nodes g)
+                                     $ map (\n -> (updateNodeId (nodeId n) nM, nodeInfo n)) (sortBy (\a b -> compare (nodeId a) (nodeId b)) $ nodes g)
         edgesInfos = M.fromListWith (\a b -> infoSetLabel a ((infoLabel a) ++ "; " ++ (infoLabel b)))
-                                     $ map (\e -> (updateEdgeId (edgeId e) eMapping, edgeInfo e)) (edges g)
+                                     $ map (\e -> (updateEdgeId (edgeId e) eM, edgeInfo e)) (edges g)
         newNodes = map (\n -> let nid = nodeId n
                               in Node nid (Maybe.fromMaybe (nodeInfo n) $ M.lookup nid nodesInfos))
                        nodes'
