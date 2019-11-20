@@ -12,12 +12,8 @@ Tarefas ---------------------------------------------------------------------
 *permitir que o usuário escolha como será vista a regra (formato L->R, ou L<-K->R)
 *permitir a reordenação das regras por drag n' drop
 *criação e associação de NACs.
-  - modificar informações visuais quando fizer merging dos elementos do lhs
-    - arestas retas devem ter posição modificada para não ficarem atrás dos nodos
-    - nodos devem ter tamanho modificado para englobar texto
-    - modificações de posiciconamento devem ser preservadas
-
-
+  - descobrir o que está acontecendo e arrumar no caso do merging quando temos
+      {nodes:[1(lhs),2(lhs),3(lhs),4], edges:[(1,1,2)(lhs),(2,2,3)(lhs),(3,1,4),(4,2,4),(5,3,4)]}
 
 Ideias -------------------------------------------------------------------------
 *criação de nodos através de clique duplo em um espaço em branco
@@ -34,8 +30,7 @@ Progresso -------------------------------------------------------------------
   - concatenação de elementos do lhs na nac.
     - checar se as arestas a serem concatenadas têm as mesmas origens e destinos.
     - verificar os tipos dos elementos a serem concatenados.
-  - separação de elementos concatenados
-    - recuperar nome correto do elemento
+    - undo e redo devem incluir os mapeamentos
 
 
 

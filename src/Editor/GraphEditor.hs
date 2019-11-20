@@ -873,6 +873,17 @@ startGUI = do
     gtype <- readIORef currentGraphType
     case gtype of
       4 -> do
+        -- remove elements from nacg
+        index <- readIORef currentGraph
+        nacInfoMap <- readIORef nacInfoMapIORef
+        let ((nacg,nacgi), mapping) = fromJust $ M.lookup index nacInfoMap
+            selected = editorGetSelected es
+            nacES = editorSetSelected selected . editorSetGraph nacg . editorSetGI nacgi $ emptyES
+            nacES' = deleteSelected nacES
+            nacg' = editorGetGraph nacES'
+            nacgi' = editorGetGI nacES'
+        modifyIORef nacInfoMapIORef $ M.insert index ((nacg',nacgi'), mapping)
+        -- add mergeMapping information to undo stack
         mergeM <- readIORef mergeMappingIORef
         stackUndo undoStack redoStack es mergeM
       _ -> stackUndo undoStack redoStack es Nothing
@@ -884,42 +895,50 @@ startGUI = do
 
   -- undo
   on udo #activate $ do
+    -- apply undo
     applyUndo undoStack redoStack st mergeMappingIORef
+    -- reset nac diagraph
+    index <- readIORef currentGraph
+    gtype <- readIORef currentGraphType
+    es <- readIORef st
+    let (g,gi) = (editorGetGraph es, editorGetGI es)
+    if gtype /= 4
+      then return ()
+      else do
+        mergeMapping <- readIORef mergeMappingIORef
+        path <- readIORef currentPath
+        lhsdg <- getParentDiaGraph store path graphStates
+        let nacdg' = diagrSubtract (g,gi) lhsdg
+            um = fromMaybe (M.empty,M.empty) mergeMapping
+        modifyIORef nacInfoMapIORef (M.insert index (nacdg', um))
     -- indicate changes
     sst <- readIORef lastSavedState
-    index <- readIORef currentGraph
-    es <- readIORef st
-    nacInfoMap <- readIORef nacInfoMapIORef
-    mergeMapping <- readIORef mergeMappingIORef
-    let (g,gi) = (editorGetGraph es, editorGetGI es)
-        x = fromMaybe DG.empty $ M.lookup index sst
-        (nacdg, _) = fromMaybe (DG.empty, (M.empty, M.empty)) $ M.lookup index nacInfoMap
-    case mergeMapping of
-      Nothing -> return ()
-      Just m -> do
-        print m
-        modifyIORef nacInfoMapIORef (M.insert index (nacdg, m))
+    let x = fromMaybe DG.empty $ M.lookup index sst
     setChangeFlags window store changedProject changedGraph currentPath currentGraph $ not (isDiaGraphEqual (g,gi) x)
     Gtk.widgetQueueDraw canvas
     updateByType
 
   -- redo
   on rdo #activate $ do
+    -- apply redo
     applyRedo undoStack redoStack st mergeMappingIORef
+    -- change nac diagraph
+    index <- readIORef currentGraph
+    gtype <- readIORef currentGraphType
+    es <- readIORef st
+    let (g,gi) = (editorGetGraph es, editorGetGI es)
+    if gtype /= 4
+      then return ()
+      else do
+        mergeMapping <- readIORef mergeMappingIORef
+        path <- readIORef currentPath
+        lhsdg <- getParentDiaGraph store path graphStates
+        let nacdg' = diagrSubtract (g,gi) lhsdg
+            rm = fromMaybe (M.empty,M.empty) mergeMapping
+        modifyIORef nacInfoMapIORef (M.insert index (nacdg', rm))
     -- indicate changes
     sst <- readIORef lastSavedState
-    index <- readIORef currentGraph
-    es <- readIORef st
-    nacInfoMap <- readIORef nacInfoMapIORef
-    mergeMapping <- readIORef mergeMappingIORef
-    let (g,gi) = (editorGetGraph es, editorGetGI es)
-        x = fromMaybe DG.empty $ M.lookup index sst
-        (nacdg, _) = fromMaybe (DG.empty, (M.empty, M.empty)) $ M.lookup index nacInfoMap
-    case mergeMapping of
-      Nothing -> return ()
-      Just m -> do
-        print m
-        modifyIORef nacInfoMapIORef (M.insert index (nacdg, m))
+    let x = fromMaybe DG.empty $ M.lookup index sst
     setChangeFlags window store changedProject changedGraph currentPath currentGraph $ not (isDiaGraphEqual (g,gi) x)
     Gtk.widgetQueueDraw canvas
     updateByType
