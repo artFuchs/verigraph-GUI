@@ -607,13 +607,6 @@ startGUI = do
                 modifyIORef st (editorSetGraph g' . editorSetGI gi' . editorSetSelected ([maxNID], [maxEID]))
                 stackUndo undoStack redoStack es (Just (nM,eM))
                 Gtk.widgetQueueDraw canvas
-                putStrLn "----- Merging -----"
-                putStr "Mapping: "
-                print (nM,eM)
-                putStr "Modified Mapping: "
-                print (nM',eM')
-                putStrLn "nac graph"
-                print nacg'
 
       (True,True,'m') -> do
         gtype <- readIORef currentGraphType
@@ -653,16 +646,6 @@ startGUI = do
             modifyIORef st (editorSetSelected (newNids, newEids) . editorSetGraph g' . editorSetGI gi')
             stackUndo undoStack redoStack es (Just (nM,eM))
             Gtk.widgetQueueDraw canvas
-            putStrLn "----- Spliting -----"
-            putStr "mapping: "
-            print (nM, eM)
-            putStr "modified mapping: "
-            print (nM', eM')
-            putStr "selected elements: "
-            print (snids,seids)
-            putStrLn "nac graph"
-            print $ fst nacdg'
-
       _ -> return ()
     return True
 
@@ -706,7 +689,7 @@ startGUI = do
                                 Gtk.ResponseTypeNo -> return True
                                 Gtk.ResponseTypeYes -> do
                                   storeCurrentES
-                                  structs <- getStructsToSave store graphStates
+                                  structs <- getStructsToSave store graphStates nacInfoMapIORef
                                   saveFile structs saveProject fileName window True -- returns True if saved the file
 
   -- new project action activated
@@ -751,21 +734,23 @@ startGUI = do
                               TypeGraph name es -> ((name,0,i,1,True), (1, (i,(es,[],[]))))
                               HostGraph name es -> ((name,0,i,2,True), (2, (i,(es,[],[]))))
                               RuleGraph name es a -> ((name,0,i,3,a), (3, (i,(es,[],[]))))
+                              NacGraph name _ -> ((name,0,i,4,True), (4,(i,emptyGSt)))
+                let toNACInfos n i = case n of
+                              NacGraph name nacInfo -> (i,nacInfo)
+                              _ -> (0,(DG.empty,(M.empty,M.empty)))
                     idForest = genForestIds forest 0
                     infoForest = zipWith (mzipWith toGSandStates) forest idForest
                     nameForest = map (fmap fst) infoForest
                     statesForest = map (fmap snd) infoForest
                     statesList = map snd . filter (\st -> fst st /= 0) . concat . map Tree.flatten $ statesForest
-
-                let putInStore (Tree.Node (name,c,i,t,a) fs) mparent =
+                    nacInfos = filter (\ni -> fst ni /= 0). concat . map Tree.flatten $ zipWith (mzipWith toNACInfos) forest idForest
+                let putInStore (Tree.Node (name,c,i,t,a) fs) mparent = do
+                        iter <- Gtk.treeStoreAppend store mparent
+                        storeSetGraphStore store iter (name,c,i,t,a,True)
                         case t of
-                          0 -> do iter <- Gtk.treeStoreAppend store mparent
-                                  storeSetGraphStore store iter (name,c,i,t,a,True)
-                                  mapM (\n -> putInStore n (Just iter)) fs
-                                  return ()
-                          _ -> do iter <- Gtk.treeStoreAppend store mparent
-                                  storeSetGraphStore store iter (name,c,i,t,a,True)
-                                  return ()
+                          0 -> mapM_ (\n -> putInStore n (Just iter)) fs
+                          3 -> mapM_ (\n -> putInStore n (Just iter)) fs
+                          _ -> return ()
                 mapM (\n -> putInStore n Nothing) nameForest
                 let (i,(es, _,_)) = if length statesList > 0 then statesList!!0 else (0,(emptyES,[],[]))
                 writeIORef st es
@@ -776,6 +761,8 @@ startGUI = do
                 writeIORef currentGraph i
                 writeIORef currentPath [0]
                 writeIORef currentGraphType 1
+                writeIORef mergeMappingIORef Nothing
+                writeIORef nacInfoMapIORef $ M.fromList nacInfos
                 p <- Gtk.treePathNewFromIndices [0]
                 Gtk.treeViewExpandToPath treeview p
                 Gtk.treeViewSetCursor treeview p namesCol False
@@ -787,7 +774,7 @@ startGUI = do
   -- save project
   on svn #activate $ do
     storeCurrentES
-    structs <- getStructsToSave store graphStates
+    structs <- getStructsToSave store graphStates nacInfoMapIORef
     saved <- saveFile structs saveProject fileName window True
     if saved
       then do afterSave
@@ -796,7 +783,7 @@ startGUI = do
   -- save project as
   sva `on` #activate $ do
     storeCurrentES
-    structs <- getStructsToSave store graphStates
+    structs <- getStructsToSave store graphStates nacInfoMapIORef
     saved <- saveFileAs structs saveProject fileName window True
     if saved
       then afterSave
@@ -1687,34 +1674,46 @@ getTreeStoreValues store iter = do
   valN <- Gtk.treeModelGetValue store iter 0 >>= (\n -> fromGValue n :: IO (Maybe String)) >>= return . fromJust
   valI <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
   valA <- Gtk.treeModelGetValue store iter 4 >>= fromGValue :: IO Bool
-  case valT of
-    -- Topic
-    0 -> do (valid, childIter) <- Gtk.treeModelIterChildren store (Just iter)
-            subForest <- if valid
-                          then getTreeStoreValues store childIter
-                          else return []
-            continue <- Gtk.treeModelIterNext store iter
-            if continue
-              then do
-                newVals <- getTreeStoreValues store iter
-                return $ (Tree.Node (valT, (valN, valI, valA)) subForest) : newVals
-              else return $ (Tree.Node (valT, (valN, valI, valA)) subForest) : []
-    -- Graphs
-    _ -> do continue <- Gtk.treeModelIterNext store iter
-            if continue
-              then do
-                newVals <- getTreeStoreValues store iter
-                return $ (Tree.Node (valT, (valN, valI, valA)) []) : newVals
-              else return $ (Tree.Node (valT, (valN, valI, valA)) []) : []
+  (valid, childIter) <- Gtk.treeModelIterChildren store (Just iter)
+  subForest <- case valid of
+                True -> getTreeStoreValues store childIter
+                False -> return []
+  continue <- Gtk.treeModelIterNext store iter
+  if continue
+    then do
+      newVals <- getTreeStoreValues store iter
+      return $ (Tree.Node (valT, (valN, valI, valA)) subForest) : newVals
+    else return $ (Tree.Node (valT, (valN, valI, valA)) subForest) : []
+  --
+  -- case valT of
+  --   -- Topic
+  --   0 -> do (valid, childIter) <- Gtk.treeModelIterChildren store (Just iter)
+  --           subForest <- if valid
+  --                         then getTreeStoreValues store childIter
+  --                         else return []
+  --           continue <- Gtk.treeModelIterNext store iter
+  --           if continue
+  --             then do
+  --               newVals <- getTreeStoreValues store iter
+  --               return $ (Tree.Node (valT, (valN, valI, valA)) subForest) : newVals
+  --             else return $ (Tree.Node (valT, (valN, valI, valA)) subForest) : []
+  --   -- Graphs
+  --   _ -> do continue <- Gtk.treeModelIterNext store iter
+  --           if continue
+  --             then do
+  --               newVals <- getTreeStoreValues store iter
+  --               return $ (Tree.Node (valT, (valN, valI, valA)) []) : newVals
+  --             else return $ (Tree.Node (valT, (valN, valI, valA)) []) : []
 
-getStructsToSave :: Gtk.TreeStore -> IORef (M.Map Int32 (EditorState, ChangeStack, ChangeStack))-> IO (Tree.Forest SaveInfo)
-getStructsToSave store graphStates = do
+getStructsToSave :: Gtk.TreeStore -> IORef (M.Map Int32 (EditorState, ChangeStack, ChangeStack))-> IORef (M.Map Int32 (DiaGraph,MergeMapping))-> IO (Tree.Forest SaveInfo)
+getStructsToSave store graphStates nacInfoMapIORef = do
   (valid, fstIter) <- Gtk.treeModelGetIterFirst store
   if not valid
     then return []
     else do
       treeNodeList <- getTreeStoreValues store fstIter
       states <- readIORef graphStates
+      nacInfoMap <- readIORef nacInfoMapIORef
       let structs = map
                     (fmap (\(t, (name, nid, active)) -> case t of
                                 0 -> Topic name
@@ -1724,6 +1723,8 @@ getStructsToSave store graphStates = do
                                      in HostGraph name es
                                 3 -> let (es,_,_) = fromJust $ M.lookup nid states
                                      in RuleGraph name es active
+                                4 -> let (nacdg,mapping) = fromJust $ M.lookup nid nacInfoMap
+                                     in NacGraph name (nacdg,mapping)
                     )) treeNodeList
       return structs
 

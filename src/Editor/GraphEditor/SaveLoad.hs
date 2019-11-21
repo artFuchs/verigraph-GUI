@@ -28,16 +28,19 @@ import Editor.GraphEditor.GrammarMaker
 import Category.TypedGraphRule (RuleMorphism)
 import Rewriting.DPO.TypedGraph
 import Editor.Data.Info
+import qualified Data.Map as M
 --------------------------------------------------------------------------------
 -- structs ---------------------------------------------------------------------
 
 type NList = [(Int,String)]
 type EList = [(Int,Int,Int,String)]
-data SaveInfo = Topic String | TypeGraph String EditorState | HostGraph String EditorState | RuleGraph String EditorState Bool deriving (Show)
+type NACInfo = ((Graph String String,GraphicalInfo), (M.Map NodeId NodeId, M.Map EdgeId EdgeId))
+data SaveInfo = Topic String | TypeGraph String EditorState | HostGraph String EditorState | RuleGraph String EditorState Bool | NacGraph String NACInfo deriving (Show)
 data UncompressedSaveInfo = T String
                           | TG String NList EList GraphicalInfo
                           | HG String NList EList GraphicalInfo
                           | RG String NList EList GraphicalInfo Bool
+                          | NG String NList EList [(Int,Int)] [(Int,Int)] GraphicalInfo
                           deriving (Show, Read)
 --------------------------------------------------------------------------------
 -- functions -------------------------------------------------------------------
@@ -102,14 +105,18 @@ saveGraph (g,gi) path = do
 
 saveProject :: Tree.Forest SaveInfo -> String -> IO Bool
 saveProject saveInfo path = do
-  let nodeContents es = map (\(Node nid info) -> (fromEnum nid, info)) (nodes $ editorGetGraph es)
-      edgeContents es = map (\(Edge eid srcid tgtid info) -> (fromEnum eid, fromEnum srcid, fromEnum tgtid, info)) (edges $ editorGetGraph es)
+  let nodeContents g = map (\(Node nid info) -> (fromEnum nid, info)) (nodes g)
+      edgeContents g = map (\(Edge eid srcid tgtid info) -> (fromEnum eid, fromEnum srcid, fromEnum tgtid, info)) (edges g)
+      nodeContents' es = nodeContents (editorGetGraph es)
+      edgeContents' es = edgeContents (editorGetGraph es)
+      toIntPairs m = map (\(a,b) -> (fromEnum a, fromEnum b)) $ M.toList m
       contents =  map
                   (fmap (\node -> case node of
                                       Topic name -> T name
-                                      TypeGraph name es -> TG name (nodeContents es) (edgeContents es) (editorGetGI es)
-                                      HostGraph name es -> HG name (nodeContents es) (edgeContents es) (editorGetGI es)
-                                      RuleGraph name es a -> RG name (nodeContents es) (edgeContents es) (editorGetGI es) a))
+                                      TypeGraph name es -> TG name (nodeContents' es) (edgeContents' es) (editorGetGI es)
+                                      HostGraph name es -> HG name (nodeContents' es) (edgeContents' es) (editorGetGI es)
+                                      RuleGraph name es a -> RG name (nodeContents' es) (edgeContents' es) (editorGetGI es) a
+                                      NacGraph name ((g,gi),(nm,em)) -> NG name (nodeContents g) (edgeContents g) (toIntPairs nm) (toIntPairs em) gi))
                   saveInfo
       writeProject = writeFile path $ show contents
   saveTry <- E.try (writeProject)  :: IO (Either E.IOException ())
@@ -180,6 +187,8 @@ loadProject content = loadedTree
       _ -> Nothing
     genNodes = map (\(nid, info) -> Node (NodeId nid) info)
     genEdges = map (\(eid, src, dst, info) -> Edge (EdgeId eid) (NodeId src) (NodeId dst) info)
+    genNodeMap = M.fromList . map (\(n1,n2) -> (NodeId n1, NodeId n2))
+    genEdgeMap = M.fromList . map (\(e1,e2) -> (EdgeId e1, EdgeId e2))
     compress = map
                (fmap
                   (\node -> case node of
@@ -193,4 +202,9 @@ loadProject content = loadedTree
                               RG name nlist elist gi a -> let g = fromNodesAndEdges (genNodes nlist) (genEdges elist)
                                                               es = editorSetGI gi . editorSetGraph g $ emptyES
                                                           in RuleGraph name es a
+                              NG name nlist elist nmap emap gi -> let g = fromNodesAndEdges (genNodes nlist) (genEdges elist)
+                                                                      nm' = genNodeMap nmap
+                                                                      em' = genEdgeMap emap
+                                                                  in NacGraph name ((g,gi),(nm',em'))
+
                   ) )

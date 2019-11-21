@@ -11,9 +11,6 @@ Tarefas ---------------------------------------------------------------------
 *Quando editar o nome de uma aresta ou nodo no grafo de tipos, fazer update em todos os grafos que usam o objeto
 *permitir que o usuário escolha como será vista a regra (formato L->R, ou L<-K->R)
 *permitir a reordenação das regras por drag n' drop
-*criação e associação de NACs.
-  - descobrir o que está acontecendo e arrumar no caso do merging quando temos
-      {nodes:[1(lhs),2(lhs),3(lhs),4], edges:[(1,1,2)(lhs),(2,2,3)(lhs),(3,1,4),(4,2,4),(5,3,4)]}
 
 Ideias -------------------------------------------------------------------------
 *criação de nodos através de clique duplo em um espaço em branco
@@ -31,6 +28,8 @@ Progresso -------------------------------------------------------------------
     - checar se as arestas a serem concatenadas têm as mesmas origens e destinos.
     - verificar os tipos dos elementos a serem concatenados.
     - undo e redo devem incluir os mapeamentos
+  - salvar/carregar nacs
+    - corrigir problema de os tipos no nacg não serem atualizados quando o usuario muda-os
 
 
 
