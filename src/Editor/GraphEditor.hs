@@ -598,10 +598,7 @@ startGUI = do
                     ePairs = foldr (\e eps -> (e,maxEID):eps) [] (map edgeId edgesToMerge'')
                     eM' = foldr (\(a,b) m -> M.insert a b m) eM ePairs
                     -- add the necessary elements to the nacg
-                    nodesNac = foldr (\n ns -> if (nodeId n) `elem` (map nodeId ns) then ns else n:ns) (nodes nacg) (filter (\n -> nodeId n `elem` (M.elems nM')) nodesToMerge)
-                    edgesNac' = foldr (\e es -> if (edgeId e) `elem` (map edgeId es) then es else e:es) (edges nacg) (filter (\e -> edgeId e `elem` (M.elems eM')) edgesToMerge)
-                    edgesNac = map (\e -> updateEdgeEndsIds e nM) edgesNac'
-                    nacg' = fromNodesAndEdges nodesNac edgesNac'
+                    nacg' = createNACGFromMapping g (nM',eM')
                     nacInfoMap' = ((nacg', nacgi), (nM', eM'))
                 modifyIORef nacInfoMapIORef (M.insert gid nacInfoMap')
                 -- remount nacGraph
@@ -610,11 +607,14 @@ startGUI = do
                 modifyIORef st (editorSetGraph g' . editorSetGI gi' . editorSetSelected ([maxNID], [maxEID]))
                 stackUndo undoStack redoStack es (Just (nM,eM))
                 Gtk.widgetQueueDraw canvas
-                putStrLn "Merging"
+                putStrLn "----- Merging -----"
                 putStr "Mapping: "
                 print (nM,eM)
                 putStr "Modified Mapping: "
                 print (nM',eM')
+                putStrLn "nac graph"
+                print nacg'
+
       (True,True,'m') -> do
         gtype <- readIORef currentGraphType
         if (gtype /= 4)
@@ -625,16 +625,14 @@ startGUI = do
             nacInfoMap <- readIORef nacInfoMapIORef
             es <- readIORef st
             let (snids, seids) = editorGetSelected es
+                g = editorGetGraph es
                 ((nacg, nacgi), (nM,eM)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup gid nacInfoMap
             -- remove nacg edges that are selected from mapping
             let eM' = M.filterWithKey (\k a -> a `notElem` seids) eM
                 -- remove nacg nodes that are selected and don't have incident edges from the mapping
                 hasIncidentEdges nid = length (incidentEdges . snd . fromJust $ lookupNodeInContext nid nacg) > 0
                 nM' = M.filterWithKey (\k a -> a `notElem` snids || (k==a && hasIncidentEdges a)) nM
-                -- remove elements from nacg that where in the mapping and aren't anymore
-                nacg'nodes = filter (\n -> nodeId n `notElem` (M.elems nM) || nodeId n `elem` (M.elems nM')) (nodes nacg)
-                nacg'edges = filter (\e -> edgeId e `notElem` (M.elems eM) || edgeId e `elem` (M.elems eM')) (edges nacg)
-                nacg' = fromNodesAndEdges nacg'nodes nacg'edges
+                nacg' = createNACGFromMapping g (nM',eM')
                 nacgi'nodes = M.filterWithKey (\k a -> NodeId k `notElem` (M.elems nM) || NodeId k `elem` (M.elems nM')) (fst nacgi)
                 nacgi'edges = M.filterWithKey (\k a -> EdgeId k `notElem` (M.elems eM) || EdgeId k `elem` (M.elems eM')) (snd nacgi)
                 nacgi' = (nacgi'nodes,nacgi'edges)
@@ -655,13 +653,15 @@ startGUI = do
             modifyIORef st (editorSetSelected (newNids, newEids) . editorSetGraph g' . editorSetGI gi')
             stackUndo undoStack redoStack es (Just (nM,eM))
             Gtk.widgetQueueDraw canvas
-            putStrLn "Spliting"
+            putStrLn "----- Spliting -----"
             putStr "mapping: "
             print (nM, eM)
             putStr "modified mapping: "
             print (nM', eM')
-            putStrLn "selected elements: "
+            putStr "selected elements: "
             print (snids,seids)
+            putStrLn "nac graph"
+            print $ fst nacdg'
 
       _ -> return ()
     return True
@@ -727,6 +727,8 @@ startGUI = do
         writeIORef lastSavedState M.empty
         writeIORef changedProject False
         writeIORef changedGraph [False]
+        writeIORef nacInfoMapIORef M.empty
+        writeIORef mergeMappingIORef Nothing
         set window [#title := "Verigraph-GUI"]
         Gtk.widgetQueueDraw canvas
       else return ()
@@ -1438,8 +1440,6 @@ startGUI = do
                 (nG,gi) <- case M.lookup index $ nacInfoMap of
                   Nothing -> return (ruleLG,lhsgi)
                   Just (nacdg,(nM,eM)) -> do
-                    let nodeM = foldr (\n m -> if M.notMember n m then M.insert n n m else m) nM (nodeIds ruleLG)
-                        edgeM = foldr (\n m -> if M.notMember n m then M.insert n n m else m) eM (edgeIds ruleLG)
                     writeIORef mergeMappingIORef $ Just (nM,eM)
                     case (G.null $ fst nacdg) of
                       True -> return (ruleLG, lhsgi)

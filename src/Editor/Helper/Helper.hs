@@ -5,6 +5,7 @@ module Editor.Helper.Helper(
 , updateEdgeEndsIds
 , splitNodesLabels
 , removeDuplicates
+, createNACGFromMapping
 )
 where
 
@@ -64,7 +65,6 @@ updateEdgeEndsIds :: Edge a -> M.Map NodeId NodeId -> Edge a
 updateEdgeEndsIds e m = Edge (edgeId e) (updateNodeId (sourceId e) m) (updateNodeId (targetId e) m) (edgeInfo e)
 
 type MergeMapping = (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
-type InjectionMapping = (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
 
 joinElementsFromMapping :: Graph Info Info -> MergeMapping -> Graph Info Info
 joinElementsFromMapping g (nM, eM) = fromNodesAndEdges newNodes newEdges
@@ -116,3 +116,16 @@ splitNodesLabels g nodeMapping = fromNodesAndEdges newNodes (edges g)
                               then Node (nodeId n) (infoSetLabel (nodeInfo n) $ getLastLabel lbl)
                               else n)
                      $ nodes g
+
+
+createNACGFromMapping :: Graph Info Info -> MergeMapping -> Graph Info Info
+createNACGFromMapping g (nM, eM) = fromNodesAndEdges nacNodes nacEdges
+  where
+    lhsNodes = filter (\n -> infoLocked (nodeInfo n)) (nodes g)
+    lhsSelectedNodes = filter (\n -> nodeId n `elem` (M.elems nM)) lhsNodes
+    addedNodes = filter (\n -> not $ infoLocked (nodeInfo n)) (nodes g)
+    nacNodes = lhsSelectedNodes ++ addedNodes
+    lhsEdges = filter (\e -> infoLocked (edgeInfo e)) (edges g)
+    lhsSelectedEdges = filter (\e -> edgeId e `elem` (M.elems eM)) lhsEdges
+    addedEdges = filter (\e -> not $ infoLocked (edgeInfo e)) (edges g)
+    nacEdges = map (\e -> updateEdgeEndsIds e nM) (lhsSelectedEdges ++ addedEdges)
