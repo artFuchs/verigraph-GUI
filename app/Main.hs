@@ -29,6 +29,7 @@ Progresso -------------------------------------------------------------------
     - verificar os tipos dos elementos a serem concatenados.
     - undo e redo devem incluir os mapeamentos
   - salvar/carregar nacs
+    - corrigir problema do programa fechar quando os elementos do nacg forem carregados com tipagem errada
     - corrigir problema de os tipos no nacg não serem atualizados quando o usuario muda-os
 
 

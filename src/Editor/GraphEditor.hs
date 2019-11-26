@@ -1290,15 +1290,28 @@ startGUI = do
               if index == (-1)
                 then return ()
                 else do
-                  es <- readIORef st
                   typeInfo <- Gtk.comboBoxTextGetActiveText comboBox >>= return . T.unpack
                   typeGI <- readIORef possibleNodeTypes >>= return . fst . fromJust . M.lookup typeInfo
+                  es <- readIORef st
                   let (sNids,sEids) = editorGetSelected es
                       g = editorGetGraph es
+                      acceptableSNids = filter (\nid -> case lookupNode nid g of
+                                                          Nothing -> False
+                                                          Just n -> not $ infoLocked (nodeInfo n)) sNids
                       giM = editorGetGI es
-                      newGraph = foldl (\g nid -> updateNodePayload nid g (\info -> infoSetType info typeInfo)) g sNids
-                      newNGI = foldl (\gi nid -> let ngi = getNodeGI (fromEnum nid) gi
-                                                 in M.insert (fromEnum nid) (nodeGiSetPosition (position ngi) . nodeGiSetDims (dims ngi) $ typeGI) gi) (fst giM) sNids
+                      newGraph = foldr (\nid g -> updateNodePayload nid g (\info -> infoSetType info typeInfo)) g acceptableSNids
+                      newNGI = foldr (\nid gi -> let ngi = getNodeGI (fromEnum nid) gi
+                                                 in M.insert (fromEnum nid) (nodeGiSetPosition (position ngi) . nodeGiSetDims (dims ngi) $ typeGI) gi) (fst giM) acceptableSNids
+                  case t of
+                    4 -> do
+                      nacInfoMap <- readIORef nacInfoMapIORef
+                      index <- readIORef currentGraph
+                      let ((ng,ngiM), nacM) = fromJust $ M.lookup index nacInfoMap
+                          newNG = foldr (\nid g -> if nid `elem` nodeIds g then updateNodePayload nid g (\info -> infoSetType info typeInfo) else g) ng acceptableSNids
+                          newNacNGI = M.foldrWithKey (\k n giM -> if k `elem` (M.keys giM) then M.insert k n giM else giM) (fst ngiM) newNGI
+                          newNacdg = (newNG, (newNacNGI, snd ngiM))
+                      modifyIORef nacInfoMapIORef $ M.insert index (newNacdg, nacM)
+                    _ -> return ()
                   writeIORef st (editorSetGI (newNGI, snd giM) . editorSetGraph newGraph $ es)
                   writeIORef currentNodeType $ Just typeInfo
                   Gtk.widgetQueueDraw canvas
@@ -1322,11 +1335,24 @@ startGUI = do
                   typeGI <- readIORef possibleEdgeTypes >>= return . fst . fromJust . M.lookup typeInfo
                   let (sNids,sEids) = editorGetSelected es
                       g = editorGetGraph es
+                      acceptableSEids = filter (\eid -> case lookupEdge eid g of
+                                                          Nothing -> False
+                                                          Just e -> not $ infoLocked (edgeInfo e)) sEids
                       giM = editorGetGI es
                       newEGI = foldl (\gi eid -> let egi = getEdgeGI (fromEnum eid) gi
-                                                 in M.insert (fromEnum eid) (edgeGiSetPosition (cPosition egi) typeGI) gi) (snd giM) sEids
+                                                 in M.insert (fromEnum eid) (edgeGiSetPosition (cPosition egi) typeGI) gi) (snd giM) acceptableSEids
                       newGI = (fst giM, newEGI)
-                      newGraph = foldl (\g eid -> updateEdgePayload eid g (\info -> infoSetType info typeInfo)) g sEids
+                      newGraph = foldl (\g eid -> updateEdgePayload eid g (\info -> infoSetType info typeInfo)) g acceptableSEids
+                  case t of
+                    4 -> do
+                      nacInfoMap <- readIORef nacInfoMapIORef
+                      index <- readIORef currentGraph
+                      let ((ng,ngiM), nacM) = fromJust $ M.lookup index nacInfoMap
+                          newNG = foldr (\eid g -> if eid `elem` edgeIds g then updateEdgePayload eid g (\info -> infoSetType info typeInfo) else g) ng acceptableSEids
+                          newNacEGI = M.foldrWithKey (\k e giM -> if k `elem` (M.keys giM) then M.insert k e giM else giM) (snd ngiM) newEGI
+                          newNacdg = (newNG, (fst ngiM, newNacEGI))
+                      modifyIORef nacInfoMapIORef $ M.insert index (newNacdg, nacM)
+                    _ -> return ()
                   writeIORef st (editorSetGI newGI . editorSetGraph newGraph $ es)
                   writeIORef currentEdgeType $ Just typeInfo
                   Gtk.widgetQueueDraw canvas
@@ -1420,21 +1446,43 @@ startGUI = do
             case maybeState of
               Just (es,u,r) -> do
                 tg <- readIORef activeTypeGraph
+                -- load lhs diagraph
                 (lhsg,lhsgi) <- getParentDiaGraph store path graphStates
-                nacInfoMap <- readIORef nacInfoMapIORef
                 let ruleLGNodesLock = foldr (\n g -> G.updateNodePayload n g (\info -> infoSetLocked info True)) lhsg (nodeIds lhsg)
                     ruleLG = foldr (\e g -> G.updateEdgePayload e g (\info -> infoSetLocked info True)) ruleLGNodesLock (edgeIds lhsg)
-                (nG,gi) <- case M.lookup index $ nacInfoMap of
-                  Nothing -> return (ruleLG,lhsgi)
-                  Just (nacdg,(nM,eM)) -> do
-                    writeIORef mergeMappingIORef $ Just (nM,eM)
-                    case (G.null $ fst nacdg) of
-                      True -> return (ruleLG, lhsgi)
-                      False -> return $ joinNAC (nacdg,(nM,eM)) (ruleLG, lhsgi) tg
-                writeIORef st $ editorSetGI gi . editorSetGraph nG $ es
-                writeIORef undoStack u
-                writeIORef redoStack r
-                writeIORef currentGraph index
+                    lhsIsValid = isGraphValid ruleLG tg
+
+                case lhsIsValid of
+                  False -> showError window "Parent rule have type errors. Please, correct then before loading nacGraph."
+                  True -> do
+                    -- load nac' diagraph
+                    nacInfoMap <- readIORef nacInfoMapIORef
+                    (nG,gi) <- case M.lookup index $ nacInfoMap of
+                      Nothing -> return (ruleLG,lhsgi) -- if the nac' diagraph is not found, then the nac is just the lhs
+                      Just (nacdg,(nM,eM)) -> do
+                        writeIORef mergeMappingIORef $ Just (nM,eM)
+                        case (G.null $ fst nacdg) of
+                          True -> return (ruleLG, lhsgi) -- if there's no nac' diagraph, then the nac is just the lhs
+                          False -> do
+                            let nacValid = isGraphValid (fst nacdg) tg
+                            case nacValid of -- if there's a nac' diagraph, check if the graph is correct
+                              True -> return $ joinNAC (nacdg,(nM,eM)) (ruleLG, lhsgi) tg
+                              False -> do -- remove all the
+                                let validG = correctTypeGraph (fst nacdg) tg
+                                    validNids = foldr (\n ns -> if nodeInfo n then (nodeId n):ns else ns) [] (nodes validG)
+                                    validEids = foldr (\e es -> if edgeInfo e then (edgeId e):es else es) [] (edges validG)
+                                    newNodes = filter (\n -> nodeId n `elem` validNids) (nodes $ fst nacdg)
+                                    newEdges = filter (\e -> edgeId e `elem` validEids) (edges $ fst nacdg)
+                                    newNG = fromNodesAndEdges newNodes newEdges
+                                    newNNGI = M.filterWithKey (\k a -> NodeId k `elem` validNids) (fst . snd $ nacdg)
+                                    newNEGI = M.filterWithKey (\k a -> EdgeId k `elem` validEids) (snd . snd $ nacdg)
+                                    newNacdg = (newNG,(newNNGI, newNEGI))
+                                modifyIORef nacInfoMapIORef $ M.insert index (newNacdg, (nM,eM))
+                                return $ joinNAC (newNacdg, (nM,eM)) (ruleLG, lhsgi) tg
+                    writeIORef st $ editorSetGI gi . editorSetGraph nG $ es
+                    writeIORef undoStack u
+                    writeIORef redoStack r
+                    writeIORef currentGraph index
               Nothing -> return ()
 
           (False, _) -> do
