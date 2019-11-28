@@ -551,9 +551,19 @@ startGUI = do
     case (Gdk.ModifierTypeControlMask `elem` ms, Gdk.ModifierTypeShiftMask `elem` ms, toLower k) of
       -- F2 - rename selection
       (False,False,'\65471') -> Gtk.widgetGrabFocus nameEntry
-      (True,False,'p') -> do -- Gtk.menuItemActivate orv
-        es <- readIORef st
-        print $ editorGetGraph es
+      (True,False,'p') -> do
+        gtype <- readIORef currentGraphType
+        if (gtype /= 4)
+          then return ()
+          else do
+            index <- readIORef currentGraph
+            nacInfoMap <- readIORef nacInfoMapIORef
+            case M.lookup index nacInfoMap of
+              Nothing -> putStrLn "nac info not found"
+              Just ((nacg, nacgi),(nM,eM)) -> do
+                print $ nodes nacg
+                print $ edges nacg
+
       (False,False,'\65535') -> Gtk.menuItemActivate del
       (True,False,'m') -> do
         gtype <- readIORef currentGraphType
@@ -1461,21 +1471,40 @@ startGUI = do
                       Nothing -> return (ruleLG,lhsgi) -- if the nac' diagraph is not found, then the nac is just the lhs
                       Just (nacdg,(nM,eM)) -> do
                         writeIORef mergeMappingIORef $ Just (nM,eM)
-                        case (G.null $ fst nacdg) of
+                        -- ensure that elements of nacg that are mapped from lhs have the same type as of lhs
+                        let nacgLockedNodes = filter (\n -> infoLocked $ nodeInfo n) $ nodes (fst nacdg)
+                            nacgLockedEdges = filter (\e -> infoLocked $ edgeInfo e) $ edges (fst nacdg)
+                            nacgWithUpdatedNodes = foldr (\n g -> insertNodeWithPayload (nodeId n)
+                                                                                        (nodeInfo $ fromMaybe n $ (lookupNode (nodeId n) ruleLG))
+                                                                                        g)
+                                                         (fst nacdg) nacgLockedNodes
+                            nacg' = foldr (\e g -> insertEdgeWithPayload (edgeId e) (sourceId e) (targetId e)
+                                                                                    (edgeInfo $ fromMaybe e $ (lookupEdge (edgeId e) ruleLG))
+                                                                                    g)
+                                          nacgWithUpdatedNodes nacgLockedEdges
+                            nacNgi' = M.mapWithKey (\k gi -> fromMaybe gi $ M.lookup k (fst lhsgi)) $ fst (snd nacdg)
+                            nacEgi' = M.mapWithKey (\k gi -> fromMaybe gi $ M.lookup k (snd lhsgi)) $ snd (snd nacdg)
+                            nacdg' = (nacg', (nacNgi', nacEgi'))
+                        putStrLn $ "nodes nacg': " ++ (show $ nodes nacg')
+                        putStrLn $ "edges nacg': " ++ (show $ edges nacg')
+
+                        case (G.null $ fst nacdg') of
                           True -> return (ruleLG, lhsgi) -- if there's no nac' diagraph, then the nac is just the lhs
                           False -> do
-                            let nacValid = isGraphValid (fst nacdg) tg
+                            let nacValid = isGraphValid (fst nacdg') tg
                             case nacValid of -- if there's a nac' diagraph, check if the graph is correct
-                              True -> return $ joinNAC (nacdg,(nM,eM)) (ruleLG, lhsgi) tg
-                              False -> do -- remove all the
-                                let validG = correctTypeGraph (fst nacdg) tg
+                              True -> do
+                                modifyIORef nacInfoMapIORef $ M.insert index (nacdg', (nM,eM))
+                                return $ joinNAC (nacdg',(nM,eM)) (ruleLG, lhsgi) tg
+                              False -> do -- remove all the elements with type error
+                                let validG = correctTypeGraph (fst nacdg') tg
                                     validNids = foldr (\n ns -> if nodeInfo n then (nodeId n):ns else ns) [] (nodes validG)
                                     validEids = foldr (\e es -> if edgeInfo e then (edgeId e):es else es) [] (edges validG)
-                                    newNodes = filter (\n -> nodeId n `elem` validNids) (nodes $ fst nacdg)
-                                    newEdges = filter (\e -> edgeId e `elem` validEids) (edges $ fst nacdg)
+                                    newNodes = filter (\n -> nodeId n `elem` validNids) (nodes $ fst nacdg')
+                                    newEdges = filter (\e -> edgeId e `elem` validEids) (edges $ fst nacdg')
                                     newNG = fromNodesAndEdges newNodes newEdges
-                                    newNNGI = M.filterWithKey (\k a -> NodeId k `elem` validNids) (fst . snd $ nacdg)
-                                    newNEGI = M.filterWithKey (\k a -> EdgeId k `elem` validEids) (snd . snd $ nacdg)
+                                    newNNGI = M.filterWithKey (\k a -> NodeId k `elem` validNids) (fst . snd $ nacdg')
+                                    newNEGI = M.filterWithKey (\k a -> EdgeId k `elem` validEids) (snd . snd $ nacdg')
                                     newNacdg = (newNG,(newNNGI, newNEGI))
                                 modifyIORef nacInfoMapIORef $ M.insert index (newNacdg, (nM,eM))
                                 return $ joinNAC (newNacdg, (nM,eM)) (ruleLG, lhsgi) tg
