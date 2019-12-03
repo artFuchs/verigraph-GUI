@@ -13,36 +13,38 @@ module Editor.GraphEditor.GrammarMaker (
 
 import Data.Maybe
 import Data.Graphs
-import Category.TypedGraph
-import Category.TypedGraph.Limit
 import qualified Data.List as L
 import qualified Data.Map as M
-import Editor.Data.Info
-import Editor.Helper.Helper
-import Base.Valid
-import Abstract.Rewriting.DPO
-import Rewriting.DPO.TypedGraph
-import Data.Graphs.Morphism
+
 import Abstract.Category.Limit
+import Abstract.Rewriting.DPO
+import Base.Valid
+import Category.TypedGraph
+import Category.TypedGraph.Limit
+import Rewriting.DPO.TypedGraph
 import qualified Data.TypedGraph as TG
 import qualified Data.TypedGraph.Morphism as TGM
 
+import Editor.Data.Info
+import Editor.Helper.List
+import Data.Graphs.Morphism
+import Editor.GraphEditor.Nac
 
 type RuleGraphs = (Graph String String, Graph String String, Graph String String)
 type TypeGraph a b = Graph (Maybe a) (Maybe b) -- may delete this if import span
-type NAC = (Graph Info Info, (M.Map NodeId NodeId, M.Map EdgeId EdgeId))
+type NAC = (Graph String String, MergeMapping)
 
 nodeToJust :: Node a -> Node (Maybe a)
-nodeToJust = \n -> Node (nodeId n) (Just $ nodeInfo n)
+nodeToJust n = Node (nodeId n) (Just $ nodeInfo n)
 
 edgeToJust :: Edge a -> Edge (Maybe a)
-edgeToJust = \e -> Edge (edgeId e) (sourceId e) (targetId e) (Just $ edgeInfo e)
+edgeToJust e = Edge (edgeId e) (sourceId e) (targetId e) (Just $ edgeInfo e)
 
 nodeFromJust :: Node (Maybe a) -> Node a
-nodeFromJust = \n -> Node (nodeId n) (fromJust $ nodeInfo n)
+nodeFromJust n = Node (nodeId n) (fromJust $ nodeInfo n)
 
 edgeFromJust :: Edge (Maybe a) -> Edge a
-edgeFromJust = \e -> Edge (edgeId e) (sourceId e) (targetId e) (fromJust $ edgeInfo e)
+edgeFromJust e = Edge (edgeId e) (sourceId e) (targetId e) (fromJust $ edgeInfo e)
 
 
 graphToRuleGraphs :: Graph String String

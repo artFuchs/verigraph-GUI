@@ -10,7 +10,7 @@ import Data.Graphs
 import qualified Data.Graphs.Morphism as Morph
 import qualified Data.TypedGraph as TG
 import Editor.Data.Info
-import Editor.Helper.Helper
+import Editor.Helper.List
 
 -- validation ------------------------------------------------------------------
 -- generate a mask graph that informs if a node/edge has a unique name

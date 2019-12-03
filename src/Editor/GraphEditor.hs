@@ -32,30 +32,28 @@ import Abstract.Category
 import Abstract.Rewriting.DPO
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
-import qualified Data.Graphs.Morphism as Morph
+import qualified Data.Relation as R
 import qualified Data.TypedGraph as TG
 import qualified Data.TypedGraph.Morphism as TGM
-import qualified Data.Relation as R
-
-
-
+import qualified Data.Graphs.Morphism as Morph
 
 -- editor modules
 import Editor.Data.GraphicalInfo
 import Editor.Data.Info
 import Editor.Data.DiaGraph hiding (empty)
 import Editor.Data.EditorState
+import qualified Editor.Data.DiaGraph as DG
 import Editor.Render.Render
 import Editor.Render.GraphDraw
 import Editor.GraphEditor.UIBuilders
-import qualified Editor.Data.DiaGraph as DG
 import Editor.GraphEditor.SaveLoad
 import Editor.GraphEditor.GrammarMaker
 import Editor.GraphEditor.RuleViewer
-import Editor.Helper.Helper
+import Editor.GraphEditor.UpdateInspector
+import Editor.GraphEditor.Nac
+import Editor.Helper.List
 import Editor.Helper.Geometry
 import Editor.Helper.GraphValidation
-import Editor.GraphEditor.UpdateInspector
 --------------------------------------------------------------------------------
 -- MODULE STRUCTURES -----------------------------------------------------------
 --------------------------------------------------------------------------------
@@ -70,8 +68,6 @@ import Editor.GraphEditor.UpdateInspector
  * valid (if the current graph is correctly mapped to the typegraph)
 -}
 type GraphStore = (String, Int32, Int32, Int32, Bool, Bool)
-
-type MergeMapping = (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
 
 type ChangeStack = [(DiaGraph,Maybe MergeMapping)]
 
@@ -608,7 +604,7 @@ startGUI = do
                     ePairs = foldr (\e eps -> (e,maxEID):eps) [] (map edgeId edgesToMerge'')
                     eM' = foldr (\(a,b) m -> M.insert a b m) eM ePairs
                     -- add the necessary elements to the nacg
-                    nacg' = createNACGFromMapping g (nM',eM')
+                    nacg' = extractNacGraph g (nM',eM')
                     nacInfoMap' = ((nacg', nacgi), (nM', eM'))
                 modifyIORef nacInfoMapIORef (M.insert gid nacInfoMap')
                 -- remount nacGraph
@@ -635,7 +631,7 @@ startGUI = do
                 -- remove nacg nodes that are selected and don't have incident edges from the mapping
                 hasIncidentEdges nid = length (incidentEdges . snd . fromJust $ lookupNodeInContext nid nacg) > 0
                 nM' = M.filterWithKey (\k a -> a `notElem` snids || (k==a && hasIncidentEdges a)) nM
-                nacg' = createNACGFromMapping g (nM',eM')
+                nacg' = extractNacGraph g (nM',eM')
                 nacgi'nodes = M.filterWithKey (\k a -> NodeId k `notElem` (M.elems nM) || NodeId k `elem` (M.elems nM')) (fst nacgi)
                 nacgi'edges = M.filterWithKey (\k a -> EdgeId k `notElem` (M.elems eM) || EdgeId k `elem` (M.elems eM')) (snd nacgi)
                 nacgi' = (nacgi'nodes,nacgi'edges)
@@ -864,6 +860,7 @@ startGUI = do
           1 -> updateTG
           2 -> setCurrentValidFlag store st activeTypeGraph currentPath
           3 -> setCurrentValidFlag store st activeTypeGraph currentPath
+          4 -> setCurrentValidFlag store st activeTypeGraph currentPath
           _ -> return ()
 
   -- delete item
@@ -1130,6 +1127,18 @@ startGUI = do
     Gtk.widgetQueueDraw canvas
     updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
     updateByType
+    gt <- readIORef currentGraphType
+    if gt == 4
+      then do
+        index <- readIORef currentGraph
+        nacInfoMap <- readIORef nacInfoMapIORef
+        es <- readIORef st
+        let (_,mapping) = fromMaybe (DG.empty,(M.empty,M.empty)) $ M.lookup index nacInfoMap
+            g = editorGetGraph es
+            nacg = extractNacGraph g mapping
+            nacgi = extractNacGI g (editorGetGI es) mapping
+        modifyIORef nacInfoMapIORef $ M.insert index ((nacg,nacgi),mapping)
+      else return ()
     return False
 
   on autoLabelN #toggled $ do
@@ -1292,8 +1301,8 @@ startGUI = do
 
 
   let nodeTCBoxChangedCallback comboBox= do
-          t <- readIORef currentGraphType
-          if t < 2
+          gt <- readIORef currentGraphType
+          if gt < 2
             then return ()
             else do
               index <- Gtk.comboBoxGetActive comboBox
@@ -1312,7 +1321,7 @@ startGUI = do
                       newGraph = foldr (\nid g -> updateNodePayload nid g (\info -> infoSetType info typeInfo)) g acceptableSNids
                       newNGI = foldr (\nid gi -> let ngi = getNodeGI (fromEnum nid) gi
                                                  in M.insert (fromEnum nid) (nodeGiSetPosition (position ngi) . nodeGiSetDims (dims ngi) $ typeGI) gi) (fst giM) acceptableSNids
-                  case t of
+                  case gt of
                     4 -> do
                       nacInfoMap <- readIORef nacInfoMapIORef
                       index <- readIORef currentGraph
@@ -1332,8 +1341,8 @@ startGUI = do
   on nodeTCBoxR #changed $ nodeTCBoxChangedCallback nodeTCBoxR
 
   let edgeTCBoxCallback comboBox = do
-          t <- readIORef currentGraphType
-          if t < 2
+          gt <- readIORef currentGraphType
+          if gt < 2
             then return ()
             else do
               index <- Gtk.comboBoxGetActive comboBox
@@ -1353,7 +1362,7 @@ startGUI = do
                                                  in M.insert (fromEnum eid) (edgeGiSetPosition (cPosition egi) typeGI) gi) (snd giM) acceptableSEids
                       newGI = (fst giM, newEGI)
                       newGraph = foldl (\g eid -> updateEdgePayload eid g (\info -> infoSetType info typeInfo)) g acceptableSEids
-                  case t of
+                  case gt of
                     4 -> do
                       nacInfoMap <- readIORef nacInfoMapIORef
                       index <- readIORef currentGraph
@@ -2165,10 +2174,7 @@ updateSavedState sst graphStates = do
   states <- readIORef graphStates
   writeIORef sst $ (M.map (\(es,_,_) -> (editorGetGraph es, editorGetGI es) ) states)
 
-
-
-
-joinNAC :: (DiaGraph, MergeMapping) -> DiaGraph -> Graph Info Info -> DiaGraph
+joinNAC :: NacInfo -> DiaGraph -> Graph Info Info -> DiaGraph
 joinNAC (nacdg, (nM,eM)) lhsdg@(ruleLG,ruleLGI) tg = (nG, nGI)
  where
    -- change ids of elements of nacs so that those elements don't have conflicts
