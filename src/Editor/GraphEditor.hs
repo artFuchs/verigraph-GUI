@@ -325,6 +325,7 @@ startGUI = do
               gi = editorGetGI es
               dstNode = selectNodeInPosition gi (x',y')
           context <- Gtk.widgetGetPangoContext canvas
+          -- if current graph is a nac, then add mergeM to the undoStack
           case gType of
             4 -> do mergeM <- readIORef mergeMappingIORef
                     stackUndo undoStack redoStack es mergeM
@@ -355,10 +356,10 @@ startGUI = do
                   createNode' st (infoSetType "" t) auto (x',y') shape c lc context
                   setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                   setCurrentValidFlag store st activeTypeGraph currentPath
-                  -- if the current graph is a nac, then add the node in nacg
-                  if gType /= 4
-                    then return ()
-                    else do
+                  
+                  case gType of 
+                    -- if the current graph is a nac, then add the node in nacg
+                    4 -> do
                       -- get the node and it's gi
                       es <- readIORef st
                       let g = editorGetGraph es
@@ -373,6 +374,7 @@ startGUI = do
                           nacg' = insertNodeWithPayload addedNodeId (nodeInfo addedNode) nacg
                           nacNgi' = M.insert (fromEnum addedNodeId) addedNodeGI (fst nacgi)
                       modifyIORef nacInfoMapIORef $ M.insert index ((nacg',(nacNgi', snd nacgi)), mapping)
+                    _ -> return ()
 
 
             -- one node selected: create edges targeting this node
@@ -566,7 +568,7 @@ startGUI = do
         if (gtype /= 4)
           then return ()
           else do
-            gid <- readIORef currentGraph
+            index <- readIORef currentGraph
             nacInfoMap <- readIORef nacInfoMapIORef
             es <- readIORef st
             let (snids, seids) = editorGetSelected es
@@ -587,7 +589,7 @@ startGUI = do
                     lhsg' = foldr (\e g -> G.updateEdgePayload e g (\info -> infoSetLocked info True)) lhsgWithLockedNodes (edgeIds lhsg)
                 tg <- readIORef activeTypeGraph
                 -- modify mapping to specify merging of nodes
-                let ((nacg,nacgi), (nM, eM)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup gid nacInfoMap
+                let ((nacg,nacgi), (nM, eM)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup index nacInfoMap
                     -- genereate the merging map for nodes
                     nidsToMerge = map nodeId nodesToMerge
                     maxNID = if null nodesToMerge then NodeId 0 else maximum nidsToMerge
@@ -603,12 +605,19 @@ startGUI = do
                     edgesToMerge'' = filter (\e -> sourceId e == sourceId (head edgesToMerge') && targetId e == targetId (head edgesToMerge')) edgesToMerge'
                     ePairs = foldr (\e eps -> (e,maxEID):eps) [] (map edgeId edgesToMerge'')
                     eM' = foldr (\(a,b) m -> M.insert a b m) eM ePairs
+                    nodesNeeded = foldr (\e ns -> sourceId e : (targetId e) : ns ) [] edgesToMerge''
+                    nM'' = foldr (\n m -> if n `notElem` (M.elems m) then M.insert n n m else m) nM' nodesNeeded
                     -- add the necessary elements to the nacg
-                    nacg' = extractNacGraph g (nM',eM')
-                    nacInfoMap' = ((nacg', nacgi), (nM', eM'))
-                modifyIORef nacInfoMapIORef (M.insert gid nacInfoMap')
-                -- remount nacGraph
-                let (g',gi') = joinNAC nacInfoMap' (lhsg', lhsgi) tg
+                    nacg' = extractNacGraph g (nM'',eM')
+                    nacInfo' = ((nacg', nacgi), (nM'', eM'))
+                putStrLn $ "g: " ++ (show g)
+                putStrLn $ "nM'': " ++ (show nM'')
+                putStrLn $ "eM': " ++ (show eM')
+                putStrLn $ "nacg': " ++ (show nacg')
+                modifyIORef nacInfoMapIORef $ M.insert index nacInfo'
+                -- remount nacGraph, joining the elements
+                -- let (g',gi') = joinNAC nacInfoMap' (lhsg', lhsgi) tg
+                (g',gi') <- joinNAC nacInfo' (lhsg', lhsgi) tg                
                 -- modify editor state
                 modifyIORef st (editorSetGraph g' . editorSetGI gi' . editorSetSelected ([maxNID], [maxEID]))
                 stackUndo undoStack redoStack es (Just (nM,eM))
@@ -620,12 +629,12 @@ startGUI = do
           then return ()
           else do -- reset mapping for selected elements
             -- load nac information
-            gid <- readIORef currentGraph
+            index <- readIORef currentGraph
             nacInfoMap <- readIORef nacInfoMapIORef
             es <- readIORef st
             let (snids, seids) = editorGetSelected es
                 g = editorGetGraph es
-                ((nacg, nacgi), (nM,eM)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup gid nacInfoMap
+                ((nacg, nacgi), (nM,eM)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup index nacInfoMap
             -- remove nacg edges that are selected from mapping
             let eM' = M.filterWithKey (\k a -> a `notElem` seids) eM
                 -- remove nacg nodes that are selected and don't have incident edges from the mapping
@@ -644,8 +653,9 @@ startGUI = do
                 lhsg' = foldr (\e g -> G.updateEdgePayload e g (\info -> infoSetLocked info True)) lhsgWithLockedNodes (edgeIds lhsg)
             -- glue NAC part into the LHS
             tg <- readIORef activeTypeGraph
-            let (g',gi') = joinNAC (nacdg',(nM',eM')) (lhsg', lhsgi) tg
-            modifyIORef nacInfoMapIORef (M.insert gid (nacdg', (nM',eM')))
+            -- let (g',gi') = joinNAC (nacdg',(nM',eM')) (lhsg', lhsgi) tg
+            (g',gi') <- joinNAC (nacdg',(nM',eM')) (lhsg', lhsgi) tg
+            modifyIORef nacInfoMapIORef (M.insert index (nacdg', (nM',eM')))
             -- write editor State
             let newNids = M.keys $ M.filter (\a -> a `elem` snids) nM
                 newEids = M.keys $ M.filter (\a -> a `elem` seids) eM
@@ -1483,6 +1493,8 @@ startGUI = do
                         -- ensure that elements of nacg that are mapped from lhs have the same type as of lhs
                         let nacgLockedNodes = filter (\n -> infoLocked $ nodeInfo n) $ nodes (fst nacdg)
                             nacgLockedEdges = filter (\e -> infoLocked $ edgeInfo e) $ edges (fst nacdg)
+                            nacgLNodesIds = map nodeId nacgLockedNodes
+                            nacgLEdgesIds = map edgeId nacgLockedEdges
                             nacgWithUpdatedNodes = foldr (\n g -> insertNodeWithPayload (nodeId n)
                                                                                         (nodeInfo $ fromMaybe n $ (lookupNode (nodeId n) ruleLG))
                                                                                         g)
@@ -1491,11 +1503,16 @@ startGUI = do
                                                                                     (edgeInfo $ fromMaybe e $ (lookupEdge (edgeId e) ruleLG))
                                                                                     g)
                                           nacgWithUpdatedNodes nacgLockedEdges
-                            nacNgi' = M.mapWithKey (\k gi -> fromMaybe gi $ M.lookup k (fst lhsgi)) $ fst (snd nacdg)
-                            nacEgi' = M.mapWithKey (\k gi -> fromMaybe gi $ M.lookup k (snd lhsgi)) $ snd (snd nacdg)
+                            nacNgi' = M.mapWithKey (\k gi -> if (NodeId k `elem` nacgLNodesIds) 
+                                                              then fromMaybe gi $ M.lookup k (fst lhsgi)
+                                                              else gi) 
+                                                    $ fst (snd nacdg)
+                            nacEgi' = M.mapWithKey (\k gi -> if (EdgeId k `elem` nacgLEdgesIds)
+                                                              then fromMaybe gi $ M.lookup k (snd lhsgi)
+                                                              else gi) 
+                                                    $ snd (snd nacdg)
                             nacdg' = (nacg', (nacNgi', nacEgi'))
-                        putStrLn $ "nodes nacg': " ++ (show $ nodes nacg')
-                        putStrLn $ "edges nacg': " ++ (show $ edges nacg')
+                        
 
                         case (G.null $ fst nacdg') of
                           True -> return (ruleLG, lhsgi) -- if there's no nac' diagraph, then the nac is just the lhs
@@ -1504,7 +1521,8 @@ startGUI = do
                             case nacValid of -- if there's a nac' diagraph, check if the graph is correct
                               True -> do
                                 modifyIORef nacInfoMapIORef $ M.insert index (nacdg', (nM,eM))
-                                return $ joinNAC (nacdg',(nM,eM)) (ruleLG, lhsgi) tg
+                                --return $ joinNAC (nacdg',(nM,eM)) (ruleLG, lhsgi) tg
+                                joinNAC (nacdg',(nM,eM)) (ruleLG, lhsgi) tg
                               False -> do -- remove all the elements with type error
                                 let validG = correctTypeGraph (fst nacdg') tg
                                     validNids = foldr (\n ns -> if nodeInfo n then (nodeId n):ns else ns) [] (nodes validG)
@@ -1516,7 +1534,8 @@ startGUI = do
                                     newNEGI = M.filterWithKey (\k a -> EdgeId k `elem` validEids) (snd . snd $ nacdg')
                                     newNacdg = (newNG,(newNNGI, newNEGI))
                                 modifyIORef nacInfoMapIORef $ M.insert index (newNacdg, (nM,eM))
-                                return $ joinNAC (newNacdg, (nM,eM)) (ruleLG, lhsgi) tg
+                                --return $ joinNAC (newNacdg, (nM,eM)) (ruleLG, lhsgi) tg
+                                joinNAC (newNacdg, (nM,eM)) (ruleLG, lhsgi) tg
                     writeIORef st $ editorSetGI gi . editorSetGraph nG $ es
                     writeIORef undoStack u
                     writeIORef redoStack r
@@ -2174,31 +2193,35 @@ updateSavedState sst graphStates = do
   states <- readIORef graphStates
   writeIORef sst $ (M.map (\(es,_,_) -> (editorGetGraph es, editorGetGI es) ) states)
 
-joinNAC :: NacInfo -> DiaGraph -> Graph Info Info -> DiaGraph
-joinNAC (nacdg, (nM,eM)) lhsdg@(ruleLG,ruleLGI) tg = (nG, nGI)
- where
-   -- change ids of elements of nacs so that those elements don't have conflicts
-   -- with elements from lhs
-   (nacG,nacGI) = remapElementsWithConflict lhsdg nacdg (nM,eM)
-   -- apply a pushout in  elements of nac
-   tg' = makeTypeGraph tg
-   lm = makeTypedGraph ruleLG tg'
-   nm = makeTypedGraph nacG tg'
-   (nacTgmLhs,nacTgmNac) = getNacPushout nm lm (nM, eM)
-   -- inverse relations from graphs resulting of pushout to change their elements ids to the correct ones
-   nIRLHS = R.inverseRelation $ Morph.nodeRelation $ TGM.mapping nacTgmLhs
-   eIRLHS = R.inverseRelation $ Morph.edgeRelation $ TGM.mapping nacTgmLhs
-   nIRNAC = R.inverseRelation $ Morph.nodeRelation $ TGM.mapping nacTgmNac
-   eIRNAC = R.inverseRelation $ Morph.edgeRelation $ TGM.mapping nacTgmNac
-   nGJust = TG.toUntypedGraph $ TGM.codomainGraph nacTgmLhs
-   swapNodeId' n = case (R.apply nIRLHS n ++ R.apply nIRNAC n) of
-                     []       -> n
-                     nids -> maximum (nids)
-   swapNodeId n = Node (swapNodeId' (nodeId n)) (nodeInfo n)
-   swapEdgeId e = case (R.apply eIRLHS (edgeId e) ++ R.apply eIRNAC (edgeId e)) of
-                     []       -> e
-                     eids -> Edge (maximum eids) (swapNodeId' $ sourceId e) (swapNodeId' $ targetId e) (edgeInfo e)
-   nGnodes = map swapNodeId . map nodeFromJust $ nodes nGJust
-   nGedges = map swapEdgeId . map edgeFromJust $ edges nGJust
-   nG = fromNodesAndEdges nGnodes nGedges
-   nGI = (M.union (fst nacGI) (fst ruleLGI), M.union (snd nacGI) (snd ruleLGI))
+joinNAC :: NacInfo -> DiaGraph -> Graph Info Info -> IO DiaGraph
+joinNAC (nacdg, (nM,eM)) lhsdg@(ruleLG,ruleLGI) tg = do
+  return (nG, nGI)
+  where
+    -- change ids of elements of nacs so that those elements don't have conflicts
+    -- with elements from lhs
+    (nacG,nacGI) = remapElementsWithConflict lhsdg nacdg (nM,eM)
+    -- apply a pushout in  elements of nac
+    tg' = makeTypeGraph tg
+    lm = makeTypedGraph ruleLG tg'
+    nm = makeTypedGraph nacG tg'
+    (nacTgmLhs,nacTgmNac) = getNacPushout nm lm (nM, eM)
+    -- inverse relations from graphs resulting of pushout to change their elements ids to the correct ones
+    nIRLHS = R.inverseRelation $ Morph.nodeRelation $ TGM.mapping nacTgmLhs
+    eIRLHS = R.inverseRelation $ Morph.edgeRelation $ TGM.mapping nacTgmLhs
+    nIRNAC = R.inverseRelation $ Morph.nodeRelation $ TGM.mapping nacTgmNac
+    eIRNAC = R.inverseRelation $ Morph.edgeRelation $ TGM.mapping nacTgmNac
+    -- get nac graph with info packed into Just
+    nGJust = TG.toUntypedGraph $ TGM.codomainGraph nacTgmLhs
+    -- change Ids of elements of nGJust and extract the info from Just
+    swapNodeId' n = case (R.apply nIRLHS n ++ R.apply nIRNAC n) of
+                      []       -> n
+                      nids -> maximum (nids)
+    swapNodeId n = Node (swapNodeId' (nodeId n)) (nodeInfo n)
+    swapEdgeId e = case (R.apply eIRLHS (edgeId e) ++ R.apply eIRNAC (edgeId e)) of
+                      []       -> e
+                      eids -> Edge (maximum eids) (swapNodeId' $ sourceId e) (swapNodeId' $ targetId e) (edgeInfo e)
+    nGnodes = map swapNodeId . map nodeFromJust $ nodes nGJust
+    nGedges = map swapEdgeId . map edgeFromJust $ edges nGJust
+    nG = fromNodesAndEdges nGnodes nGedges
+    -- join the
+    nGI = (M.union (fst nacGI) (fst ruleLGI), M.union (snd nacGI) (snd ruleLGI))

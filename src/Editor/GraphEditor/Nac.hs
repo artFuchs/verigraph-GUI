@@ -44,7 +44,8 @@ extractNacGI g (ngi,egi) (nM,eM)  = (ngi',egi')
     egi' = M.filterWithKey (\k a -> EdgeId k `notElem` lhsEids) egi
 
 -- function to modify ids of nac nodes that aren't in mapping and have id conflict with elems from lhs
-remapElementsWithConflict :: DiaGraph -> DiaGraph -> (M.Map NodeId NodeId, M.Map EdgeId EdgeId) -> DiaGraph
+-- (g1,(ngi1,egi1)) must be the lhs diagraph, while (g2,(ngi2,egi2)) must be the nac diagraph
+remapElementsWithConflict :: DiaGraph -> DiaGraph -> MergeMapping -> DiaGraph
 remapElementsWithConflict (g1,(ngi1,egi1)) (g2,(ngi2,egi2)) (nodeMapping, edgeMapping) = (g3,gi3)
   where
     g3 = fromNodesAndEdges g3Nodes g3Edges
