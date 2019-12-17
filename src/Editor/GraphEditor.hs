@@ -608,16 +608,12 @@ startGUI = do
                     nodesNeeded = foldr (\e ns -> sourceId e : (targetId e) : ns ) [] edgesToMerge''
                     nM'' = foldr (\n m -> if n `notElem` (M.elems m) then M.insert n n m else m) nM' nodesNeeded
                     -- add the necessary elements to the nacg
-                    nacg' = extractNacGraph g (nM'',eM')
-                    nacInfo' = ((nacg', nacgi), (nM'', eM'))
-                putStrLn $ "g: " ++ (show g)
-                putStrLn $ "nM'': " ++ (show nM'')
-                putStrLn $ "eM': " ++ (show eM')
-                putStrLn $ "nacg': " ++ (show nacg')
+                    nacg' = extractNacGraph g (nM'', eM')
+                    nacgi' = extractNacGI g (editorGetGI es) (nM'', eM')
+                    nacInfo' = ((nacg',nacgi'), (nM'', eM'))
                 modifyIORef nacInfoMapIORef $ M.insert index nacInfo'
                 -- remount nacGraph, joining the elements
-                -- let (g',gi') = joinNAC nacInfoMap' (lhsg', lhsgi) tg
-                (g',gi') <- joinNAC nacInfo' (lhsg', lhsgi) tg                
+                (g',gi') <- joinNAC nacInfo' (lhsg', lhsgi) tg
                 -- modify editor state
                 modifyIORef st (editorSetGraph g' . editorSetGI gi' . editorSetSelected ([maxNID], [maxEID]))
                 stackUndo undoStack redoStack es (Just (nM,eM))
