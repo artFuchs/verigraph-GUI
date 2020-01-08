@@ -23,8 +23,9 @@ nameConflictGraph g = fromNodesAndEdges vn ve
     ve = map uniqueE es
     ns = nodes g
     es = edges g
-    uniqueN n = Node (nodeId n) $ infoLabel (nodeInfo n) /= "" && (notElem (infoLabel . nodeInfo $ n) $ map (infoLabel . nodeInfo) . filter (\n' -> nodeId n' /= nodeId n) $ ns)
-    uniqueE e = Edge (edgeId e) (sourceId e) (targetId e) $ infoLabel (edgeInfo e) /= "" && (notElem (infoLabel . edgeInfo $ e) $ map edgeInfo . filter (\e' -> edgeId e' /= edgeId e) $ es)
+    nameIsValid name listOfNames = name /= "" && (name `notElem` listOfNames)
+    uniqueN n = Node (nodeId n) $ nameIsValid (infoLabel $ nodeInfo n) (map (infoLabel . nodeInfo) $ filter (\n' -> nodeId n' /= nodeId n) ns)
+    uniqueE e = Edge (edgeId e) (sourceId e) (targetId e) $ nameIsValid (infoLabel $ edgeInfo e) (map (infoLabel . edgeInfo) $ filter (\e' -> edgeId e' /= edgeId e) es)
 
 -- Auxiliar function: apply a function in a pair
 applyPair :: (a->b) -> (a,a) -> (b,b)
@@ -66,7 +67,7 @@ correctTypeGraph g tg = fromNodesAndEdges vn ve
                                   srce' = nodeId . fromJust . lookupNode (sourceId e') $ tg
                               _ -> False
 
-
+-- check if the graph is valid
 isGraphValid :: Graph String String -> Graph String String -> Bool
 isGraphValid g tg = and $ concat [map nodeInfo $ nodes validG, map edgeInfo $ edges validG]
       where
