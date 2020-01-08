@@ -18,6 +18,7 @@ import Graphics.Rendering.Cairo
 import Graphics.Rendering.Pango.Layout
 import Graphics.Rendering.Pango
 
+-- haskell data modules
 import Data.List
 import Data.Int
 import Data.Char
@@ -50,7 +51,7 @@ import Editor.GraphEditor.SaveLoad
 import Editor.GraphEditor.GrammarMaker
 import Editor.GraphEditor.RuleViewer
 import Editor.GraphEditor.UpdateInspector
-import Editor.GraphEditor.Nac
+import Editor.Data.Nac
 import Editor.Helper.List
 import Editor.Helper.Geometry
 import Editor.Helper.GraphValidation
@@ -226,7 +227,8 @@ startGUI = do
         renderWithContext context $ drawRuleGraph es sq tg
       4 -> do
         tg <- readIORef activeTypeGraph
-        renderWithContext context $ drawNACGraph es sq tg
+        mm <- readIORef mergeMappingIORef >>= return . fromMaybe (M.empty, M.empty)
+        renderWithContext context $ drawNACGraph es sq tg mm
       _ -> return ()
     return False
 
@@ -612,6 +614,7 @@ startGUI = do
                     nacgi' = extractNacGI g (editorGetGI es) (nM'', eM')
                     nacInfo' = ((nacg',nacgi'), (nM'', eM'))
                 modifyIORef nacInfoMapIORef $ M.insert index nacInfo'
+                writeIORef mergeMappingIORef $ Just (nM'', eM')
                 -- remount nacGraph, joining the elements
                 (g',gi') <- joinNAC nacInfo' (lhsg', lhsgi) tg
                 -- modify editor state
@@ -652,6 +655,7 @@ startGUI = do
             -- let (g',gi') = joinNAC (nacdg',(nM',eM')) (lhsg', lhsgi) tg
             (g',gi') <- joinNAC (nacdg',(nM',eM')) (lhsg', lhsgi) tg
             modifyIORef nacInfoMapIORef (M.insert index (nacdg', (nM',eM')))
+            writeIORef mergeMappingIORef $ Just (nM',eM')
             -- write editor State
             let newNids = M.keys $ M.filter (\a -> a `elem` snids) nM
                 newEids = M.keys $ M.filter (\a -> a `elem` seids) eM

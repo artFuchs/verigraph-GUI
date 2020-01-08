@@ -15,6 +15,7 @@ import Data.Graphs
 import Editor.Data.Info
 import Editor.Data.EditorState
 import Editor.Data.GraphicalInfo
+import Editor.Data.Nac
 import Editor.Render.Render
 import Editor.Helper.GraphValidation
 
@@ -23,11 +24,14 @@ import Graphics.Rendering.Pango.Cairo as GRPC
 import Graphics.Rendering.Pango.Layout as GRPL
 import Editor.Helper.Geometry
 
+-- shadow colors for basic situations
 selectColor = (0.29,0.56,0.85)
 errorColor = (0.9,0.2,0.2)
 bothColor = (0.47,0.13,0.87)
 
--- draw a graph in the canvas --------------------------------------------------
+-- draw a typegraph in the canvas
+-- if there are nodes or edges with same names, then highlight them as errors
+-- if any element is selected, highlight it as selected
 drawTypeGraph :: EditorState -> Maybe (Double,Double,Double,Double)-> Render ()
 drawTypeGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
   scale z z
@@ -75,6 +79,9 @@ drawTypeGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
   drawSelectionBox sq
   return ()
 
+-- draw a typed graph
+-- if there are nodes or edges not correctly typed, highlight them as errors
+-- if any element is selected, highlight it as selected
 drawHostGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph String String -> Render ()
 drawHostGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
   scale z z
@@ -121,6 +128,8 @@ drawHostGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
   drawSelectionBox sq
   return ()
 
+-- draw a rulegraph
+-- similar to drawhostGraph, but draws bold texts to indicate operations
 drawRuleGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph String String -> Render ()
 drawRuleGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
   scale z z
@@ -186,6 +195,8 @@ drawRuleGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
   drawSelectionBox sq
   return ()
 
+-- draw a single side of a rule
+-- 
 drawRuleSideGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph String String -> Render ()
 drawRuleSideGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq k = do
   scale z z
@@ -255,26 +266,31 @@ drawRuleSideGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq k = do
   drawSelectionBox sq
   return ()
 
-drawNACGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph String String -> Render ()
-drawNACGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
+-- draw a nac
+-- it highlights elements of the lhs part of the rule with yellow shadows
+-- and highlights merged elements of the lhs part of the rule with green shadows
+drawNACGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph String String -> MergeMapping -> Render ()
+drawNACGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg (nM,eM) = do
+
+  liftIO $ print nM
+
   scale z z
   translate px py
 
-  -- color for elements from the rule lhs that are "locked"
+  -- color for elements from the rule lhs that are locked and merged
   let lockedColor = (0.90,0.75,0.05)
-      lockedAndSelectedColor = (0.1,0.8,0.01)
-      lockedAndErrorColor = (0.9,0.3,0.0)
-      theThreeColor = (0.42,0.22,0.14)
+      mergedColor = (0.28,0.70,0.09)
 
-  let chooseColor s e l = case (s,e,l) of
-        (False,False,False) -> (0,0,0)
-        (True,False,False) -> selectColor
-        (False,True,False) -> errorColor
-        (True,True,False) -> bothColor
-        (False,False,True) -> lockedColor
-        (True,False,True) -> selectColor
-        (False,True,True) -> errorColor
-        (True,True,True) -> bothColor
+  let chooseColor s e l m = case (s,e,l,m) of
+        (False,False,False,False) -> (0,0,0)
+        (True,False,_,_) -> selectColor
+        (False,True,_,_) -> errorColor
+        (True,True,_,_) -> bothColor
+        (False,False,True,False) -> lockedColor
+        (False,False,_,True) -> mergedColor
+
+  let isNodeMerged n = M.size (M.filter (== (nodeId n)) nM) > 1
+      isEdgeMerged e = M.size (M.filter (== (edgeId e)) eM) > 1
 
   let vg = correctTypeGraph g tg
   -- draw the edges
@@ -283,11 +299,12 @@ drawNACGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
         srcN = M.lookup (fromEnum . sourceId $ e) nGI
         egi  = M.lookup (fromEnum . edgeId   $ e) eGI
         selected = (edgeId e) `elem` sEdges
+        merged = isEdgeMerged e
         typeError = case lookupEdge (edgeId e) vg of
                       Just e' -> not $ edgeInfo e'
                       Nothing -> True
         locked = infoLocked $ edgeInfo e
-        color = chooseColor selected typeError locked
+        color = chooseColor selected typeError locked merged
     case (egi, srcN, dstN) of
       (Just gi, Just src, Just dst) -> renderEdge gi (infoLabel (edgeInfo e)) src dst (selected || typeError || locked) color False (0,0,0)
       _ -> return ())
@@ -302,7 +319,8 @@ drawNACGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
                       Just n' -> not $ nodeInfo n'
                       Nothing -> True
         locked = infoLocked $ nodeInfo n
-        color = chooseColor selected typeError locked
+        merged = isNodeMerged n
+        color = chooseColor selected typeError locked merged
     case (ngi) of
       Just gi -> renderNode gi label (selected || typeError || locked) color False (0,0,0)
       Nothing -> return ())

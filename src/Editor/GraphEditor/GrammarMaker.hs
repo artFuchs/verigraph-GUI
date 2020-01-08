@@ -28,7 +28,7 @@ import qualified Data.TypedGraph.Morphism as TGM
 import Editor.Data.Info
 import Editor.Helper.List
 import Data.Graphs.Morphism
-import Editor.GraphEditor.Nac
+import Editor.Data.Nac
 
 type RuleGraphs = (Graph String String, Graph String String, Graph String String)
 type TypeGraph a b = Graph (Maybe a) (Maybe b) -- may delete this if import span

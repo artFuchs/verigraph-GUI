@@ -1,4 +1,4 @@
-module Editor.GraphEditor.Nac (
+module Editor.Data.Nac (
   MergeMapping
 , NacInfo
 , extractNacGraph
@@ -21,8 +21,6 @@ import Editor.Helper.List
 type MergeMapping = (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
 type NacInfo = (DiaGraph, MergeMapping)
 
-
---
 extractNacGraph :: Graph Info Info -> MergeMapping -> Graph Info Info
 extractNacGraph g (nM, eM) = fromNodesAndEdges nacNodes nacEdges
   where
