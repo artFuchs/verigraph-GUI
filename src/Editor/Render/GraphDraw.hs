@@ -271,9 +271,6 @@ drawRuleSideGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq k = do
 -- and highlights merged elements of the lhs part of the rule with green shadows
 drawNACGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph String String -> MergeMapping -> Render ()
 drawNACGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg (nM,eM) = do
-
-  liftIO $ print nM
-
   scale z z
   translate px py
 

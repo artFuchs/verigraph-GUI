@@ -596,25 +596,26 @@ startGUI = do
                     nidsToMerge = map nodeId nodesToMerge
                     maxNID = if null nodesToMerge then NodeId 0 else maximum nidsToMerge
                     -- specify the merging in the map - having (2,3) and (3,3) means that the nodes 2 and 3 are merged
-                    nPairs = foldr (\n nps -> (n,maxNID):nps) [] (map nodeId nodesToMerge)
-                    nM' = foldr (\(a,b) m -> M.insert a b m) nM nPairs
+                    nM' = M.map (\nid -> if nid `elem` nidsToMerge then maxNID else nid) nM
+                    nM'' = foldr (\nid m -> M.insert nid maxNID m) nM' nidsToMerge
                 -- modify mapping to specify merging of edges
-                let eidsToMerge = map edgeId edgesToMerge
-                    maxEID = if null edgesToMerge then EdgeId 0 else maximum eidsToMerge
-                    -- update Ids of source and target nodes from edges that the user want to merge
-                    edgesToMerge' = map (\e -> updateEdgeEndsIds e nM') edgesToMerge
-                    -- check if the edges to merge have the same source and targets nodes
+                let -- update Ids of source and target nodes from edges that the user want to merge
+                    edgesToMerge' = map (\e -> updateEdgeEndsIds e nM'') edgesToMerge
+                    -- only merge the edges if they have the same source and targets nodes
                     edgesToMerge'' = filter (\e -> sourceId e == sourceId (head edgesToMerge') && targetId e == targetId (head edgesToMerge')) edgesToMerge'
-                    ePairs = foldr (\e eps -> (e,maxEID):eps) [] (map edgeId edgesToMerge'')
-                    eM' = foldr (\(a,b) m -> M.insert a b m) eM ePairs
+                    eidsToMerge = map edgeId edgesToMerge''
+                    maxEID = if null edgesToMerge'' then EdgeId 0 else maximum eidsToMerge
+                    eM' = M.map (\eid -> if eid `elem` eidsToMerge then maxEID else eid) eM
+                    eM'' = foldr (\eid m -> M.insert eid maxEID m) eM' eidsToMerge
+                    -- add nodes that are needed for the merged edges in the mapping
                     nodesNeeded = foldr (\e ns -> sourceId e : (targetId e) : ns ) [] edgesToMerge''
-                    nM'' = foldr (\n m -> if n `notElem` (M.elems m) then M.insert n n m else m) nM' nodesNeeded
+                    nM''' = foldr (\n m -> if n `notElem` (M.elems m) then M.insert n n m else m) nM'' nodesNeeded
                     -- add the necessary elements to the nacg
-                    nacg' = extractNacGraph g (nM'', eM')
-                    nacgi' = extractNacGI g (editorGetGI es) (nM'', eM')
-                    nacInfo' = ((nacg',nacgi'), (nM'', eM'))
+                    nacg' = extractNacGraph g (nM''', eM'')
+                    nacgi' = extractNacGI g (editorGetGI es) (nM''', eM'')
+                    nacInfo' = ((nacg',nacgi'), (nM''', eM''))
                 modifyIORef nacInfoMapIORef $ M.insert index nacInfo'
-                writeIORef mergeMappingIORef $ Just (nM'', eM')
+                writeIORef mergeMappingIORef $ Just (nM''', eM'')
                 -- remount nacGraph, joining the elements
                 (g',gi') <- joinNAC nacInfo' (lhsg', lhsgi) tg
                 -- modify editor state
