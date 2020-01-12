@@ -632,6 +632,13 @@ startGUI = do
             index <- readIORef currentGraph
             nacInfoMap <- readIORef nacInfoMapIORef
             es <- readIORef st
+            tg <- readIORef activeTypeGraph
+            -- reload lhs
+            path <- readIORef currentPath
+            (lhsg, lhsgi) <- getParentDiaGraph store path graphStates
+            let lhsgWithLockedNodes = foldr (\n g -> G.updateNodePayload n g (\info -> infoSetLocked info True)) lhsg (nodeIds lhsg)
+                lhsg' = foldr (\e g -> G.updateEdgePayload e g (\info -> infoSetLocked info True)) lhsgWithLockedNodes (edgeIds lhsg)
+
             let (snids, seids) = editorGetSelected es
                 g = editorGetGraph es
                 ((nacg, nacgi), (nM,eM)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup index nacInfoMap
@@ -640,26 +647,34 @@ startGUI = do
                 -- remove nacg nodes that are selected and don't have incident edges from the mapping
                 hasIncidentEdges nid = length (incidentEdges . snd . fromJust $ lookupNodeInContext nid nacg) > 0
                 nM' = M.filterWithKey (\k a -> a `notElem` snids || (k==a && hasIncidentEdges a)) nM
-                nacg' = extractNacGraph g (nM',eM')
+                
+            -- ajustar mapeamento de edges cujos src e tgt foram retirados do mapeamento
+            let someLhsEdges = filter (\e -> edgeId e `elem` (M.keys eM')) (edges lhsg)
+                someLhsEdges' = map (\e -> updateEdgeEndsIds e nM') someLhsEdges
+                someLhsEdges'' = filter (\e -> sourceId e `elem` (M.elems nM') && (targetId e `elem` (M.elems nM') ) ) someLhsEdges'
+                gEdges = M.elems $ foldr (\e m -> let k = (sourceId e, targetId e)
+                                                      v = edgeId e
+                                                  in case M.lookup k m of
+                                                      Nothing -> M.insert k [v] m
+                                                      Just vs -> M.insert k (v:vs) m) M.empty someLhsEdges''
+                gEdges' = filter (\g -> length g > 1) gEdges
+                eM'' = M.fromList . concat $ map (\es -> let maxE = maximum es
+                                                in map (\e -> (e,maxE)) es) gEdges'
+
+            -- remove from nacg the elements that are not in the mapping
+            let nacg' = extractNacGraph g (nM',eM'')
                 nacgi'nodes = M.filterWithKey (\k a -> NodeId k `notElem` (M.elems nM) || NodeId k `elem` (M.elems nM')) (fst nacgi)
-                nacgi'edges = M.filterWithKey (\k a -> EdgeId k `notElem` (M.elems eM) || EdgeId k `elem` (M.elems eM')) (snd nacgi)
+                nacgi'edges = M.filterWithKey (\k a -> EdgeId k `notElem` (M.elems eM) || EdgeId k `elem` (M.elems eM'')) (snd nacgi)
                 nacgi' = (nacgi'nodes,nacgi'edges)
                 nacdg' = (nacg',nacgi')
 
-            -- reload lhs
-            path <- readIORef currentPath
-            (lhsg, lhsgi) <- getParentDiaGraph store path graphStates
-            let lhsgWithLockedNodes = foldr (\n g -> G.updateNodePayload n g (\info -> infoSetLocked info True)) lhsg (nodeIds lhsg)
-                lhsg' = foldr (\e g -> G.updateEdgePayload e g (\info -> infoSetLocked info True)) lhsgWithLockedNodes (edgeIds lhsg)
             -- glue NAC part into the LHS
-            tg <- readIORef activeTypeGraph
-            -- let (g',gi') = joinNAC (nacdg',(nM',eM')) (lhsg', lhsgi) tg
-            (g',gi') <- joinNAC (nacdg',(nM',eM')) (lhsg', lhsgi) tg
-            modifyIORef nacInfoMapIORef (M.insert index (nacdg', (nM',eM')))
-            writeIORef mergeMappingIORef $ Just (nM',eM')
+            (g',gi') <- joinNAC (nacdg',(nM',eM'')) (lhsg', lhsgi) tg
+            modifyIORef nacInfoMapIORef (M.insert index (nacdg', (nM',eM'')))
+            writeIORef mergeMappingIORef $ Just (nM',eM'')
             -- write editor State
-            let newNids = M.keys $ M.filter (\a -> a `elem` snids) nM
-                newEids = M.keys $ M.filter (\a -> a `elem` seids) eM
+            let newNids = M.keys $ M.filter (\a -> a `elem` snids) nM'
+                newEids = M.keys $ M.filter (\a -> a `elem` seids) eM''
             modifyIORef st (editorSetSelected (newNids, newEids) . editorSetGraph g' . editorSetGI gi')
             stackUndo undoStack redoStack es (Just (nM,eM))
             Gtk.widgetQueueDraw canvas
