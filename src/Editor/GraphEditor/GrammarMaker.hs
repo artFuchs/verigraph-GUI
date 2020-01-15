@@ -12,6 +12,7 @@ module Editor.GraphEditor.GrammarMaker (
 )where
 
 import Data.Maybe
+import Data.Either
 import Data.Graphs
 import qualified Data.List as L
 import qualified Data.Map as M
@@ -70,15 +71,8 @@ graphToRuleGraphs g = (lhs, k, rhs)
 formatNac :: TypedGraph String String
           -> TypedGraph String String
           -> (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
-          -> IO (TypedGraphMorphism String String)
-formatNac nac lhs (nmap, emap) = do
-  putStrLn "---------\nK"
-  print k
-  putStrLn "---------\nnacTgm"
-  print nacTgm
-  putStrLn "---------\nlhsTgm"
-  print lhsTgm
-  return nacTgm'
+          -> TypedGraphMorphism String String
+formatNac nac lhs (nmap, emap) = nacTgm'
   where
     -- get the mapped elements from lhs
     knodeIds = M.keys nmap
@@ -133,10 +127,8 @@ makeTypedGraph g tg = fromGraphsAndLists g' tg npairs epairs
 graphToRule :: Graph String String -- rule graph
             -> [NAC] -- nac graphs for rules
             -> TypeGraph String String
-            -> IO (TypedGraphRule String String)
-graphToRule ruleGraph nacs typeGraph = do
-  nmsTgm <- mapM (\(n,m) -> formatNac n lm m) nms
-  return $ Production lhsTgm rhsTgm nmsTgm
+            -> TypedGraphRule String String
+graphToRule ruleGraph nacs typeGraph = Production lhsTgm rhsTgm nmsTgm
   where
     (lhs, k, rhs) = graphToRuleGraphs ruleGraph
     lm = makeTypedGraph lhs typeGraph
@@ -146,6 +138,7 @@ graphToRule ruleGraph nacs typeGraph = do
 
     lhsTgm = TGM.fromGraphsAndLists km lm leftNodeMapping leftEdgeMapping
     rhsTgm = TGM.fromGraphsAndLists km rm rightNodeMapping rightEdgeMapping
+    nmsTgm = map (\(n,m) -> formatNac n lm m) nms
 
     leftNodeMapping = filter (\(n1,n2) -> n1 == n2) $ mkpairs (nodeIds k) (nodeIds lhs)
     leftEdgeMapping = filter (\(n1,n2) -> n1 == n2) $ mkpairs (edgeIds k) (edgeIds lhs)
@@ -162,14 +155,24 @@ makeTypeGraph g = fromNodesAndEdges nds edgs
     edgs = map (\e -> Edge (edgeId e) (sourceId e) (targetId e) (Just $ edgeInfo e)) $ edges g
 
 
-makeGrammar :: Graph Info Info -> Graph Info Info -> [(Graph Info Info, [NAC])] -> [String] -> IO (Maybe (Grammar (TGM.TypedGraphMorphism String String)))
-makeGrammar tg hg rgs rulesNames = do
+makeGrammar :: Graph Info Info 
+            -> Graph Info Info 
+            -> [(Graph Info Info, [NAC])] 
+            -> [String] 
+            -> Either String (Grammar (TGM.TypedGraphMorphism String String))
+makeGrammar tg hg rgs rulesNames = case eGrammar of
+    Left msgs -> Left $ L.intercalate "\n" msgs
+    Right grammar -> case validate grammar of
+      IsValid -> Right grammar
+      IsInvalid msgs -> Left $ L.intercalate "\n" msgs
+  where
+    typegraph = makeTypeGraph tg
+    initGraph = makeTypedGraph hg typegraph
+    productions = map (\(r,nacs) -> graphToRule r nacs typegraph) rgs
 
-  let typegraph = makeTypeGraph tg
-      initGraph = makeTypedGraph hg typegraph
-  productions <- mapM (\(r,ns) -> graphToRule r ns typegraph) rgs
+    vProductions = validateNamed (\name -> "Rule '"++name++"'") (zip rulesNames productions)
 
-  ensureValid $ validateNamed (\name -> "Rule '"++name++"'") (zip rulesNames productions)
-  if (L.null productions)
-    then return Nothing
-    else return $ Just $ grammar initGraph [] (zip rulesNames productions)
+    eGrammar = case (L.null productions, vProductions) of
+      (True,_) -> Left ["No rules"]
+      (False, IsValid) -> Right $ grammar initGraph [] (zip rulesNames productions)
+      (False, IsInvalid msg) -> Left msg

@@ -23,6 +23,7 @@ import Data.List
 import Data.Int
 import Data.Char
 import Data.Maybe
+import Data.Either
 import qualified Data.Text as T
 import qualified Data.Map as M
 import qualified Data.Tree as Tree
@@ -833,10 +834,10 @@ startGUI = do
     let rulesNames = map (\(_,_,name) -> name) rules
         rulesNnacs = map (\(r,ns,_) -> (r,ns)) rules
 
-    mfstOrderGG <- makeGrammar tg hg rulesNnacs rulesNames
-    case mfstOrderGG of
-      Nothing -> showError window "No first-order productions were found, at least one is needed."
-      Just fstOrderGG -> do
+    let efstOrderGG = makeGrammar tg hg rulesNnacs rulesNames
+    case efstOrderGG of
+      Left msg -> showError window (T.pack msg)
+      Right fstOrderGG -> do
         saveFileAs (fstOrderGG,tg) exportGGX fileName window False
         return ()
 
