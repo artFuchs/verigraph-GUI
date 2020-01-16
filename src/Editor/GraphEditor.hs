@@ -95,7 +95,7 @@ startGUI = do
   -- shows the main window
   (window, canvas, mainBox, treeFrame, inspectorFrame, fileItems, editItems, viewItems, helpItems) <- buildMainWindow
   let (newm,opn,svn,sva,eggx,svg,opg) = fileItems
-      (del,udo,rdo,cpy,pst,cut,sla,sln,sle) = editItems
+      (del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt) = editItems
       (zin,zut,z50,zdf,z150,z200,vdf,orv) = viewItems
       (hlp,abt) = helpItems
   Gtk.widgetSetSensitive orv False
@@ -118,9 +118,11 @@ startGUI = do
 
   (hostInspBox, hostNameBox, autoLabelN, autoLabelE, nodeTCBox, edgeTCBox, hostInspBoxes) <- buildHostInspector
   (ruleInspBox, ruleNameBox, autoLabelNR, autoLabelER, nodeTCBoxR, edgeTCBoxR, operationCBox, ruleInspBoxes) <- buildRuleInspector
+  (nacInspBox, nacNameBox, autoLabelNN, autoLabelEN, nodeTCBoxN, edgeTCBoxN, joinBtn, splitBtn, nacInspBoxes) <- buildNacInspector
   let
     hostInspWidgets = (nameEntry, nodeTCBox, edgeTCBox)
     ruleInspWidgets = (nameEntry, nodeTCBoxR, edgeTCBoxR, operationCBox)
+    nacInspWidgets  = (nameEntry, nodeTCBoxN, edgeTCBoxN, joinBtn, splitBtn)
 
   -- (rvwindow, lhsCanvas, rhsCanvas) <- buildRuleViewWindow window
 
@@ -197,7 +199,10 @@ startGUI = do
   currentLC       <- newIORef (0,0,0) -- the color to init new edges and the line and text of new nodes
 
   -- variables to specify hostGraphs
-  possibleNodeTypes   <- newIORef ( M.empty :: M.Map String (NodeGI, Int32)) -- possible types that a node can have in a hostGraph. Each node type is identified by a string and specifies a pair with Graphical information and the position of the entry in the comboBox
+  -- Possible types that a node can have in a hostGraph. 
+  --  Each node type is identified by a string and specifies a pair with 
+  --  Graphical information and the position of the entry in the comboBox
+  possibleNodeTypes   <- newIORef ( M.empty :: M.Map String (NodeGI, Int32)) 
   possibleEdgeTypes   <- newIORef ( M.empty :: M.Map String (EdgeGI, Int32)) -- similar to above.
   activeTypeGraph     <- newIORef G.empty  -- the connection information from the active typeGraph
   currentNodeType     <- newIORef Nothing
@@ -248,12 +253,16 @@ startGUI = do
                 Gtk.comboBoxTextRemoveAll edgeTCBox
                 Gtk.comboBoxTextRemoveAll nodeTCBoxR
                 Gtk.comboBoxTextRemoveAll edgeTCBoxR
+                Gtk.comboBoxTextRemoveAll nodeTCBoxN
+                Gtk.comboBoxTextRemoveAll edgeTCBoxN
                 forM_ (M.keys possibleNT) $ \k -> do
                     Gtk.comboBoxTextAppendText nodeTCBox (T.pack k)
                     Gtk.comboBoxTextAppendText nodeTCBoxR (T.pack k)
+                    Gtk.comboBoxTextAppendText nodeTCBoxN (T.pack k)
                 forM_ (M.keys possibleET) $ \k -> do
                     Gtk.comboBoxTextAppendText edgeTCBox (T.pack k)
                     Gtk.comboBoxTextAppendText edgeTCBoxR (T.pack k)
+                    Gtk.comboBoxTextAppendText edgeTCBoxN (T.pack k)
 
                 -- update the valid flags
                 states <- readIORef graphStates
@@ -320,7 +329,7 @@ startGUI = do
           case gType of
             2 -> updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
             3 -> updateRuleInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
-            4 -> updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
+            4 -> updateNacInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType mergeMappingIORef nacInspWidgets nacInspBoxes
             _ -> return ()
         -- right button click: create nodes and insert edges
         (3, False) -> liftIO $ do
@@ -564,121 +573,8 @@ startGUI = do
               Just ((nacg, nacgi),(nM,eM)) -> do
                 print $ nodes nacg
                 print $ edges nacg
-
+      -- 'delete' whne the focus is on canvas - delete elements
       (False,False,'\65535') -> Gtk.menuItemActivate del
-      (True,False,'m') -> do
-        gtype <- readIORef currentGraphType
-        if (gtype /= 4)
-          then return ()
-          else do
-            index <- readIORef currentGraph
-            nacInfoMap <- readIORef nacInfoMapIORef
-            es <- readIORef st
-            let (snids, seids) = editorGetSelected es
-                g = editorGetGraph es
-                nodesFromLHS = filter (\n -> nodeId n `elem` snids && infoLocked (nodeInfo n)) (nodes g)
-                edgesFromLHS = filter (\e -> edgeId e `elem` seids && infoLocked (edgeInfo e)) (edges g)
-                nodesCompatible = filter (\n -> (infoType $ nodeInfo n) == (infoType $ nodeInfo $ head nodesFromLHS)) nodesFromLHS
-                edgesCompatible = filter (\e -> (infoType $ edgeInfo e) == (infoType $ edgeInfo $ head edgesFromLHS)) edgesFromLHS
-                nodesToMerge = if length nodesCompatible < 2 then [] else nodesCompatible
-                edgesToMerge = if length edgesCompatible < 2 then [] else edgesCompatible
-            if (null nodesToMerge && null edgesToMerge)
-              then return ()
-              else do
-                -- load lhs and update it's diagraph
-                path <- readIORef currentPath
-                (lhsg, lhsgi) <- getParentDiaGraph store path graphStates
-                let lhsgWithLockedNodes = foldr (\n g -> G.updateNodePayload n g (\info -> infoSetLocked info True)) lhsg (nodeIds lhsg)
-                    lhsg' = foldr (\e g -> G.updateEdgePayload e g (\info -> infoSetLocked info True)) lhsgWithLockedNodes (edgeIds lhsg)
-                tg <- readIORef activeTypeGraph
-                -- modify mapping to specify merging of nodes
-                let ((nacg,nacgi), (nM, eM)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup index nacInfoMap
-                    -- genereate the merging map for nodes
-                    nidsToMerge = map nodeId nodesToMerge
-                    maxNID = if null nodesToMerge then NodeId 0 else maximum nidsToMerge
-                    -- specify the merging in the map - having (2,3) and (3,3) means that the nodes 2 and 3 are merged
-                    nM' = M.map (\nid -> if nid `elem` nidsToMerge then maxNID else nid) nM
-                    nM'' = foldr (\nid m -> M.insert nid maxNID m) nM' nidsToMerge
-                -- modify mapping to specify merging of edges
-                let -- update Ids of source and target nodes from edges that the user want to merge
-                    edgesToMerge' = map (\e -> updateEdgeEndsIds e nM'') edgesToMerge
-                    -- only merge the edges if they have the same source and targets nodes
-                    edgesToMerge'' = filter (\e -> sourceId e == sourceId (head edgesToMerge') && targetId e == targetId (head edgesToMerge')) edgesToMerge'
-                    eidsToMerge = map edgeId edgesToMerge''
-                    maxEID = if null edgesToMerge'' then EdgeId 0 else maximum eidsToMerge
-                    eM' = M.map (\eid -> if eid `elem` eidsToMerge then maxEID else eid) eM
-                    eM'' = foldr (\eid m -> M.insert eid maxEID m) eM' eidsToMerge
-                    -- add nodes that are needed for the merged edges in the mapping
-                    nodesNeeded = foldr (\e ns -> sourceId e : (targetId e) : ns ) [] edgesToMerge''
-                    nM''' = foldr (\n m -> if n `notElem` (M.elems m) then M.insert n n m else m) nM'' nodesNeeded
-                    -- add the necessary elements to the nacg
-                    nacg' = extractNacGraph g (nM''', eM'')
-                    nacgi' = extractNacGI g (editorGetGI es) (nM''', eM'')
-                    nacInfo' = ((nacg',nacgi'), (nM''', eM''))
-                modifyIORef nacInfoMapIORef $ M.insert index nacInfo'
-                writeIORef mergeMappingIORef $ Just (nM''', eM'')
-                -- remount nacGraph, joining the elements
-                (g',gi') <- joinNAC nacInfo' (lhsg', lhsgi) tg
-                -- modify editor state
-                modifyIORef st (editorSetGraph g' . editorSetGI gi' . editorSetSelected ([maxNID], [maxEID]))
-                stackUndo undoStack redoStack es (Just (nM,eM))
-                Gtk.widgetQueueDraw canvas
-
-      (True,True,'m') -> do
-        gtype <- readIORef currentGraphType
-        if (gtype /= 4)
-          then return ()
-          else do -- reset mapping for selected elements
-            -- load nac information
-            index <- readIORef currentGraph
-            nacInfoMap <- readIORef nacInfoMapIORef
-            es <- readIORef st
-            tg <- readIORef activeTypeGraph
-            -- reload lhs
-            path <- readIORef currentPath
-            (lhsg, lhsgi) <- getParentDiaGraph store path graphStates
-            let lhsgWithLockedNodes = foldr (\n g -> G.updateNodePayload n g (\info -> infoSetLocked info True)) lhsg (nodeIds lhsg)
-                lhsg' = foldr (\e g -> G.updateEdgePayload e g (\info -> infoSetLocked info True)) lhsgWithLockedNodes (edgeIds lhsg)
-
-            let (snids, seids) = editorGetSelected es
-                g = editorGetGraph es
-                ((nacg, nacgi), (nM,eM)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup index nacInfoMap
-            -- remove nacg edges that are selected from mapping
-            let eM' = M.filterWithKey (\k a -> a `notElem` seids) eM
-                -- remove nacg nodes that are selected and don't have incident edges from the mapping
-                hasIncidentEdges nid = length (incidentEdges . snd . fromJust $ lookupNodeInContext nid nacg) > 0
-                nM' = M.filterWithKey (\k a -> a `notElem` snids || (k==a && hasIncidentEdges a)) nM
-                
-            -- ajustar mapeamento de edges cujos src e tgt foram retirados do mapeamento
-            let someLhsEdges = filter (\e -> edgeId e `elem` (M.keys eM')) (edges lhsg)
-                someLhsEdges' = map (\e -> updateEdgeEndsIds e nM') someLhsEdges
-                someLhsEdges'' = filter (\e -> sourceId e `elem` (M.elems nM') && (targetId e `elem` (M.elems nM') ) ) someLhsEdges'
-                gEdges = M.elems $ foldr (\e m -> let k = (sourceId e, targetId e)
-                                                      v = edgeId e
-                                                  in case M.lookup k m of
-                                                      Nothing -> M.insert k [v] m
-                                                      Just vs -> M.insert k (v:vs) m) M.empty someLhsEdges''
-                gEdges' = filter (\g -> length g > 1) gEdges
-                eM'' = M.fromList . concat $ map (\es -> let maxE = maximum es
-                                                in map (\e -> (e,maxE)) es) gEdges'
-
-            -- remove from nacg the elements that are not in the mapping
-            let nacg' = extractNacGraph g (nM',eM'')
-                nacgi'nodes = M.filterWithKey (\k a -> NodeId k `notElem` (M.elems nM) || NodeId k `elem` (M.elems nM')) (fst nacgi)
-                nacgi'edges = M.filterWithKey (\k a -> EdgeId k `notElem` (M.elems eM) || EdgeId k `elem` (M.elems eM'')) (snd nacgi)
-                nacgi' = (nacgi'nodes,nacgi'edges)
-                nacdg' = (nacg',nacgi')
-
-            -- glue NAC part into the LHS
-            (g',gi') <- joinNAC (nacdg',(nM',eM'')) (lhsg', lhsgi) tg
-            modifyIORef nacInfoMapIORef (M.insert index (nacdg', (nM',eM'')))
-            writeIORef mergeMappingIORef $ Just (nM',eM'')
-            -- write editor State
-            let newNids = M.keys $ M.filter (\a -> a `elem` snids) nM'
-                newEids = M.keys $ M.filter (\a -> a `elem` seids) eM''
-            modifyIORef st (editorSetSelected (newNids, newEids) . editorSetGraph g' . editorSetGI gi')
-            stackUndo undoStack redoStack es (Just (nM,eM))
-            Gtk.widgetQueueDraw canvas
       _ -> return ()
     return True
 
@@ -1031,6 +927,120 @@ startGUI = do
       (n,e) -> writeIORef st $ editorSetSelected (n,[]) es
     Gtk.widgetQueueDraw canvas
 
+  on mrg #activate $ do
+    gtype <- readIORef currentGraphType
+    if (gtype /= 4)
+      then return ()
+      else do
+        index <- readIORef currentGraph
+        nacInfoMap <- readIORef nacInfoMapIORef
+        es <- readIORef st
+        let (snids, seids) = editorGetSelected es
+            g = editorGetGraph es
+            nodesFromLHS = filter (\n -> nodeId n `elem` snids && infoLocked (nodeInfo n)) (nodes g)
+            edgesFromLHS = filter (\e -> edgeId e `elem` seids && infoLocked (edgeInfo e)) (edges g)
+            nodesCompatible = filter (\n -> (infoType $ nodeInfo n) == (infoType $ nodeInfo $ head nodesFromLHS)) nodesFromLHS
+            edgesCompatible = filter (\e -> (infoType $ edgeInfo e) == (infoType $ edgeInfo $ head edgesFromLHS)) edgesFromLHS
+            nodesToMerge = if length nodesCompatible < 2 then [] else nodesCompatible
+            edgesToMerge = if length edgesCompatible < 2 then [] else edgesCompatible
+        if (null nodesToMerge && null edgesToMerge)
+          then return ()
+          else do
+            -- load lhs and update it's diagraph
+            path <- readIORef currentPath
+            (lhsg, lhsgi) <- getParentDiaGraph store path graphStates
+            let lhsgWithLockedNodes = foldr (\n g -> G.updateNodePayload n g (\info -> infoSetLocked info True)) lhsg (nodeIds lhsg)
+                lhsg' = foldr (\e g -> G.updateEdgePayload e g (\info -> infoSetLocked info True)) lhsgWithLockedNodes (edgeIds lhsg)
+            tg <- readIORef activeTypeGraph
+            -- modify mapping to specify merging of nodes
+            let ((nacg,nacgi), (nM, eM)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup index nacInfoMap
+                -- genereate the merging map for nodes
+                nidsToMerge = map nodeId nodesToMerge
+                maxNID = if null nodesToMerge then NodeId 0 else maximum nidsToMerge
+                -- specify the merging in the map - having (2,3) and (3,3) means that the nodes 2 and 3 are merged
+                nM' = M.map (\nid -> if nid `elem` nidsToMerge then maxNID else nid) nM
+                nM'' = foldr (\nid m -> M.insert nid maxNID m) nM' nidsToMerge
+            -- modify mapping to specify merging of edges
+            let -- update Ids of source and target nodes from edges that the user want to merge
+                edgesToMerge' = map (\e -> updateEdgeEndsIds e nM'') edgesToMerge
+                -- only merge the edges if they have the same source and targets nodes
+                edgesToMerge'' = filter (\e -> sourceId e == sourceId (head edgesToMerge') && targetId e == targetId (head edgesToMerge')) edgesToMerge'
+                eidsToMerge = map edgeId edgesToMerge''
+                maxEID = if null edgesToMerge'' then EdgeId 0 else maximum eidsToMerge
+                eM' = M.map (\eid -> if eid `elem` eidsToMerge then maxEID else eid) eM
+                eM'' = foldr (\eid m -> M.insert eid maxEID m) eM' eidsToMerge
+                -- add nodes that are needed for the merged edges in the mapping
+                nodesNeeded = foldr (\e ns -> sourceId e : (targetId e) : ns ) [] edgesToMerge''
+                nM''' = foldr (\n m -> if n `notElem` (M.elems m) then M.insert n n m else m) nM'' nodesNeeded
+                -- add the necessary elements to the nacg
+                nacg' = extractNacGraph g (nM''', eM'')
+                nacgi' = extractNacGI g (editorGetGI es) (nM''', eM'')
+                nacInfo' = ((nacg',nacgi'), (nM''', eM''))
+            modifyIORef nacInfoMapIORef $ M.insert index nacInfo'
+            writeIORef mergeMappingIORef $ Just (nM''', eM'')
+            -- remount nacGraph, joining the elements
+            (g',gi') <- joinNAC nacInfo' (lhsg', lhsgi) tg
+            -- modify editor state
+            modifyIORef st (editorSetGraph g' . editorSetGI gi' . editorSetSelected ([maxNID], [maxEID]))
+            stackUndo undoStack redoStack es (Just (nM,eM))
+            Gtk.widgetQueueDraw canvas
+
+  on spt #activate $ do
+    gtype <- readIORef currentGraphType
+    if (gtype /= 4)
+      then return ()
+      else do -- reset mapping for selected elements
+        -- load nac information
+        index <- readIORef currentGraph
+        nacInfoMap <- readIORef nacInfoMapIORef
+        es <- readIORef st
+        tg <- readIORef activeTypeGraph
+        -- reload lhs
+        path <- readIORef currentPath
+        (lhsg, lhsgi) <- getParentDiaGraph store path graphStates
+        let lhsgWithLockedNodes = foldr (\n g -> G.updateNodePayload n g (\info -> infoSetLocked info True)) lhsg (nodeIds lhsg)
+            lhsg' = foldr (\e g -> G.updateEdgePayload e g (\info -> infoSetLocked info True)) lhsgWithLockedNodes (edgeIds lhsg)
+
+        let (snids, seids) = editorGetSelected es
+            g = editorGetGraph es
+            ((nacg, nacgi), (nM,eM)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup index nacInfoMap
+        -- remove nacg edges that are selected from mapping
+        let eM' = M.filterWithKey (\k a -> a `notElem` seids) eM
+            -- remove nacg nodes that are selected and don't have incident edges from the mapping
+            hasIncidentEdges nid = length (incidentEdges . snd . fromJust $ lookupNodeInContext nid nacg) > 0
+            nM' = M.filterWithKey (\k a -> a `notElem` snids || (k==a && hasIncidentEdges a)) nM
+            
+        -- ajustar mapeamento de edges cujos src e tgt foram retirados do mapeamento
+        let someLhsEdges = filter (\e -> edgeId e `elem` (M.keys eM')) (edges lhsg)
+            someLhsEdges' = map (\e -> updateEdgeEndsIds e nM') someLhsEdges
+            someLhsEdges'' = filter (\e -> sourceId e `elem` (M.elems nM') && (targetId e `elem` (M.elems nM') ) ) someLhsEdges'
+            gEdges = M.elems $ foldr (\e m -> let k = (sourceId e, targetId e)
+                                                  v = edgeId e
+                                              in case M.lookup k m of
+                                                  Nothing -> M.insert k [v] m
+                                                  Just vs -> M.insert k (v:vs) m) M.empty someLhsEdges''
+            gEdges' = filter (\g -> length g > 1) gEdges
+            eM'' = M.fromList . concat $ map (\es -> let maxE = maximum es
+                                            in map (\e -> (e,maxE)) es) gEdges'
+
+        -- remove from nacg the elements that are not in the mapping
+        let nacg' = extractNacGraph g (nM',eM'')
+            nacgi'nodes = M.filterWithKey (\k a -> NodeId k `notElem` (M.elems nM) || NodeId k `elem` (M.elems nM')) (fst nacgi)
+            nacgi'edges = M.filterWithKey (\k a -> EdgeId k `notElem` (M.elems eM) || EdgeId k `elem` (M.elems eM'')) (snd nacgi)
+            nacgi' = (nacgi'nodes,nacgi'edges)
+            nacdg' = (nacg',nacgi')
+
+        -- glue NAC part into the LHS
+        (g',gi') <- joinNAC (nacdg',(nM',eM'')) (lhsg', lhsgi) tg
+        modifyIORef nacInfoMapIORef (M.insert index (nacdg', (nM',eM'')))
+        writeIORef mergeMappingIORef $ Just (nM',eM'')
+        -- write editor State
+        let newNids = M.keys $ M.filter (\a -> a `elem` snids) nM'
+            newEids = M.keys $ M.filter (\a -> a `elem` seids) eM''
+        modifyIORef st (editorSetSelected (newNids, newEids) . editorSetGraph g' . editorSetGI gi')
+        stackUndo undoStack redoStack es (Just (nM,eM))
+        Gtk.widgetQueueDraw canvas
+
   -- zoom in
   zin `on` #activate $ do
     modifyIORef st (\es -> editorSetZoom (editorGetZoom es * 1.1) es )
@@ -1366,6 +1376,7 @@ startGUI = do
   -- choose a type in the type comboBox for nodes
   on nodeTCBox #changed $ nodeTCBoxChangedCallback nodeTCBox
   on nodeTCBoxR #changed $ nodeTCBoxChangedCallback nodeTCBoxR
+  on nodeTCBoxN #changed $ nodeTCBoxChangedCallback nodeTCBoxN
 
   let edgeTCBoxCallback comboBox = do
           gt <- readIORef currentGraphType
@@ -1407,6 +1418,7 @@ startGUI = do
   -- choose a type in the type comboBox for edges
   on edgeTCBox #changed $ edgeTCBoxCallback edgeTCBox
   on edgeTCBoxR #changed $ edgeTCBoxCallback edgeTCBoxR
+  on edgeTCBoxN #changed $ edgeTCBoxCallback edgeTCBoxN
 
   -- choose a operaion in the operation comboBox
   on operationCBox #changed $ do
@@ -1441,8 +1453,13 @@ startGUI = do
             updateRuleInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
             Gtk.widgetQueueDraw canvas
 
+
+  -- merge or split buttons pressed: merge or split elements in nac
+  on joinBtn #clicked $ Gtk.menuItemActivate mrg
+  on splitBtn #clicked $ Gtk.menuItemActivate spt
+
   -- event bindings for the graphs' tree ---------------------------------------
-  -- changed the selected graph
+  -- auxiliar funciont to #cursorChanged
   let changeInspector inspectorBox nameBox = do
         child <- Gtk.containerGetChildren inspectorFrame >>= \a -> return (a!!0)
         Gtk.containerRemove inspectorFrame child
@@ -1457,7 +1474,7 @@ startGUI = do
               Just p -> Gtk.containerRemove p nameEntry
         Gtk.boxPackStart nameBox nameEntry True True 0
         #showAll inspectorFrame
-
+  -- event: changed the selected graph
   on treeview #cursorChanged $ do
     selection <- Gtk.treeViewGetSelection treeview
     (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
@@ -1597,6 +1614,14 @@ startGUI = do
                   newNodeGI = M.fromList . map gn . map fn $ nodes g
                   newEdgeGI = M.fromList . map ge . map fe $ edges g
               writeIORef st (editorSetGI (newNodeGI, newEdgeGI) es)
+        
+        let resetCurrentGI = do
+                writeIORef currentShape NCircle
+                writeIORef currentStyle ENormal
+                writeIORef currentC (1,1,1)
+                writeIORef currentLC (0,0,0)
+
+        -- change the UI elements according to the selected graph
         case (gType) of
           0 -> Gtk.widgetSetSensitive orv False
           1 -> do
@@ -1605,26 +1630,17 @@ startGUI = do
           2 -> do
             Gtk.widgetSetSensitive orv False
             changeInspector hostInspBox hostNameBox
-            writeIORef currentShape NCircle
-            writeIORef currentStyle ENormal
-            writeIORef currentC (1,1,1)
-            writeIORef currentLC (0,0,0)
+            resetCurrentGI
             updateElements
           3 -> do
             Gtk.widgetSetSensitive orv True
             changeInspector ruleInspBox ruleNameBox
-            writeIORef currentShape NCircle
-            writeIORef currentStyle ENormal
-            writeIORef currentC (1,1,1)
-            writeIORef currentLC (0,0,0)
+            resetCurrentGI
             updateElements
           4 -> do
             Gtk.widgetSetSensitive orv True
-            changeInspector hostInspBox hostNameBox
-            writeIORef currentShape NCircle
-            writeIORef currentStyle ENormal
-            writeIORef currentC (1,1,1)
-            writeIORef currentLC (0,0,0)
+            changeInspector nacInspBox nacNameBox
+            resetCurrentGI
             updateElements
         Gtk.widgetQueueDraw canvas
 

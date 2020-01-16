@@ -3,6 +3,7 @@ module Editor.GraphEditor.UpdateInspector(
   updateTypeInspector
 , updateHostInspector
 , updateRuleInspector
+, updateNacInspector
 )where
 
 import Data.GI.Base
@@ -22,6 +23,7 @@ import Data.Graphs
 import Editor.Data.EditorState
 import Editor.Data.GraphicalInfo
 import Editor.Data.Info
+import Editor.Data.Nac
 
 -- update the inspector --------------------------------------------------------
 updateTypeInspector :: IORef EditorState -> IORef (Double,Double,Double) -> IORef (Double,Double,Double) ->
@@ -201,3 +203,30 @@ updateRuleInspector st possibleNT possibleET currentNodeType currentEdgeType (en
       Gtk.comboBoxSetActive operationCBox opI
       set edgeTBox [#visible := True]
       set nodeTBox [#visible := True]
+
+updateNacInspector :: IORef EditorState -> IORef (M.Map String (NodeGI, Int32)) -> IORef (M.Map String (EdgeGI, Int32)) 
+                    -> IORef (Maybe String) -> IORef (Maybe String) -> IORef (Maybe MergeMapping)
+                    -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.Button, Gtk.Button) 
+                    -> (Gtk.Box, Gtk.Box) -> IO()
+updateNacInspector st possibleNT possibleET currentNodeType currentEdgeType mergeMappingIORef (entry, nodeTCBox, edgeTCBox, joinBtn, splitBtn) (nodeTBox, edgeTBox) = do
+  updateHostInspector st possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox)
+  est <- readIORef st
+  mm <- readIORef mergeMappingIORef 
+  let (nM,eM) = case mm of 
+                      Nothing -> (M.empty, M.empty) 
+                      Just m -> m
+  let g = editorGetGraph est
+      (snodes,sedges) = editorGetSelected est
+      nodesFromLHS = filter (\n -> nodeId n `elem` snodes && (infoLocked $ nodeInfo n)) $ nodes g
+      edgesFromLHS = filter (\e -> edgeId e `elem` sedges && (infoLocked $ edgeInfo e)) $ edges g
+      mergeableNodes = filter (\n -> (infoType $ nodeInfo n) == (infoType $ nodeInfo $ head nodesFromLHS)) nodesFromLHS
+      mergeableEdges = filter (\e -> (infoType $ edgeInfo e) == (infoType $ edgeInfo $ head edgesFromLHS)) edgesFromLHS
+      splittableNids = M.filterWithKey (\k n -> k /= n) nM
+      splittableEids = M.filterWithKey (\k n -> k /= n) eM
+  case (length mergeableNodes < 2, length mergeableEdges < 2) of
+    (True,True) -> Gtk.widgetSetSensitive joinBtn False
+    (_,_) -> Gtk.widgetSetSensitive joinBtn True
+  case (M.null splittableNids, M.null splittableEids) of
+    (True, True) -> Gtk.widgetSetSensitive splitBtn False
+    (_,_) -> Gtk.widgetSetSensitive splitBtn True
+
