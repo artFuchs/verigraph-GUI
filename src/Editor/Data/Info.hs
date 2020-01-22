@@ -19,7 +19,7 @@ module Editor.Data.Info(
 type Info = String
 
 infoVisible :: Info -> String
-infoVisible info = unwords . words $ infoVisibleAux info
+infoVisible info = infoVisibleAux info
 
 infoVisibleAux :: Info -> String
 infoVisibleAux [] = []
@@ -39,7 +39,7 @@ infoLabelAux (c:cs) = infoLabelAux cs
 
 infoType :: Info -> String
 infoType [] = []
-infoType ('{':cs) = unwords . words $ infoTypeAux cs
+infoType ('{':cs) = infoTypeAux cs
 infoType (c:cs) = infoType cs
 
 infoTypeAux :: Info -> String

@@ -454,7 +454,7 @@ startGUI = do
           case gType of
             2 -> updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
             3 -> updateRuleInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
-            4 -> updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
+            4 -> updateNacInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType mergeMappingIORef nacInspWidgets nacInspBoxes
             _ -> return ()
         _           -> return ()
       return True
@@ -532,6 +532,7 @@ startGUI = do
             case gType of
               2 -> updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
               3 -> updateRuleInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
+              4 -> updateNacInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType mergeMappingIORef nacInspWidgets nacInspBoxes
               _ -> return ()
           ((n,e), Nothing) -> return ()
           _ -> return ()
@@ -1000,7 +1001,6 @@ startGUI = do
         (lhsg, lhsgi) <- getParentDiaGraph store path graphStates
         let lhsgWithLockedNodes = foldr (\n g -> G.updateNodePayload n g (\info -> infoSetLocked info True)) lhsg (nodeIds lhsg)
             lhsg' = foldr (\e g -> G.updateEdgePayload e g (\info -> infoSetLocked info True)) lhsgWithLockedNodes (edgeIds lhsg)
-
         let (snids, seids) = editorGetSelected es
             g = editorGetGraph es
             ((nacg, nacgi), (nM,eM)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup index nacInfoMap
@@ -1009,8 +1009,7 @@ startGUI = do
             -- remove nacg nodes that are selected and don't have incident edges from the mapping
             hasIncidentEdges nid = length (incidentEdges . snd . fromJust $ lookupNodeInContext nid nacg) > 0
             nM' = M.filterWithKey (\k a -> a `notElem` snids || (k==a && hasIncidentEdges a)) nM
-            
-        -- ajustar mapeamento de edges cujos src e tgt foram retirados do mapeamento
+        -- adjust mapping of edges which src e tgt where removed from the node mapping
         let someLhsEdges = filter (\e -> edgeId e `elem` (M.keys eM')) (edges lhsg)
             someLhsEdges' = map (\e -> updateEdgeEndsIds e nM') someLhsEdges
             someLhsEdges'' = filter (\e -> sourceId e `elem` (M.elems nM') && (targetId e `elem` (M.elems nM') ) ) someLhsEdges'
@@ -1022,14 +1021,12 @@ startGUI = do
             gEdges' = filter (\g -> length g > 1) gEdges
             eM'' = M.fromList . concat $ map (\es -> let maxE = maximum es
                                             in map (\e -> (e,maxE)) es) gEdges'
-
         -- remove from nacg the elements that are not in the mapping
         let nacg' = extractNacGraph g (nM',eM'')
             nacgi'nodes = M.filterWithKey (\k a -> NodeId k `notElem` (M.elems nM) || NodeId k `elem` (M.elems nM')) (fst nacgi)
             nacgi'edges = M.filterWithKey (\k a -> EdgeId k `notElem` (M.elems eM) || EdgeId k `elem` (M.elems eM'')) (snd nacgi)
             nacgi' = (nacgi'nodes,nacgi'edges)
             nacdg' = (nacg',nacgi')
-
         -- glue NAC part into the LHS
         (g',gi') <- joinNAC (nacdg',(nM',eM'')) (lhsg', lhsgi) tg
         modifyIORef nacInfoMapIORef (M.insert index (nacdg', (nM',eM'')))

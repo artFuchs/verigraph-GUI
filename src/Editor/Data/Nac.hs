@@ -25,11 +25,13 @@ extractNacGraph :: Graph Info Info -> MergeMapping -> Graph Info Info
 extractNacGraph g (nM, eM) = fromNodesAndEdges nacNodes nacEdges
   where
     lhsNodes = filter (\n -> infoLocked (nodeInfo n)) (nodes g)
-    lhsSelectedNodes = filter (\n -> nodeId n `elem` (M.elems nM)) lhsNodes
+    --lhsSelectedNodes = filter (\n -> nodeId n `elem` (M.elems nM)) lhsNodes
+    lhsSelectedNodes = mergeNodes lhsNodes nM
     addedNodes = filter (\n -> not $ infoLocked (nodeInfo n)) (nodes g)
     nacNodes = lhsSelectedNodes ++ addedNodes
     lhsEdges = filter (\e -> infoLocked (edgeInfo e)) (edges g)
-    lhsSelectedEdges = filter (\e -> edgeId e `elem` (M.elems eM)) lhsEdges
+    --lhsSelectedEdges = filter (\e -> edgeId e `elem` (M.elems eM)) lhsEdges
+    lhsSelectedEdges = mergeEdges lhsEdges eM
     addedEdges = filter (\e -> not $ infoLocked (edgeInfo e)) (edges g)
     nacEdges = map (\e -> updateEdgeEndsIds e nM) (lhsSelectedEdges ++ addedEdges)
 
@@ -71,6 +73,61 @@ remapElementsWithConflict (g1,(ngi1,egi1)) (g2,(ngi2,egi2)) (nodeMapping, edgeMa
                           in Edge eid srcNid tgtNid (edgeInfo e))
                   (edges g2)
 
+-- mergeInfos: function to merge a list of Info in one Info, with their labels separated by "\n ".
+--   The rest of the data of first Info (type, operation, locked) in the list is used for the result
+-- examples: mergeInfos ["1{1}","2{1}","3{1}"] = "1\n2\n3{1}"
+--           mergeInfos ["1{1}","2{2}","3{3}"] = "1\n2\n3{1}"
+mergeInfos :: [Info] -> Info
+mergeInfos infos = infoSetLabel i label
+  where  
+    i:is = infos
+    is' = map (\info -> infoSetLabel info ("\n" ++ (infoLabel info))) is
+    label = concat $ map infoLabel (i:is')
+
+firstInfoLabel :: Info -> Info
+firstInfoLabel info = infoSetLabel info label'
+  where
+    label = infoLabel info
+    label' = head $ words label
+
+-- | mergeNodes: function to merge nodes, joining their infos
+-- example: mergeNodes [Node 1 "1", Node 2 "2", Node 3 "3"]
+mergeNodes :: [Node Info] -> M.Map NodeId NodeId -> [Node Info]
+mergeNodes nodes mapping = mergedNodes
+  where
+    group n m = let nid = nodeId n
+                in case M.lookup nid mapping of
+                    Nothing -> m
+                    Just nid' -> case M.lookup nid' m of
+                                  Nothing -> M.insert nid' [n] m
+                                  Just ns -> M.insert nid' (n:ns) m
+    nodesGroups = M.elems $ foldr group M.empty nodes
+    mergeGroup ns = Node (maximum $ map nodeId ns) (mergeInfos $ map nodeInfo ns)
+    splitNode n = Node (nodeId n) (firstInfoLabel $ nodeInfo n)
+    mergeOrSplit ns = case ns of 
+                        n:[] -> splitNode n 
+                        _ -> mergeGroup ns
+    mergedNodes = map mergeOrSplit nodesGroups
+
+mergeEdges :: [Edge Info] -> M.Map EdgeId EdgeId -> [Edge Info]
+mergeEdges edges mapping = mergedEdges
+  where
+    group e m = let eid = edgeId e
+                in case M.lookup eid mapping of
+                  Nothing -> m
+                  Just eid' -> case M.lookup eid' m of
+                                Nothing -> M.insert eid' [e] m
+                                Just es -> M.insert eid' (e:es) m
+    edgesGroups = M.elems $ foldr group M.empty edges
+    mergeGroup es = Edge (maximum $ map edgeId es) (sourceId $ head es) (targetId $ head es) (mergeInfos $ map edgeInfo es)
+    mergedEdges = map mergeGroup edgesGroups
+
+
+
+    
+
+
+    
 
 updateNodeId :: NodeId -> M.Map NodeId NodeId -> NodeId
 updateNodeId nid m = Maybe.fromMaybe nid $ M.lookup nid m
