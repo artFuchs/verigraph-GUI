@@ -36,12 +36,17 @@ extractNacGraph g (nM, eM) = fromNodesAndEdges nacNodes nacEdges
     nacEdges = map (\e -> updateEdgeEndsIds e nM) (lhsSelectedEdges ++ addedEdges)
 
 extractNacGI :: Graph Info Info -> GraphicalInfo -> MergeMapping -> GraphicalInfo
-extractNacGI g (ngi,egi) (nM,eM)  = (ngi',egi')
+extractNacGI g (ngi,egi) (nM,eM) = (ngi',egi')
   where
-    lhsNids = map nodeId $ filter (\n -> infoLocked (nodeInfo n)) (nodes g)
-    lhsEids = map edgeId $ filter (\e -> infoLocked (edgeInfo e)) (edges g)
-    ngi' = M.filterWithKey (\k a -> NodeId k `notElem` lhsNids) ngi
-    egi' = M.filterWithKey (\k a -> EdgeId k `notElem` lhsEids) egi
+    addedNids = map (fromEnum . nodeId) $ filter (\n -> not $ infoLocked (nodeInfo n)) (nodes g)
+    addedEids = map (fromEnum . edgeId) $ filter (\e -> not $ infoLocked (edgeInfo e)) (edges g)
+    mergedNids = map fromEnum $ M.elems nM
+    mergedEids = map fromEnum $ M.elems eM
+    addedNgi = M.filterWithKey (\k a -> k `elem` addedNids) ngi
+    mergedNgi = M.filterWithKey (\k a -> k `elem` mergedNids) ngi
+    ngi' = M.union addedNgi mergedNgi
+    egi' = M.filterWithKey (\k a -> k `elem` addedEids || k `elem` mergedEids) egi
+
 
 -- function to modify ids of nac nodes that aren't in mapping and have id conflict with elems from lhs
 -- (g1,(ngi1,egi1)) must be the lhs diagraph, while (g2,(ngi2,egi2)) must be the nac diagraph

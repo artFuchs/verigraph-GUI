@@ -936,6 +936,7 @@ startGUI = do
         index <- readIORef currentGraph
         nacInfoMap <- readIORef nacInfoMapIORef
         es <- readIORef st
+        context <- Gtk.widgetGetPangoContext canvas
         let (snids, seids) = editorGetSelected es
             g = editorGetGraph es
             nodesFromLHS = filter (\n -> nodeId n `elem` snids && infoLocked (nodeInfo n)) (nodes g)
@@ -975,8 +976,22 @@ startGUI = do
                 nM''' = foldr (\n m -> if n `notElem` (M.elems m) then M.insert n n m else m) nM'' nodesNeeded
                 -- add the necessary elements to the nacg
                 nacg' = extractNacGraph g (nM''', eM'')
-                nacgi' = extractNacGI g (editorGetGI es) (nM''', eM'')
-                nacInfo' = ((nacg',nacgi'), (nM''', eM''))
+                nacgi' = extractNacGI nacg' (editorGetGI es) (nM''', eM'')
+            
+            -- modify dimensions of nodes that where merged to match the labels
+            nacNgi' <- forM (M.toList $ fst nacgi') $ \(n, gi) -> do
+              let mNode = lookupNode (NodeId n) nacg'
+              case mNode of
+                Nothing -> return (n,gi)
+                Just node -> do 
+                  let info = nodeInfo node
+                      label = infoLabel info
+                  dims <- getStringDims label context Nothing
+                  return (n, nodeGiSetDims dims gi)
+
+            let nacgi'' = (M.fromList nacNgi', snd nacgi')
+            let nacInfo' = ((nacg',nacgi''), (nM''', eM''))  
+
             modifyIORef nacInfoMapIORef $ M.insert index nacInfo'
             writeIORef mergeMappingIORef $ Just (nM''', eM'')
             -- remount nacGraph, joining the elements
@@ -996,6 +1011,7 @@ startGUI = do
         nacInfoMap <- readIORef nacInfoMapIORef
         es <- readIORef st
         tg <- readIORef activeTypeGraph
+        context <- Gtk.widgetGetPangoContext canvas
         -- reload lhs
         path <- readIORef currentPath
         (lhsg, lhsgi) <- getParentDiaGraph store path graphStates
