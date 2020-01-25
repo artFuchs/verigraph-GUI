@@ -1166,6 +1166,7 @@ startGUI = do
   -- when the entry lose focus
   on nameEntry #focusOutEvent $ \event -> do
     es <- readIORef st
+    gt <- readIORef currentGraphType
     stackUndo undoStack redoStack es Nothing
     setChangeFlags window store changedProject changedGraph currentPath currentGraph True
     name <- Gtk.entryGetText nameEntry >>= return . T.unpack
@@ -1174,7 +1175,6 @@ startGUI = do
     Gtk.widgetQueueDraw canvas
     updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
     updateByType
-    gt <- readIORef currentGraphType
     if gt == 4
       then do
         index <- readIORef currentGraph
@@ -2002,7 +2002,9 @@ renameSelected:: IORef EditorState -> String -> P.Context -> IO()
 renameSelected state content context = do
   es <- readIORef state
   -- auxiliar function rename
-  let rename oldInfo = case ((infoType content) == "", (infoOperation content) == "", content) of
+  let rename oldInfo = if infoLocked oldInfo 
+                       then oldInfo 
+                       else case ((infoType content) == "", (infoOperation content) == "", content) of
                         (True, True, ':':cs) -> infoSetType cs (infoType oldInfo)
                         (True, True, _) -> infoSetOperation (infoSetType content (infoType oldInfo)) (infoOperation oldInfo)
                         (True, False, _) -> infoSetType content (infoType oldInfo)
