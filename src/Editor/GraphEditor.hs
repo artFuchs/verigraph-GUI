@@ -979,17 +979,9 @@ startGUI = do
                 nacgi' = extractNacGI nacg' (editorGetGI es) (nM''', eM'')
             
             -- modify dimensions of nodes that where merged to match the labels
-            nacNgi' <- forM (M.toList $ fst nacgi') $ \(n, gi) -> do
-              let mNode = lookupNode (NodeId n) nacg'
-              case mNode of
-                Nothing -> return (n,gi)
-                Just node -> do 
-                  let info = nodeInfo node
-                      label = infoLabel info
-                  dims <- getStringDims label context Nothing
-                  return (n, nodeGiSetDims dims gi)
+            nacNgi' <- updateNodesGiDims (fst nacgi') nacg' context
 
-            let nacgi'' = (M.fromList nacNgi', snd nacgi')
+            let nacgi'' = (nacNgi', snd nacgi')
             let nacInfo' = ((nacg',nacgi''), (nM''', eM''))  
 
             modifyIORef nacInfoMapIORef $ M.insert index nacInfo'
@@ -1000,6 +992,8 @@ startGUI = do
             modifyIORef st (editorSetGraph g' . editorSetGI gi' . editorSetSelected ([maxNID], [maxEID]))
             stackUndo undoStack redoStack es (Just (nM,eM))
             Gtk.widgetQueueDraw canvas
+            updateNacInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType mergeMappingIORef nacInspWidgets nacInspBoxes
+            
 
   on spt #activate $ do
     gtype <- readIORef currentGraphType
@@ -1042,7 +1036,10 @@ startGUI = do
             nacgi'nodes = M.filterWithKey (\k a -> NodeId k `notElem` (M.elems nM) || NodeId k `elem` (M.elems nM')) (fst nacgi)
             nacgi'edges = M.filterWithKey (\k a -> EdgeId k `notElem` (M.elems eM) || EdgeId k `elem` (M.elems eM'')) (snd nacgi)
             nacgi' = (nacgi'nodes,nacgi'edges)
-            nacdg' = (nacg',nacgi')
+        -- update dims of lhs' nodes that where splitted but are still in the mapping
+        nacNgi' <- updateNodesGiDims (fst nacgi') nacg' context
+        let nacgi'' = (nacNgi', snd nacgi')
+            nacdg' = (nacg',nacgi'')
         -- glue NAC part into the LHS
         (g',gi') <- joinNAC (nacdg',(nM',eM'')) (lhsg', lhsgi) tg
         modifyIORef nacInfoMapIORef (M.insert index (nacdg', (nM',eM'')))
@@ -2269,5 +2266,18 @@ joinNAC (nacdg, (nM,eM)) lhsdg@(ruleLG,ruleLGI) tg = do
     nGnodes = map swapNodeId . map nodeFromJust $ nodes nGJust
     nGedges = map swapEdgeId . map edgeFromJust $ edges nGJust
     nG = fromNodesAndEdges nGnodes nGedges
-    -- join the
+    -- join the GraphicalInfos
     nGI = (M.union (fst nacGI) (fst ruleLGI), M.union (snd nacGI) (snd ruleLGI))
+
+updateNodesGiDims :: M.Map Int NodeGI -> Graph Info Info -> P.Context -> IO (M.Map Int NodeGI)
+updateNodesGiDims ngiM g context = do 
+  listOfNGIs <- forM (M.toList $ ngiM) $ \(n, gi) -> do
+              let mNode = lookupNode (NodeId n) g
+              case mNode of
+                Nothing -> return (n,gi)
+                Just node -> do 
+                  let info = nodeInfo node
+                      label = infoLabel info
+                  dims <- getStringDims label context Nothing
+                  return (n, nodeGiSetDims dims gi)
+  return $ M.fromList listOfNGIs
