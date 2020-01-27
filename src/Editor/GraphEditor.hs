@@ -100,7 +100,7 @@ startGUI = do
       (hlp,abt) = helpItems
   Gtk.widgetSetSensitive orv False
   -- creates the tree panel
-  (treeBox, treeview, changesRenderer, nameRenderer, activeRenderer, createRBtn, removeRBtn, createNBtn, removeNBtn) <- buildTreePanel
+  (treeBox, treeview, changesRenderer, nameRenderer, activeRenderer, createRBtn, removeBtn, createNBtn) <- buildTreePanel
   Gtk.containerAdd treeFrame treeBox
   -- creates the inspector panel and add to the window
 
@@ -127,6 +127,8 @@ startGUI = do
   -- (rvwindow, lhsCanvas, rhsCanvas) <- buildRuleViewWindow window
 
   #showAll window
+  #hide createNBtn
+  #hide removeBtn
 
   -- init an model to display in the tree panel --------------------------------
   store <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt, gtypeBoolean, gtypeBoolean]
@@ -1632,27 +1634,37 @@ startGUI = do
                 writeIORef currentLC (0,0,0)
 
         -- change the UI elements according to the selected graph
-        case (gType) of
-          0 -> Gtk.widgetSetSensitive orv False
+        case gType of
           1 -> do
-            Gtk.widgetSetSensitive orv False
             changeInspector typeInspBox typeNameBox
           2 -> do
-            Gtk.widgetSetSensitive orv False
             changeInspector hostInspBox hostNameBox
             resetCurrentGI
             updateElements
           3 -> do
-            Gtk.widgetSetSensitive orv True
             changeInspector ruleInspBox ruleNameBox
             resetCurrentGI
             updateElements
           4 -> do
-            Gtk.widgetSetSensitive orv True
             changeInspector nacInspBox nacNameBox
             resetCurrentGI
             updateElements
+          _ -> return ()
+
+        if gType == 3 || gType == 4
+          then do
+            #show createNBtn
+            #show removeBtn
+            case gType of
+              3 -> set removeBtn [#label := T.pack "Remove Rule"]
+              4 -> set removeBtn [#label := T.pack "Remove NAC"]
+            set orv [#sensitive := True]
+          else do
+            #hide createNBtn
+            #hide removeBtn
+            set orv [#sensitive := False]
         Gtk.widgetQueueDraw canvas
+
 
   -- pressed the 'new rule' button on the treeview area
   -- create a new Rule
@@ -1670,7 +1682,7 @@ startGUI = do
 
   -- pressed the 'remove rule' button on the treeview area
   -- remove a Rule
-  on removeRBtn #clicked $ do
+  on removeBtn #clicked $ do
     selection <- Gtk.treeViewGetSelection treeview
     (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
     if not sel
@@ -1682,7 +1694,11 @@ startGUI = do
             index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
             Gtk.treeStoreRemove store iter
             modifyIORef graphStates $ M.delete index
-          _ -> showError window "Selected Graph is not a rule."
+          4 -> do
+            index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
+            Gtk.treeStoreRemove store iter
+            modifyIORef graphStates $ M.delete index
+          _ -> showError window "Selected Graph is not a NAC or a Rule."
 
 
   -- pressed the 'create NAC' vutton on the treeview area
@@ -1690,48 +1706,38 @@ startGUI = do
   on createNBtn #clicked $ do
     states <- readIORef graphStates
     selection <- Gtk.treeViewGetSelection treeview
-    (sel, model, iterR) <- Gtk.treeSelectionGetSelected selection
+    (sel, model, iter) <- Gtk.treeSelectionGetSelected selection
+    gtype <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
+    iterR <- case gtype of
+      3 -> return iter
+      4 -> do
+        (valid, iterR) <- Gtk.treeModelIterParent store iter
+        if valid 
+          then return iterR
+          else return iter
     if not sel
       then return ()
       else do
-        gtype <- Gtk.treeModelGetValue store iterR 3 >>= fromGValue :: IO Int32
         index <- Gtk.treeModelGetValue store iterR 2 >>= fromGValue :: IO Int32
-        case gtype of
-          3 -> do
+        if gtype == 3 || gtype == 4
+          then do
             storeCurrentES
             states <- readIORef graphStates
             let state = fromMaybe (emptyES,[],[]) $ M.lookup index states
                 (es,_,_) = state
                 (lhs,_,_) = graphToRuleGraphs (editorGetGraph es)
+                gi = editorGetGI es
+                ngi' = M.filterWithKey (\k a -> (NodeId k) `elem` (nodeIds lhs)) (fst gi)
+                egi' = M.filterWithKey (\k a -> (EdgeId k) `elem` (edgeIds lhs)) (snd gi)
                 nodeMap = M.empty -- M.fromList $ map (\a -> (a,a)) $ nodeIds lhs
                 edgeMap = M.empty -- M.fromList $ map (\a -> (a,a)) $ edgeIds lhs
-                gi = editorGetGI es
-                gi' = (M.filterWithKey (\k a -> (NodeId k) `elem` (nodeIds lhs)) (fst gi), M.filterWithKey (\k a -> (EdgeId k) `elem` (edgeIds lhs)) (snd gi))
-            let newKey = if M.size states > 0 then maximum (M.keys states) + 1 else 0
+                newKey = if M.size states > 0 then maximum (M.keys states) + 1 else 0
             n <- Gtk.treeModelIterNChildren store (Just iterR)
             iterN <- Gtk.treeStoreAppend store (Just iterR)
             storeSetGraphStore store iterN ("NAC" ++ (show n), 0, newKey, 4, True, True)
             modifyIORef nacInfoMapIORef (M.insert newKey (DG.empty,(nodeMap,edgeMap)))
-            modifyIORef graphStates (M.insert newKey (editorSetGraph lhs . editorSetGI gi $ emptyES,[],[]))
-          _ -> showError window "Selected Graph is not a rule, it's not possible to create NACs for it."
-
-  -- pressed the 'remove NAC' button on the treeview area
-  -- remove a NAC
-  on removeNBtn #clicked $ do
-    selection <- Gtk.treeViewGetSelection treeview
-    (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
-    if not sel
-      then return ()
-      else do
-        gtype <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
-        case gtype of
-          4 -> do
-              index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
-              Gtk.treeStoreRemove store iter
-              modifyIORef graphStates $ M.delete index
-          _ -> showError window "Selected Graph is not a NAC"
-
-
+            modifyIORef graphStates (M.insert newKey (editorSetGraph lhs . editorSetGI (ngi',egi') $ emptyES,[],[]))
+          else showError window "Selected Graph is not a rule, it's not possible to create NACs for it."
 
   -- edited a graph name
   on nameRenderer #edited $ \pathStr newName -> do
@@ -1923,9 +1929,11 @@ getRuleList :: Gtk.TreeStore
 getRuleList model iter gStates nacInfoMapIORef = do
   name <- Gtk.treeModelGetValue model iter 0 >>= fromGValue >>= return . fromJust :: IO String
   index <- Gtk.treeModelGetValue model iter 2 >>= fromGValue :: IO Int32
-  ans <- case M.lookup index gStates of
-    Nothing -> return []
-    Just (es, _, _) -> do
+  active <- Gtk.treeModelGetValue model iter 4 >>= fromGValue :: IO Bool
+  ans <- case (active, M.lookup index gStates) of
+    (False, _) -> return []
+    (True, Nothing) -> return []
+    (True, Just (es, _, _)) -> do
       (hasNac,nacIter) <- Gtk.treeModelIterChildren model (Just iter)
       nacs <- case hasNac of
         True -> do

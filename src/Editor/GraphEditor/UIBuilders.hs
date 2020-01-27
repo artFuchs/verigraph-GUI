@@ -323,16 +323,13 @@ buildTreePanel = do
   btnNewR <- new Gtk.Button [#label := "New Rule"]
   Gtk.boxPackStart mainBox btnNewR False False 0
 
-  btnRmvR <- new Gtk.Button [#label := "Remove Rule"]
-  Gtk.boxPackStart mainBox btnRmvR False False 0
+  btnRmv <- new Gtk.Button [#label := "Remove Rule"]
+  Gtk.boxPackStart mainBox btnRmv False False 0
 
-  btnNewN <- new Gtk.Button [#label := "New Nac"]
+  btnNewN <- new Gtk.Button [#label := "New NAC"]
   Gtk.boxPackStart mainBox btnNewN False False 0
 
-  btnRmvN <- new Gtk.Button [#label := "Remove Nac"]
-  Gtk.boxPackStart mainBox btnRmvN False False 0
-
-  return (mainBox, treeview, rendererChanges, rendererProj, rendererActive, btnNewR, btnRmvR, btnNewN, btnRmvN)
+  return (mainBox, treeview, rendererChanges, rendererProj, rendererActive, btnNewR, btnRmv, btnNewN)
 
 buildAboutDialog :: IO ()
 buildAboutDialog = do
