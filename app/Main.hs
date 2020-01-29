@@ -20,17 +20,7 @@ Ideias -------------------------------------------------------------------------
 
 Progresso -------------------------------------------------------------------
 *Mostrar regras em formato R -> L
-*criação e associação de NACs.
-  - indicar quais são os elementos da nac que são do lhs e não permitir a deleção/renomeação de elementos do lhs
-    - [X] deleção
-    - [ ] renomeação
-  - concatenação de elementos do lhs na nac.
-    - checar se as arestas a serem concatenadas têm as mesmas origens e destinos.
-    - verificar os tipos dos elementos a serem concatenados.
-    - undo e redo devem incluir os mapeamentos
-  - salvar/carregar nacs
-    - corrigir problema do programa fechar quando os elementos do nacg forem carregados com tipagem errada
-    - corrigir problema de os tipos no nacg não serem atualizados quando o usuario muda-os
+
 
 
 
@@ -92,4 +82,15 @@ Feito -----------------------------------------------------------------------
   - criar grafo que inicia com o lado esquerdo da regra.
   - as mudanças de uma regra devem propagar para as nacs.
     - dividir nac de forma a pegar apenas a forma da nac e juntar com o lhs quando for edita-la novamente
+  - indicar quais são os elementos da nac que são do lhs e não permitir a deleção/renomeação de elementos do lhs
+    - [X] deleção
+    - [X] renomeação
+  - concatenação de elementos do lhs na nac.
+    - checar se as arestas a serem concatenadas têm as mesmas origens e destinos.
+    - verificar os tipos dos elementos a serem concatenados.
+    - undo e redo devem incluir os mapeamentos
+  - salvar/carregar nacs
+    - corrigir problema do programa fechar quando os elementos do nacg forem carregados com tipagem errada
+    - corrigir problema de os tipos no nacg não serem atualizados quando o usuario muda-os
 -}
+
