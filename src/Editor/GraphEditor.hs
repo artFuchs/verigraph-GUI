@@ -1471,7 +1471,7 @@ startGUI = do
   on splitBtn #clicked $ Gtk.menuItemActivate spt
 
   -- event bindings for the graphs' tree ---------------------------------------
-  -- auxiliar funciont to #cursorChanged
+  -- auxiliar function to #cursorChanged
   let changeInspector inspectorBox nameBox = do
         child <- Gtk.containerGetChildren inspectorFrame >>= \a -> return (a!!0)
         Gtk.containerRemove inspectorFrame child
@@ -1537,24 +1537,20 @@ startGUI = do
                       Just (nacdg,(nM,eM)) -> do
                         writeIORef mergeMappingIORef $ Just (nM,eM)
                         -- ensure that elements of nacg that are mapped from lhs have the same type as of lhs
-                        let nacgLockedNodes = filter (\n -> infoLocked $ nodeInfo n) $ nodes (fst nacdg)
-                            nacgLockedEdges = filter (\e -> infoLocked $ edgeInfo e) $ edges (fst nacdg)
-                            nacgLNodesIds = map nodeId nacgLockedNodes
-                            nacgLEdgesIds = map edgeId nacgLockedEdges
-                            nacgWithUpdatedNodes = foldr (\n g -> insertNodeWithPayload (nodeId n)
-                                                                                        (nodeInfo $ fromMaybe n $ (lookupNode (nodeId n) ruleLG))
-                                                                                        g)
-                                                         (fst nacdg) nacgLockedNodes
-                            nacg' = foldr (\e g -> insertEdgeWithPayload (edgeId e) (sourceId e) (targetId e)
-                                                                                    (edgeInfo $ fromMaybe e $ (lookupEdge (edgeId e) ruleLG))
-                                                                                    g)
-                                          nacgWithUpdatedNodes nacgLockedEdges
+                        let nacgLNodesIds = M.elems nM
+                            nacgLEdgesIds = M.elems eM
+
+                            nacgWithUpdatedNodes = foldr (\n g -> updateNodePayload (nodeId n) g (\info -> infoSetType info (infoType $ nodeInfo n)))
+                                                         (fst nacdg) (nodes ruleLG)
+                            nacg' = foldr (\e g -> updateEdgePayload (edgeId e) g (\info -> infoSetType info (infoType $ edgeInfo e)))
+                                          nacgWithUpdatedNodes (edges ruleLG)
+                            
                             nacNgi' = M.mapWithKey (\k gi -> if (NodeId k `elem` nacgLNodesIds) 
-                                                              then fromMaybe gi $ M.lookup k (fst lhsgi)
+                                                              then nodeGiSetDims (dims gi) $ fromMaybe gi $ M.lookup k (fst lhsgi)
                                                               else gi) 
                                                     $ fst (snd nacdg)
                             nacEgi' = M.mapWithKey (\k gi -> if (EdgeId k `elem` nacgLEdgesIds)
-                                                              then fromMaybe gi $ M.lookup k (snd lhsgi)
+                                                              then edgeGiSetPosition (cPosition gi) $ fromMaybe gi $ M.lookup k (snd lhsgi)
                                                               else gi) 
                                                     $ snd (snd nacdg)
                             nacdg' = (nacg', (nacNgi', nacEgi'))
@@ -2126,8 +2122,6 @@ copySelected  es = (cg,(ngiM',egiM'))
     cedges = foldr (\e es -> if edgeId e `elem` eids
                               then (Edge (edgeId e) (sourceId e) (targetId e) (infoSetLocked (edgeInfo e) False):es)
                               else es) [] (edges g)
-    -- cnodes = map (\n -> Node (nodeId n) (infoSetLocked (nodeInfo n) False)) $ filter (\n -> nodeId n `elem` nids) $ nodes g
-    -- cedges = filter (\e -> edgeId e `elem` eids) $ edges g
     cg = fromNodesAndEdges cnodes cedges
     ngiM' = M.filterWithKey (\k _ -> NodeId k `elem` nids) ngiM
     egiM' = M.filterWithKey (\k _ -> EdgeId k `elem` eids) egiM
