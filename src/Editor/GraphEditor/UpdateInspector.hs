@@ -22,7 +22,7 @@ import Data.Graphs
 
 import Editor.Data.EditorState
 import Editor.Data.GraphicalInfo
-import Editor.Data.Info
+import Editor.Data.Info1
 import Editor.Data.Nac
 
 -- update the inspector --------------------------------------------------------
@@ -51,8 +51,7 @@ updateTypeInspector st currentC currentLC (nameEntry, colorBtn, lcolorBtn, radio
       set frameStyle [#visible := True]
     (n,0) -> do
       let nid = nodeId (ns!!0)
-          info = T.pack . unifyNames $ map (infoLabel . nodeInfo) ns
-          --info = T.pack . unifyNames $ map nodeInfo ns
+          info = T.pack . unifyNames $ map (infoLabelStr . nodeInfo) ns
           gi = getNodeGI (fromEnum nid) ngiM
           (r,g,b) = fillColor gi
           (r',g',b') = lineColor gi
@@ -73,8 +72,7 @@ updateTypeInspector st currentC currentLC (nameEntry, colorBtn, lcolorBtn, radio
       set frameStyle [#visible := False]
     (0,n) -> do
       let eid = edgeId (es!!0)
-          info = T.pack . unifyNames $ map (infoLabel . edgeInfo) es
-          --info = T.pack . unifyNames $ map edgeInfo es
+          info = T.pack . unifyNames $ map (infoLabelStr . edgeInfo) es
           gi = getEdgeGI (fromEnum eid) egiM
           (r,g,b) = color gi
           edgeStyle = style gi
@@ -91,8 +89,7 @@ updateTypeInspector st currentC currentLC (nameEntry, colorBtn, lcolorBtn, radio
       set frameShape [#visible := False]
       set frameStyle [#visible := True]
     _ -> do
-      let info = T.pack . unifyNames $ concat [(map (infoLabel . edgeInfo) es), (map (infoLabel . nodeInfo) ns)]
-      --let info = T.pack . unifyNames $ concat [(map edgeInfo es), (map nodeInfo ns)]
+      let info = T.pack . unifyNames $ concat [(map (infoLabelStr . edgeInfo) es), (map (infoLabelStr . nodeInfo) ns)]
       set nameEntry [#text := info ]
       Gtk.colorChooserSetRgba colorBtn emptyColor
       Gtk.colorChooserSetRgba lcolorBtn emptyColor
@@ -168,7 +165,7 @@ updateRuleInspector st possibleNT possibleET currentNodeType currentEdgeType (en
       unifyNames (x:xs) = if all (==x) xs then x else "------"
       typeNL = unifyNames $ map (infoType . nodeInfo) ns
       typeEL = unifyNames $ map (infoType . edgeInfo) es
-      operation = unifyNames $ concat [map (infoOperation . edgeInfo) es, map (infoOperation . nodeInfo) ns]
+      operation = unifyNames $ concat [map (infoOperationStr . edgeInfo) es, map (infoOperationStr . nodeInfo) ns]
       typeNI = case M.lookup typeNL pNT of
               Nothing -> -1
               Just (gi,i) -> i
@@ -177,8 +174,8 @@ updateRuleInspector st possibleNT possibleET currentNodeType currentEdgeType (en
               Just (gi,i) -> i
       opI = case operation of
         "" -> 0
-        "new" -> 1
-        "del" -> 2
+        "new:" -> 1
+        "del:" -> 2
         _ -> -1
   case (length ns, length es) of
     (0,0) -> do

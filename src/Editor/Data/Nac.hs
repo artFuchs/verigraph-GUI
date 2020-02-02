@@ -9,13 +9,14 @@ module Editor.Data.Nac (
 
 import qualified Data.Map as M
 import qualified Data.Maybe as Maybe
+import Data.List
 
 import Abstract.Rewriting.DPO
 import Data.Graphs
 
 import Editor.Data.DiaGraph
 import Editor.Data.GraphicalInfo
-import Editor.Data.Info
+import Editor.Data.Info1
 import Editor.Helper.List
 
 type MergeMapping = (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
@@ -82,21 +83,26 @@ remapElementsWithConflict (g1,(ngi1,egi1)) (g2,(ngi2,egi2)) (nodeMapping, edgeMa
 --   The rest of the data of first Info (type, operation, locked) in the list is used for the result
 -- examples: mergeInfos ["1{1}","2{1}","3{1}"] = "1\n2\n3{1}"
 --           mergeInfos ["1{1}","2{2}","3{3}"] = "1\n2\n3{1}"
-mergeInfos :: [Info] -> Info
-mergeInfos infos = infoSetLabel i label
+mergeInfos :: [(Int,Info)] -> Info
+mergeInfos infos = newInfo
   where  
-    i:is = infos
-    is' = map (\info -> infoSetLabel info ("\n" ++ (infoLabel info))) is
-    label = concat $ map infoLabel (i:is')
-
-firstInfoLabel :: Info -> Info
-firstInfoLabel info = infoSetLabel info label'
-  where
-    label = infoLabel info
-    label' = head $ words label
+    (k,i):is = reverse $ sortOn fst infos
+    newInfo = foldr 
+            (\(k,i) info -> case infoLabel i of 
+              Label str -> infoAddLabel info k str
+              LabelGroup lbls -> foldr 
+                                  (\(k',str) info' -> case k of
+                                    0 -> infoAddLabel info' k str
+                                    n -> infoAddLabel info' k' str
+                                  ) 
+                                  info lbls
+            ) 
+            i is
 
 -- | mergeNodes: function to merge nodes, joining their infos
--- example: mergeNodes [Node 1 "1", Node 2 "2", Node 3 "3"]
+-- example: mergeNodes [Node 1 "1", Node 2 "2", Node 3 "3", Node 4 "4", Node 5 "5"] 
+--                     [(1,3),(2,3),(3,3),(4,5),(5,5)] 
+--          = [Node 3 "1 2 3", Node 5 "4 5"
 mergeNodes :: [Node Info] -> M.Map NodeId NodeId -> [Node Info]
 mergeNodes nodes mapping = mergedNodes
   where
@@ -107,8 +113,12 @@ mergeNodes nodes mapping = mergedNodes
                                   Nothing -> M.insert nid' [n] m
                                   Just ns -> M.insert nid' (n:ns) m
     nodesGroups = M.elems $ foldr group M.empty nodes
-    mergeGroup ns = Node (maximum $ map nodeId ns) (mergeInfos $ map nodeInfo ns)
-    splitNode n = Node (nodeId n) (firstInfoLabel $ nodeInfo n)
+    mergeGroup ns = Node 
+                    (maximum $ map nodeId ns) 
+                    (mergeInfos $ map (\n -> (fromEnum $ nodeId n, nodeInfo n)) ns)
+    splitNode n = Node 
+                    (nodeId n) 
+                    (infoSetLabel (nodeInfo n) $ infoOriginalLabel $ nodeInfo n)
     mergeOrSplit ns = case ns of 
                         n:[] -> splitNode n 
                         _ -> mergeGroup ns
@@ -124,7 +134,11 @@ mergeEdges edges mapping = mergedEdges
                                 Nothing -> M.insert eid' [e] m
                                 Just es -> M.insert eid' (e:es) m
     edgesGroups = M.elems $ foldr group M.empty edges
-    mergeGroup es = Edge (maximum $ map edgeId es) (sourceId $ head es) (targetId $ head es) (mergeInfos $ map edgeInfo es)
+    mergeGroup es = Edge 
+                    (maximum $ map edgeId es) 
+                    (sourceId $ head es) 
+                    (targetId $ head es) 
+                    (mergeInfos $ map (\e -> (fromEnum $ edgeId e, edgeInfo e)) es)
     mergedEdges = map mergeGroup edgesGroups
 
 

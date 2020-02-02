@@ -27,14 +27,14 @@ import XML.GGXWriter
 import Editor.GraphEditor.GrammarMaker
 import Category.TypedGraphRule (RuleMorphism)
 import Rewriting.DPO.TypedGraph
-import Editor.Data.Info
+import Editor.Data.Info1
 import qualified Data.Map as M
 --------------------------------------------------------------------------------
 -- structs ---------------------------------------------------------------------
 
-type NList = [(Int,String)]
-type EList = [(Int,Int,Int,String)]
-type NACInfo = ((Graph String String,GraphicalInfo), (M.Map NodeId NodeId, M.Map EdgeId EdgeId))
+type NList = [(Int,Info)]
+type EList = [(Int,Int,Int,Info)]
+type NACInfo = ((Graph Info Info,GraphicalInfo), (M.Map NodeId NodeId, M.Map EdgeId EdgeId))
 data SaveInfo = Topic String | TypeGraph String EditorState | HostGraph String EditorState | RuleGraph String EditorState Bool | NacGraph String NACInfo deriving (Show)
 data UncompressedSaveInfo = T String
                           | TG String NList EList GraphicalInfo
@@ -90,7 +90,7 @@ saveFileAs x saveF fileName window changeFN = do
     _ -> return False
 
 
-saveGraph :: (Graph String String ,GraphicalInfo) -> String -> IO Bool
+saveGraph :: (Graph Info Info ,GraphicalInfo) -> String -> IO Bool
 saveGraph (g,gi) path = do
     let path' = if (tails path)!!(length path-3) == ".gr" then path else path ++ ".gr"
         writeGraph = writeFile path' $ show ( map (\n -> (nodeId n, nodeInfo n) ) $ nodes g
@@ -125,16 +125,16 @@ saveProject saveInfo path = do
     Right _ -> return True
 
 
-exportGGX :: (Grammar (TGM.TypedGraphMorphism String String), Graph String String) -> String -> IO Bool
+exportGGX :: (Grammar (TGM.TypedGraphMorphism Info Info), Graph Info Info) -> String -> IO Bool
 exportGGX (fstOrderGG, tg)  path = do
   let path' = if (tails path)!!(length path-4) == ".ggx" then path else path ++ ".ggx"
   let nods = nodes tg
       edgs = edges tg
-      nodeNames = map (\n -> ('N' : (show . nodeId $ n), (infoLabel . nodeInfo $ n) ++ "%:[NODE]:" )) nods
-      edgeNames = map (\e -> ('E' : (show . edgeId $ e), (infoLabel . edgeInfo $ e) ++ "%:[EDGE]:" )) edgs
+      nodeNames = map (\n -> ('N' : (show . nodeId $ n), (infoLabelStr . nodeInfo $ n) ++ "%:[NODE]:" )) nods
+      edgeNames = map (\e -> ('E' : (show . edgeId $ e), (infoLabelStr . edgeInfo $ e) ++ "%:[EDGE]:" )) edgs
       names = nodeNames ++ edgeNames
 
-  let emptySndOrderGG = grammar (emptyGraphRule (makeTypeGraph tg)) [] [] :: Grammar (RuleMorphism String String)
+  let emptySndOrderGG = grammar (emptyGraphRule (makeTypeGraph tg)) [] [] :: Grammar (RuleMorphism Info Info)
   let ggName = reverse . takeWhile (/= '/') . drop 4 . reverse $ path'
 
   writeGrammarFile (fstOrderGG,emptySndOrderGG) ggName names path'
@@ -168,7 +168,7 @@ loadFile window loadF = do
       return Nothing
 
 
-loadGraph :: String -> Maybe (Graph String String,GraphicalInfo)
+loadGraph :: String -> Maybe (Graph Info Info,GraphicalInfo)
 loadGraph contents = result
   where
     result = case reads contents :: [( (NList, EList, GraphicalInfo), String)] of

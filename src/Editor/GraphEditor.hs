@@ -41,7 +41,8 @@ import qualified Data.Graphs.Morphism as Morph
 
 -- editor modules
 import Editor.Data.GraphicalInfo
-import Editor.Data.Info
+import Editor.Data.Info1 hiding (empty)
+import qualified Editor.Data.Info1 as I
 import Editor.Data.DiaGraph hiding (empty)
 import Editor.Data.EditorState
 import qualified Editor.Data.DiaGraph as DG
@@ -352,7 +353,7 @@ startGUI = do
             Nothing -> case gType of
                 0 -> return ()
                 1 -> do
-                  createNode' st "" True (x',y') cShape cColor cLColor context
+                  createNode' st I.empty True (x',y') cShape cColor cLColor context
                   setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                   updateTG
                 _ -> do
@@ -367,7 +368,7 @@ startGUI = do
                       case mngi of
                         Nothing -> return ("", cShape, cColor, cLColor)
                         Just gi -> return (t, shape gi, fillColor gi, lineColor gi)
-                  createNode' st (infoSetType "" t) auto (x',y') shape c lc context
+                  createNode' st (infoSetType I.empty t) auto (x',y') shape c lc context
                   setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                   setCurrentValidFlag store st activeTypeGraph currentPath
                   
@@ -397,7 +398,7 @@ startGUI = do
               1 -> do
                 estyle <- readIORef currentStyle
                 color <- readIORef currentLC
-                modifyIORef st (\es -> createEdges es nid "" True estyle color)
+                modifyIORef st (\es -> createEdges es nid I.empty True estyle color)
                 setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                 updateTG
               _ -> do
@@ -415,7 +416,7 @@ startGUI = do
                     case megi of
                       Nothing -> return ("", cEstyle, cColor)
                       Just gi -> return (t, style gi, color gi)
-                writeIORef st $ createEdges es nid (infoSetType "" t) auto estyle color
+                writeIORef st $ createEdges es nid (infoSetType I.empty t) auto estyle color
                 setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                 setCurrentValidFlag store st activeTypeGraph currentPath
                 -- if the current graph is a nac, then add the created edges in the nacg
@@ -563,19 +564,7 @@ startGUI = do
     ms <- get eventKey #state
     case (Gdk.ModifierTypeControlMask `elem` ms, Gdk.ModifierTypeShiftMask `elem` ms, toLower k) of
       -- F2 - rename selection
-      (False,False,'\65471') -> Gtk.widgetGrabFocus nameEntry
-      (True,False,'p') -> do
-        gtype <- readIORef currentGraphType
-        if (gtype /= 4)
-          then return ()
-          else do
-            index <- readIORef currentGraph
-            nacInfoMap <- readIORef nacInfoMapIORef
-            case M.lookup index nacInfoMap of
-              Nothing -> putStrLn "nac info not found"
-              Just ((nacg, nacgi),(nM,eM)) -> do
-                print $ nodes nacg
-                print $ edges nacg
+      (False,False,'\65471') -> Gtk.widgetGrabFocus nameEntry      
       -- 'delete' whne the focus is on canvas - delete elements
       (False,False,'\65535') -> Gtk.menuItemActivate del
       _ -> return ()
@@ -977,14 +966,19 @@ startGUI = do
                 nodesNeeded = foldr (\e ns -> sourceId e : (targetId e) : ns ) [] edgesToMerge''
                 nM''' = foldr (\n m -> if n `notElem` (M.elems m) then M.insert n n m else m) nM'' nodesNeeded
                 -- add the necessary elements to the nacg
-                nacg' = extractNacGraph g (nM''', eM'')
+            putStrLn $ "\nmerge ------------"
+            putStrLn $ "nodes g: " ++ (show $ nodes g)
+            putStrLn $ "nM: " ++ (show  nM''')
+            let nacg' = extractNacGraph g (nM''', eM'')
                 nacgi' = extractNacGI nacg' (editorGetGI es) (nM''', eM'')
+
+            putStrLn $ "nodes nacg': " ++ (show $ nodes nacg')
             
             -- modify dimensions of nodes that where merged to match the labels
             nacNgi' <- updateNodesGiDims (fst nacgi') nacg' context
 
             let nacgi'' = (nacNgi', snd nacgi')
-            let nacInfo' = ((nacg',nacgi''), (nM''', eM''))  
+            let nacInfo' = ((nacg',nacgi''), (nM''', eM''))
 
             modifyIORef nacInfoMapIORef $ M.insert index nacInfo'
             writeIORef mergeMappingIORef $ Just (nM''', eM'')
@@ -1034,10 +1028,14 @@ startGUI = do
             eM'' = M.fromList . concat $ map (\es -> let maxE = maximum es
                                             in map (\e -> (e,maxE)) es) gEdges'
         -- remove from nacg the elements that are not in the mapping
+        putStrLn $ "\nsplit ------------"
+        putStrLn $ "nodes g: " ++ (show $ nodes g)
+        putStrLn $ "nM: " ++ (show  nM')
         let nacg' = extractNacGraph g (nM',eM'')
             nacgi'nodes = M.filterWithKey (\k a -> NodeId k `notElem` (M.elems nM) || NodeId k `elem` (M.elems nM')) (fst nacgi)
             nacgi'edges = M.filterWithKey (\k a -> EdgeId k `notElem` (M.elems eM) || EdgeId k `elem` (M.elems eM'')) (snd nacgi)
             nacgi' = (nacgi'nodes,nacgi'edges)
+        putStrLn $ "nodes nacg': " ++ (show $ nodes nacg')
         -- update dims of lhs' nodes that where splitted but are still in the mapping
         nacNgi' <- updateNodesGiDims (fst nacgi') nacg' context
         let nacgi'' = (nacNgi', snd nacgi')
@@ -1105,7 +1103,7 @@ startGUI = do
               nodeGiM' <- forM (nodes) (\n -> do
                     let nid = fromEnum . nodeId $ n
                         ngi = getNodeGI nid (fst gi)
-                    gi' <- changeGIDims (infoLabel . nodeInfo $ n) ngi
+                    gi' <- changeGIDims (infoLabelStr . nodeInfo $ n) ngi
                     return (nid, gi'))
               return $ M.fromList nodeGiM'
         nodesGiM <- updateNodesDims (nodes g)
@@ -1444,16 +1442,16 @@ startGUI = do
           else do
             es <- readIORef st
             operationInfo <- return $ case index of
-              0 -> ""
-              1 -> "new"
-              2 -> "del"
+              0 -> Preserve
+              1 -> Create
+              2 -> Delete
             let (sNids,sEids) = editorGetSelected es
                 g = editorGetGraph es
                 gi = editorGetGI es
                 newGraph  = foldl (\g nid -> updateNodePayload nid g (\info -> infoSetOperation info operationInfo)) g sNids
                 newGraph' = foldl (\g eid -> updateEdgePayload eid g (\info -> infoSetOperation info operationInfo)) newGraph sEids
             context <- Gtk.widgetGetPangoContext canvas
-            font <- case operationInfo == "" of
+            font <- case operationInfo == Preserve of
               True -> return Nothing
               False -> return $ Just "Sans Bold 10"
             ndims <- forM sNids $ \nid -> do
@@ -1921,7 +1919,7 @@ getRuleList :: Gtk.TreeStore
             ->  Gtk.TreeIter
             -> M.Map Int32 (EditorState, ChangeStack, ChangeStack)
             -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
-            -> IO [(Graph String String, [NAC], String)]
+            -> IO [(Graph Info Info, [NAC], String)]
 getRuleList model iter gStates nacInfoMapIORef = do
   name <- Gtk.treeModelGetValue model iter 0 >>= fromGValue >>= return . fromJust :: IO String
   index <- Gtk.treeModelGetValue model iter 2 >>= fromGValue :: IO Int32
@@ -1947,7 +1945,7 @@ getRuleList model iter gStates nacInfoMapIORef = do
 getRules :: Gtk.TreeStore
          -> IORef (M.Map Int32 (EditorState, ChangeStack, ChangeStack))
          -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
-         -> IO [(Graph String String, [NAC], String)]
+         -> IO [(Graph Info Info, [NAC], String)]
 getRules model gStatesIORef nacInfoMapIORef = do
   (valid, iter) <- Gtk.treeModelGetIterFromString model "2:0"
   if not valid
@@ -1957,7 +1955,7 @@ getRules model gStatesIORef nacInfoMapIORef = do
       getRuleList model iter gStates nacInfoMapIORef
 
 -- update the active typegraph if the corresponding diagraph is valid, set it as empty if not
-updateActiveTG :: IORef EditorState -> IORef (Graph String String) -> IORef (M.Map String (NodeGI, Int32)) -> IORef (M.Map String (EdgeGI, Int32)) -> IO ()
+updateActiveTG :: IORef EditorState -> IORef (Graph Info Info) -> IORef (M.Map String (NodeGI, Int32)) -> IORef (M.Map String (EdgeGI, Int32)) -> IO ()
 updateActiveTG st activeTypeGraph possibleNodeTypes possibleEdgeTypes = do
         es <- readIORef st
         -- check if all edges and nodes have different names
@@ -1968,9 +1966,9 @@ updateActiveTG st activeTypeGraph possibleNodeTypes possibleEdgeTypes = do
             allDiff l = case l of
                           [] -> True
                           x:xs -> (notElem x xs) && (allDiff xs)
-            diffNames = (allDiff (map (infoLabel . nodeInfo) nds)) &&
-                        (allDiff (map (infoLabel . edgeInfo) edgs)) &&
-                        notElem "" (concat [(map (infoLabel . edgeInfo) edgs), (map (infoLabel . nodeInfo) nds)])
+            diffNames = (allDiff (map (infoLabelStr . nodeInfo) nds)) &&
+                        (allDiff (map (infoLabelStr . edgeInfo) edgs)) &&
+                        notElem "" (concat [(map (infoLabelStr . edgeInfo) edgs), (map (infoLabelStr . nodeInfo) nds)])
         if diffNames
           then do -- load the variables with the info from the typeGraph
             writeIORef activeTypeGraph g
@@ -1979,13 +1977,13 @@ updateActiveTG st activeTypeGraph possibleNodeTypes possibleEdgeTypes = do
                 zipWith (\i (k,gi) -> (k, (gi, i)) ) [0..] $
                 M.toList $
                 foldr (\(Node nid info) m -> let ngi = getNodeGI (fromEnum nid) (fst giM)
-                                                 in M.insert (infoLabel info) ngi m) M.empty nds
+                                                 in M.insert (infoLabelStr info) ngi m) M.empty nds
             writeIORef possibleEdgeTypes $
                 M.fromList $
                 zipWith (\i (k,gi) -> (k, (gi, i)) ) [0..] $
                 M.toList $
                 foldr (\(Edge eid _ _ info) m -> let egi = getEdgeGI (fromEnum eid) (snd giM)
-                                                     in M.insert (infoLabel info) egi m) M.empty edgs
+                                                     in M.insert (infoLabelStr info) egi m) M.empty edgs
           else do
             writeIORef activeTypeGraph (G.empty)
             writeIORef possibleNodeTypes (M.empty)
@@ -1993,28 +1991,30 @@ updateActiveTG st activeTypeGraph possibleNodeTypes possibleEdgeTypes = do
 
 -- graph interaction
 -- create a new node, auto-generating it's name and dimensions
-createNode' :: IORef EditorState -> String -> Bool -> GIPos -> NodeShape -> GIColor -> GIColor -> P.Context ->  IO ()
-createNode' st content autoNaming pos nshape color lcolor context = do
+createNode' :: IORef EditorState -> Info -> Bool -> GIPos -> NodeShape -> GIColor -> GIColor -> P.Context ->  IO ()
+createNode' st info autoNaming pos nshape color lcolor context = do
   es <- readIORef st
   let nid = head $ newNodes (editorGetGraph es)
-      content' = if infoVisible content == "" && autoNaming then infoSetLabel content (show nid) else content
-  dim <- getStringDims (infoVisible content') context Nothing
-  writeIORef st $ createNode es pos dim content' nshape color lcolor
+      info' = if infoLabelStr info == "" && autoNaming then infoSetLabel info (show nid) else info
+  dim <- getStringDims (infoVisible info') context Nothing
+  writeIORef st $ createNode es pos dim info' nshape color lcolor
 
 -- rename the selected itens
 renameSelected:: IORef EditorState -> String -> P.Context -> IO()
 renameSelected state content context = do
   es <- readIORef state
   -- auxiliar function rename
+  let newInfo = str2Info content
   let rename oldInfo = if infoLocked oldInfo 
                        then oldInfo 
-                       else case ((infoType content) == "", (infoOperation content) == "", content) of
-                        (True, True, ':':cs) -> infoSetType cs (infoType oldInfo)
-                        (True, True, _) -> infoSetOperation (infoSetType content (infoType oldInfo)) (infoOperation oldInfo)
-                        (True, False, _) -> infoSetType content (infoType oldInfo)
-                        (False, True, ':':cs) -> infoSetOperation content ""
-                        (False, True, _) -> infoSetOperation content (infoOperation oldInfo)
-                        (False, False, _) -> content
+                       else infoSetOperation (infoSetType newInfo t) op
+                          where
+                            op = case (infoOperation newInfo, content) of
+                              (Preserve, ':':cs) -> Preserve
+                              (op,_) -> op
+                            t = case infoType newInfo of
+                                "" -> infoType oldInfo
+                                it -> it
   let graph = editorGetGraph es
       (nids,eids) = editorGetSelected es
       -- apply rename in the graph elements to get newGraph
@@ -2026,7 +2026,7 @@ renameSelected state content context = do
                (\n -> do
                      let info = nodeInfo n
                          op = infoOperation info
-                         fontdesc = if op == "" then Nothing else Just "Sans Bold 10"
+                         fontdesc = if op == Preserve then Nothing else Just "Sans Bold 10"
                      dim <- getStringDims (infoVisible info) context fontdesc
                      return (nodeId n, dim)
                )
@@ -2195,7 +2195,7 @@ setChangeFlags window store changedProject changedGraph currentPath currentGraph
     else return ()
 
 -- Analise a graph and change the flags that inform if a graph is valid/invalid
-setValidFlag :: Gtk.TreeStore -> Gtk.TreeIter -> M.Map Int32 (EditorState, ChangeStack, ChangeStack) -> Graph String String -> IO ()
+setValidFlag :: Gtk.TreeStore -> Gtk.TreeIter -> M.Map Int32 (EditorState, ChangeStack, ChangeStack) -> Graph Info Info -> IO ()
 setValidFlag store iter states tg = do
   index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
   mst <- return $ M.lookup index states
@@ -2208,7 +2208,7 @@ setValidFlag store iter states tg = do
 
 -- walk in the treeStore, applying setValidFalg for all the hostGraphs and RuleGraphs
 -- should be called when occur an update to the typeGraph
-setValidFlags :: Gtk.TreeStore -> Graph String String -> M.Map Int32 (EditorState, ChangeStack, ChangeStack) -> IO ()
+setValidFlags :: Gtk.TreeStore -> Graph Info Info -> M.Map Int32 (EditorState, ChangeStack, ChangeStack) -> IO ()
 setValidFlags store tg states = do
   Gtk.treeModelForeach store $ \model path iter -> do
     t <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
@@ -2222,7 +2222,7 @@ setValidFlags store tg states = do
 
 -- Change the valid flag for the graph that is being edited
 -- Needed because the graphStates IORef is not updated while the user is editing the graph
-setCurrentValidFlag :: Gtk.TreeStore -> IORef EditorState -> IORef (Graph String String) -> IORef [Int32] -> IO ()
+setCurrentValidFlag :: Gtk.TreeStore -> IORef EditorState -> IORef (Graph Info Info) -> IORef [Int32] -> IO ()
 setCurrentValidFlag store st typeGraph currentPath = do
       es <- readIORef st
       tg <- readIORef typeGraph
@@ -2281,7 +2281,7 @@ updateNodesGiDims ngiM g context = do
                 Nothing -> return (n,gi)
                 Just node -> do 
                   let info = nodeInfo node
-                      label = infoLabel info
+                      label = infoLabelStr info
                   dims <- getStringDims label context Nothing
                   return (n, nodeGiSetDims dims gi)
   return $ M.fromList listOfNGIs

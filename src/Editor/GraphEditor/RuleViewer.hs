@@ -15,6 +15,7 @@ import qualified Data.Map as M
 
 import Editor.Data.EditorState
 import Editor.Data.GraphicalInfo
+import Editor.Data.Info1 hiding (empty)
 import Editor.GraphEditor.UIBuilders
 import Editor.Render.Render
 import Editor.Helper.Geometry
@@ -25,8 +26,8 @@ import Data.IORef
 
 createRuleViewerWindow :: IO (Gtk.Window, Gtk.Label, Gtk.DrawingArea,
                               Gtk.DrawingArea, IORef EditorState,
-                              IORef EditorState, IORef (Graph String String),
-                              IORef (Graph String String))
+                              IORef EditorState, IORef (Graph Info Info),
+                              IORef (Graph Info Info))
 createRuleViewerWindow = do
 
   lesIOR <- newIORef emptyES
@@ -53,8 +54,8 @@ createRuleViewerWindow = do
 
 connectRuleViewerCanvasSignals :: Gtk.DrawingArea
                                   -> IORef EditorState
-                                  -> IORef (Graph String String)
-                                  -> IORef (Graph String String)
+                                  -> IORef (Graph Info Info)
+                                  -> IORef (Graph Info Info)
                                   -> IORef (Double, Double)
                                   -> IO ()
 connectRuleViewerCanvasSignals canvas esIOR tgIOR kIOR oldPointIOR = do

@@ -26,14 +26,14 @@ import Rewriting.DPO.TypedGraph
 import qualified Data.TypedGraph as TG
 import qualified Data.TypedGraph.Morphism as TGM
 
-import Editor.Data.Info
+import Editor.Data.Info1
 import Editor.Helper.List
 import Data.Graphs.Morphism
 import Editor.Data.Nac
 
-type RuleGraphs = (Graph String String, Graph String String, Graph String String)
+type RuleGraphs = (Graph Info Info, Graph Info Info, Graph Info Info)
 type TypeGraph a b = Graph (Maybe a) (Maybe b) -- may delete this if import span
-type NAC = (Graph String String, MergeMapping)
+type NAC = (Graph Info Info, MergeMapping)
 
 nodeToJust :: Node a -> Node (Maybe a)
 nodeToJust n = Node (nodeId n) (Just $ nodeInfo n)
@@ -48,30 +48,30 @@ edgeFromJust :: Edge (Maybe a) -> Edge a
 edgeFromJust e = Edge (edgeId e) (sourceId e) (targetId e) (fromJust $ edgeInfo e)
 
 
-graphToRuleGraphs :: Graph String String
+graphToRuleGraphs :: Graph Info Info
                   -> RuleGraphs
 graphToRuleGraphs g = (lhs, k, rhs)
   where
     nods = nodes g
     edgs = edges g
 
-    kNodes = filter (\n -> infoOperation (nodeInfo n) == "") nods
-    kEdges = filter (\e -> infoOperation (edgeInfo e) == "") edgs
+    kNodes = filter (\n -> infoOperation (nodeInfo n) == Preserve) nods
+    kEdges = filter (\e -> infoOperation (edgeInfo e) == Preserve) edgs
     k = fromNodesAndEdges kNodes kEdges
 
-    lhsNodes = filter (\n -> infoOperation (nodeInfo n) == "del") nods ++ kNodes
-    lhsEdges = filter (\e -> infoOperation (edgeInfo e) == "del") edgs ++ kEdges
+    lhsNodes = filter (\n -> infoOperation (nodeInfo n) == Delete) nods ++ kNodes
+    lhsEdges = filter (\e -> infoOperation (edgeInfo e) == Delete) edgs ++ kEdges
     lhs = fromNodesAndEdges lhsNodes lhsEdges
 
-    rhsNodes = filter (\n -> infoOperation (nodeInfo n) == "new") nods ++ kNodes
-    rhsEdges = filter (\e -> infoOperation (edgeInfo e) == "new") edgs ++ kEdges
+    rhsNodes = filter (\n -> infoOperation (nodeInfo n) == Create) nods ++ kNodes
+    rhsEdges = filter (\e -> infoOperation (edgeInfo e) == Create) edgs ++ kEdges
     rhs = fromNodesAndEdges rhsNodes rhsEdges
 
 
-formatNac :: TypedGraph String String
-          -> TypedGraph String String
+formatNac :: TypedGraph Info Info
+          -> TypedGraph Info Info
           -> (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
-          -> TypedGraphMorphism String String
+          -> TypedGraphMorphism Info Info
 formatNac nac lhs (nmap, emap) = nacTgm'
   where
     -- get the mapped elements from lhs
@@ -93,10 +93,10 @@ formatNac nac lhs (nmap, emap) = nacTgm'
 -- calculate the pushout of nac <- k -> lhs, where
 --  k is the interface between nac and lhs
 --  the pushout is given by two typedGraphMorphisms (tgmNac',tgmLhs')
-getNacPushout :: TypedGraph String String
-              -> TypedGraph String String
+getNacPushout :: TypedGraph Info Info
+              -> TypedGraph Info Info
               -> (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
-              -> (TypedGraphMorphism String String, TypedGraphMorphism String String)
+              -> (TypedGraphMorphism Info Info, TypedGraphMorphism Info Info)
 getNacPushout nac lhs (nmap, emap) = calculatePushout nacTgm lhsTgm
   where
     -- get the mapped elements from lhs
@@ -111,23 +111,27 @@ getNacPushout nac lhs (nmap, emap) = calculatePushout nacTgm lhsTgm
     nacTgm = TGM.fromGraphsAndLists k nac (M.toList nmap) (M.toList emap)
 
 
-makeTypedGraph :: Graph String String
-               -> Graph (Maybe String) (Maybe String)
-               -> TG.TypedGraph String String
+makeTypedGraph :: Graph Info Info
+               -> Graph (Maybe Info) (Maybe Info)
+               -> TG.TypedGraph Info Info
 makeTypedGraph g tg = fromGraphsAndLists g' tg npairs epairs
   where
     -- auxiliar structs to define the typedGraph
     epairs = map (\(e, et) -> (edgeId e, edgeId et)) .
-            filter (\(e,et) -> infoLabel (fromJust $ edgeInfo et) == infoType (edgeInfo e)) $ mkpairs (edges g) (edges tg)
+            filter (\(e,et) -> let Label lbl = infoLabel (fromJust $ edgeInfo et) 
+                               in lbl == infoType (edgeInfo e)) 
+            $ mkpairs (edges g) (edges tg)
     npairs = map (\(n, nt) -> (nodeId n, nodeId nt)) .
-            filter (\(n,nt) -> infoLabel (fromJust $ nodeInfo nt) == infoType (nodeInfo n)) $ mkpairs (nodes g) (nodes tg)
+            filter (\(n,nt) -> let Label lbl = infoLabel (fromJust $ nodeInfo nt)
+                               in lbl == infoType (nodeInfo n)) 
+            $ mkpairs (nodes g) (nodes tg)
     g' = fromNodesAndEdges (map nodeToJust (nodes g)) (map edgeToJust (edges g))
 
 
-graphToRule :: Graph String String -- rule graph
+graphToRule :: Graph Info Info -- rule graph
             -> [NAC] -- nac graphs for rules
-            -> TypeGraph String String
-            -> TypedGraphRule String String
+            -> TypeGraph Info Info
+            -> TypedGraphRule Info Info
 graphToRule ruleGraph nacs typeGraph = Production lhsTgm rhsTgm nmsTgm
   where
     (lhs, k, rhs) = graphToRuleGraphs ruleGraph
@@ -159,7 +163,7 @@ makeGrammar :: Graph Info Info
             -> Graph Info Info 
             -> [(Graph Info Info, [NAC])] 
             -> [String] 
-            -> Either String (Grammar (TGM.TypedGraphMorphism String String))
+            -> Either String (Grammar (TGM.TypedGraphMorphism Info Info))
 makeGrammar tg hg rgs rulesNames = case eGrammar of
     Left msgs -> Left $ L.intercalate "\n" msgs
     Right grammar -> case validate grammar of

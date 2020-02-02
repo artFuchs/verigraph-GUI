@@ -12,7 +12,7 @@ import Graphics.Rendering.Cairo
 
 import Data.Graphs
 
-import Editor.Data.Info
+import Editor.Data.Info1
 import Editor.Data.EditorState
 import Editor.Data.GraphicalInfo
 import Editor.Data.Nac
@@ -55,7 +55,7 @@ drawTypeGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
           (True,False) -> selectColor
           (True,True) -> bothColor
     case (egi, srcN, dstN) of
-      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabel $ edgeInfo e) src dst (selected || conflict) shadowColor False (0,0,0)
+      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabelStr $ edgeInfo e) src dst (selected || conflict) shadowColor False (0,0,0)
       _ -> return ())
 
   -- draw the nodes
@@ -70,7 +70,7 @@ drawTypeGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
           (False,True) -> errorColor
           (True,False) -> selectColor
           (True,True) -> bothColor
-        info = infoLabel $ nodeInfo n
+        info = infoLabelStr $ nodeInfo n
     case (ngi) of
       Just gi -> renderNode gi info (selected || conflict) shadowColor False (0,0,0)
       Nothing -> return ())
@@ -82,7 +82,7 @@ drawTypeGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
 -- draw a typed graph
 -- if there are nodes or edges not correctly typed, highlight them as errors
 -- if any element is selected, highlight it as selected
-drawHostGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph String String -> Render ()
+drawHostGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph Info Info -> Render ()
 drawHostGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
   scale z z
   translate px py
@@ -103,7 +103,7 @@ drawHostGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
                  (True,False) -> selectColor
                  (True,True) -> bothColor
     case (egi, srcN, dstN) of
-      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabel (edgeInfo e)) src dst (selected || typeError) color False (0,0,0)
+      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabelStr (edgeInfo e)) src dst (selected || typeError) color False (0,0,0)
       _ -> return ())
 
   -- draw the nodes
@@ -111,7 +111,7 @@ drawHostGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
     let ngi = M.lookup (fromEnum . nodeId $ n) nGI
         selected = (nodeId n) `elem` (sNodes)
         info = nodeInfo n
-        label = infoLabel info
+        label = infoLabelStr info
         typeError = case lookupNode (nodeId n) vg of
                       Just n' -> not $ nodeInfo n'
                       Nothing -> True
@@ -130,7 +130,7 @@ drawHostGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
 
 -- draw a rulegraph
 -- similar to drawhostGraph, but draws bold texts to indicate operations
-drawRuleGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph String String -> Render ()
+drawRuleGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph Info Info -> Render ()
 drawRuleGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
   scale z z
   translate px py
@@ -161,10 +161,10 @@ drawRuleGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
                  (True,False) -> selectColor
                  (True,True) -> bothColor
         (highlight, textColor) = case (infoOperation (edgeInfo e)) of
-          "new" -> (True, createColor)
-          "del" -> (True, deleteColor)
-          ""    -> (False, (0,0,0))
-          _     -> (True, errorColor)
+          Create   -> (True, createColor)
+          Delete   -> (True, deleteColor)
+          Preserve -> (False, (0,0,0))
+          _        -> (True, errorColor)
     case (egi, srcN, dstN) of
       (Just gi, Just src, Just dst) -> renderEdge gi info src dst (selected || typeError || operationError) color highlight textColor
       _ -> return ())
@@ -184,9 +184,9 @@ drawRuleGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
                   (True,False) -> selectColor
                   (True,True) -> bothColor
         (highlight, textColor) = case (infoOperation info) of
-          "new" -> (True, createColor)
-          "del" -> (True, deleteColor)
-          ""    -> (False, (0,0,0))
+          Create -> (True, createColor)
+          Delete -> (True, deleteColor)
+          Preserve -> (False, (0,0,0))
           _     -> (True, errorColor)
     case (ngi) of
       Just gi -> renderNode gi label (selected || typeError) color highlight textColor
@@ -197,7 +197,7 @@ drawRuleGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
 
 -- draw a single side of a rule
 -- 
-drawRuleSideGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph String String -> Render ()
+drawRuleSideGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph Info Info -> Render ()
 drawRuleSideGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq k = do
   scale z z
   translate px py
@@ -209,13 +209,13 @@ drawRuleSideGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq k = do
     let dstN = M.lookup (fromEnum . targetId $ e) nGI
         srcN = M.lookup (fromEnum . sourceId $ e) nGI
         egi  = M.lookup (fromEnum . edgeId   $ e) eGI
-        info = infoLabel (edgeInfo e)
+        label = infoLabelStr (edgeInfo e)
         shouldDrawId = case lookupEdge (edgeId e) k of
                         Just e' -> True
                         Nothing -> False
     case (egi, srcN, dstN) of
       (Just gi, Just src, Just dst) -> do
-          renderEdge gi (info) src dst False (0,0,0) False (0,0,0)
+          renderEdge gi label src dst False (0,0,0) False (0,0,0)
           -- draw the IDs of the edges to identify the graph morphism
           if shouldDrawId
             then do
@@ -236,7 +236,7 @@ drawRuleSideGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq k = do
   -- draw the nodes
   forM (nodes g) (\n -> do
     let ngi = M.lookup (fromEnum . nodeId $ n) nGI
-        label = infoLabel (nodeInfo n)
+        label = infoLabelStr (nodeInfo n)
         shouldDrawId = case lookupNode (nodeId n) k of
                           Just _ -> True
                           Nothing -> False
@@ -269,7 +269,7 @@ drawRuleSideGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq k = do
 -- draw a nac
 -- it highlights elements of the lhs part of the rule with yellow shadows
 -- and highlights merged elements of the lhs part of the rule with green shadows
-drawNACGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph String String -> MergeMapping -> Render ()
+drawNACGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph Info Info -> MergeMapping -> Render ()
 drawNACGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg (nM,eM) = do
   scale z z
   translate px py
@@ -303,7 +303,7 @@ drawNACGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg (nM,eM) = do
         locked = infoLocked $ edgeInfo e
         color = chooseColor selected typeError locked merged
     case (egi, srcN, dstN) of
-      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabel (edgeInfo e)) src dst (selected || typeError || locked) color False (0,0,0)
+      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabelStr (edgeInfo e)) src dst (selected || typeError || locked) color False (0,0,0)
       _ -> return ())
 
   -- draw the nodes
@@ -311,7 +311,7 @@ drawNACGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg (nM,eM) = do
     let ngi = M.lookup (fromEnum . nodeId $ n) nGI
         selected = (nodeId n) `elem` (sNodes)
         info = nodeInfo n
-        label = infoLabel info
+        label = infoLabelStr info
         typeError = case lookupNode (nodeId n) vg of
                       Just n' -> not $ nodeInfo n'
                       Nothing -> True

@@ -11,10 +11,11 @@ import qualified Data.Map as M
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
 import Editor.Data.GraphicalInfo
+import Editor.Data.Info1 hiding (empty)
 
 -- |DiaGraph
 -- A pair containing a graph and it's graphical information
-type DiaGraph = (Graph String String ,GraphicalInfo)
+type DiaGraph = (Graph Info Info, GraphicalInfo)
 
 empty :: DiaGraph
 empty = (G.empty, (M.empty, M.empty))
