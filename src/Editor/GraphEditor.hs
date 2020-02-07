@@ -783,6 +783,54 @@ startGUI = do
     es <- readIORef st
     gtype <- readIORef currentGraphType
     case gtype of
+      3 -> do
+        -- remove elements from mapping of all nacs
+        pathIndices <- readIORef currentPath
+        path <- Gtk.treePathNewFromIndices pathIndices
+        (valid,iter) <- Gtk.treeModelGetIter store path
+        if not valid 
+          then return ()
+          else do 
+            (hasNacs, nacIter) <- Gtk.treeModelIterChildren store (Just iter)
+            if not hasNacs
+              then return ()
+              else do
+                nacInfoMap <- readIORef nacInfoMapIORef
+                let (delNodes,delEdges) = editorGetSelected es
+                let getNacInfos iter = do
+                      index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
+                      let nacInfo = M.lookup index nacInfoMap
+                      continue <- Gtk.treeModelIterNext store iter
+                      if continue
+                        then do
+                          rest <- getNacInfos iter
+                          case nacInfo of
+                            Nothing -> return rest
+                            Just info -> return $ (index,info):rest
+                        else case nacInfo of 
+                            Nothing -> return []
+                            Just info -> return [(index,info)]
+                nacInfos <- getNacInfos nacIter
+                let nacInfos' = map 
+                            (\(k,((g,gi),(nM,eM))) -> 
+                              let
+                                nM' = M.filterWithKey (\k a -> k `notElem` delNodes) nM
+                                eM' = M.filterWithKey (\k a -> k `notElem` delEdges) eM
+                                nGroups = M.elems $ foldr (addToGroup nM id) M.empty (M.keys nM')
+                                eGroups = M.elems $ foldr (addToGroup eM id) M.empty (M.keys eM')
+                                insertGroup g m = if length g > 1 
+                                                  then let elem = maximum g
+                                                      in foldr (\k m -> M.insert k elem m) m g
+                                                  else m
+                                nM'' = foldr insertGroup M.empty nGroups 
+                                eM'' = foldr insertGroup M.empty eGroups
+                                g' = foldr (\e g -> removeEdge e g) g delEdges
+                                g'' = foldr (\n g -> removeNodeAndIncidentEdges n g) g' delNodes
+                              in (k,((g'',gi),(nM'',eM'')))
+                            ) 
+                            nacInfos
+                modifyIORef nacInfoMapIORef $ \m -> foldr (\(k,i) m -> M.insert k i m) m nacInfos'
+                print nacInfos'
       4 -> do
         -- remove elements from nacg
         index <- readIORef currentGraph
@@ -966,13 +1014,8 @@ startGUI = do
                 nodesNeeded = foldr (\e ns -> sourceId e : (targetId e) : ns ) [] edgesToMerge''
                 nM''' = foldr (\n m -> if n `notElem` (M.elems m) then M.insert n n m else m) nM'' nodesNeeded
                 -- add the necessary elements to the nacg
-            putStrLn $ "\nmerge ------------"
-            putStrLn $ "nodes g: " ++ (show $ nodes g)
-            putStrLn $ "nM: " ++ (show  nM''')
             let nacg' = extractNacGraph g (nM''', eM'')
                 nacgi' = extractNacGI nacg' (editorGetGI es) (nM''', eM'')
-
-            putStrLn $ "nodes nacg': " ++ (show $ nodes nacg')
             
             -- modify dimensions of nodes that where merged to match the labels
             nacNgi' <- updateNodesGiDims (fst nacgi') nacg' context
@@ -1013,7 +1056,12 @@ startGUI = do
         -- remove nacg edges that are selected from mapping
         let eM' = M.filterWithKey (\k a -> a `notElem` seids) eM
             -- remove nacg nodes that are selected and don't have incident edges from the mapping
-            hasIncidentEdges nid = length (incidentEdges . snd . fromJust $ lookupNodeInContext nid nacg) > 0
+            hasIncidentEdges nid = let  nInContext = lookupNodeInContext nid nacg
+                                        incidents = case nInContext of 
+                                          Nothing -> [] 
+                                          Just n -> incidentEdges (snd n)
+                                        incidents' = filter (\(_,e,_) -> not $ infoLocked (edgeInfo e)) incidents
+                                   in length incidents' > 0
             nM' = M.filterWithKey (\k a -> a `notElem` snids || (k==a && hasIncidentEdges a)) nM
         -- adjust mapping of edges which src e tgt where removed from the node mapping
         let someLhsEdges = filter (\e -> edgeId e `elem` (M.keys eM')) (edges lhsg)
@@ -1028,14 +1076,10 @@ startGUI = do
             eM'' = M.fromList . concat $ map (\es -> let maxE = maximum es
                                             in map (\e -> (e,maxE)) es) gEdges'
         -- remove from nacg the elements that are not in the mapping
-        putStrLn $ "\nsplit ------------"
-        putStrLn $ "nodes g: " ++ (show $ nodes g)
-        putStrLn $ "nM: " ++ (show  nM')
         let nacg' = extractNacGraph g (nM',eM'')
             nacgi'nodes = M.filterWithKey (\k a -> NodeId k `notElem` (M.elems nM) || NodeId k `elem` (M.elems nM')) (fst nacgi)
             nacgi'edges = M.filterWithKey (\k a -> EdgeId k `notElem` (M.elems eM) || EdgeId k `elem` (M.elems eM'')) (snd nacgi)
             nacgi' = (nacgi'nodes,nacgi'edges)
-        putStrLn $ "nodes nacg': " ++ (show $ nodes nacg')
         -- update dims of lhs' nodes that where splitted but are still in the mapping
         nacNgi' <- updateNodesGiDims (fst nacgi') nacg' context
         let nacgi'' = (nacNgi', snd nacgi')
@@ -1469,7 +1513,7 @@ startGUI = do
   on splitBtn #clicked $ Gtk.menuItemActivate spt
 
   -- event bindings for the graphs' tree ---------------------------------------
-  -- auxiliar function to #cursorChanged
+  -- auxiliar function to the callback of #cursorChanged, change the inspector, keeping the label entry
   let changeInspector inspectorBox nameBox = do
         child <- Gtk.containerGetChildren inspectorFrame >>= \a -> return (a!!0)
         Gtk.containerRemove inspectorFrame child
@@ -1484,6 +1528,7 @@ startGUI = do
               Just p -> Gtk.containerRemove p nameEntry
         Gtk.boxPackStart nameBox nameEntry True True 0
         #showAll inspectorFrame
+
   -- event: changed the selected graph
   on treeview #cursorChanged $ do
     selection <- Gtk.treeViewGetSelection treeview
@@ -1574,7 +1619,6 @@ startGUI = do
                                     newNEGI = M.filterWithKey (\k a -> EdgeId k `elem` validEids) (snd . snd $ nacdg')
                                     newNacdg = (newNG,(newNNGI, newNEGI))
                                 modifyIORef nacInfoMapIORef $ M.insert index (newNacdg, (nM,eM))
-                                --return $ joinNAC (newNacdg, (nM,eM)) (ruleLG, lhsgi) tg
                                 joinNAC (newNacdg, (nM,eM)) (ruleLG, lhsgi) tg
                     writeIORef st $ editorSetGI gi . editorSetGraph nG $ es
                     writeIORef undoStack u
@@ -1897,8 +1941,8 @@ getParentDiaGraph store pathIndices graphStates = do
                           egi = M.filterWithKey (\k a -> (EdgeId k) `elem` (edgeIds lhs)) $ snd (editorGetGI es)
     else return DG.empty
 
-type NAC = (Graph Info Info, (M.Map NodeId NodeId, M.Map EdgeId EdgeId))
-
+type NAC = (Graph Info Info, (MergeMapping))
+-- given a treeStore, a treeIter and a map of nacInfos, returns a list of NACs if the iter given corresponds to a nacGraph
 getNacList :: Gtk.TreeStore
            -> Gtk.TreeIter
            -> M.Map Int32 (DiaGraph, MergeMapping)

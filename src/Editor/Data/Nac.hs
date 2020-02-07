@@ -5,6 +5,7 @@ module Editor.Data.Nac (
 , extractNacGI
 , remapElementsWithConflict
 , updateEdgeEndsIds
+, addToGroup
 )where
 
 import qualified Data.Map as M
@@ -99,20 +100,24 @@ mergeInfos infos = newInfo
             ) 
             i is
 
--- | mergeNodes: function to merge nodes, joining their infos
+-- | add a element to a group,
+-- given a mapping of keys to keys for reference, a function to get
+addToGroup:: Ord k => Eq k => M.Map k k -> (a->k) -> a -> M.Map k [a] -> M.Map k [a]
+addToGroup mapping getKey element groupMapping = 
+  let key = getKey element
+  in case M.lookup key mapping of
+    Nothing -> groupMapping
+    Just k' -> M.insertWith (++) k' [element] groupMapping
+
+
+-- | merge nodes, joining their infos
 -- example: mergeNodes [Node 1 "1", Node 2 "2", Node 3 "3", Node 4 "4", Node 5 "5"] 
 --                     [(1,3),(2,3),(3,3),(4,5),(5,5)] 
 --          = [Node 3 "1 2 3", Node 5 "4 5"
 mergeNodes :: [Node Info] -> M.Map NodeId NodeId -> [Node Info]
 mergeNodes nodes mapping = mergedNodes
   where
-    group n m = let nid = nodeId n
-                in case M.lookup nid mapping of
-                    Nothing -> m
-                    Just nid' -> case M.lookup nid' m of
-                                  Nothing -> M.insert nid' [n] m
-                                  Just ns -> M.insert nid' (n:ns) m
-    nodesGroups = M.elems $ foldr group M.empty nodes
+    nodesGroups = M.elems $ foldr (addToGroup mapping nodeId) M.empty nodes
     mergeGroup ns = Node 
                     (maximum $ map nodeId ns) 
                     (mergeInfos $ map (\n -> (fromEnum $ nodeId n, nodeInfo n)) ns)
@@ -127,13 +132,7 @@ mergeNodes nodes mapping = mergedNodes
 mergeEdges :: [Edge Info] -> M.Map EdgeId EdgeId -> [Edge Info]
 mergeEdges edges mapping = mergedEdges
   where
-    group e m = let eid = edgeId e
-                in case M.lookup eid mapping of
-                  Nothing -> m
-                  Just eid' -> case M.lookup eid' m of
-                                Nothing -> M.insert eid' [e] m
-                                Just es -> M.insert eid' (e:es) m
-    edgesGroups = M.elems $ foldr group M.empty edges
+    edgesGroups = M.elems $ foldr (addToGroup mapping edgeId) M.empty edges
     mergeGroup es = Edge 
                     (maximum $ map edgeId es) 
                     (sourceId $ head es) 
