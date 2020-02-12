@@ -86,24 +86,26 @@ remapElementsWithConflict (g1,(ngi1,egi1)) (g2,(ngi2,egi2)) (nodeMapping, edgeMa
 --           mergeInfos ["1{1}","2{2}","3{3}"] = "1\n2\n3{1}"
 mergeInfos :: [(Int,Info)] -> Info
 mergeInfos infos = newInfo
-  where  
+  where
     (k,i):is = reverse $ sortOn fst infos
-    newInfo = foldr 
-            (\(k,i) info -> case infoLabel i of 
+    newInfo = foldr
+            (\(k,i) info -> case infoLabel i of
               Label str -> infoAddLabel info k str
-              LabelGroup lbls -> foldr 
+              LabelGroup lbls -> foldr
                                   (\(k',str) info' -> case k of
                                     0 -> infoAddLabel info' k str
                                     n -> infoAddLabel info' k' str
-                                  ) 
+                                  )
                                   info lbls
-            ) 
+            )
             i is
 
--- | add a element to a group,
--- given a mapping of keys to keys for reference, a function to get
+
+-- | Given a mapping of element keys to group keys , a function to extract a key from an element,
+-- the element and a mapping of keys to lists of elements (aka. groups),
+-- add the element to the group indicated by the mapping
 addToGroup:: Ord k => Eq k => M.Map k k -> (a->k) -> a -> M.Map k [a] -> M.Map k [a]
-addToGroup mapping getKey element groupMapping = 
+addToGroup mapping getKey element groupMapping =
   let key = getKey element
   in case M.lookup key mapping of
     Nothing -> groupMapping
@@ -111,21 +113,21 @@ addToGroup mapping getKey element groupMapping =
 
 
 -- | merge nodes, joining their infos
--- example: mergeNodes [Node 1 "1", Node 2 "2", Node 3 "3", Node 4 "4", Node 5 "5"] 
---                     [(1,3),(2,3),(3,3),(4,5),(5,5)] 
+-- example: mergeNodes [Node 1 "1", Node 2 "2", Node 3 "3", Node 4 "4", Node 5 "5"]
+--                     [(1,3),(2,3),(3,3),(4,5),(5,5)]
 --          = [Node 3 "1 2 3", Node 5 "4 5"
 mergeNodes :: [Node Info] -> M.Map NodeId NodeId -> [Node Info]
 mergeNodes nodes mapping = mergedNodes
   where
     nodesGroups = M.elems $ foldr (addToGroup mapping nodeId) M.empty nodes
-    mergeGroup ns = Node 
-                    (maximum $ map nodeId ns) 
+    mergeGroup ns = Node
+                    (maximum $ map nodeId ns)
                     (mergeInfos $ map (\n -> (fromEnum $ nodeId n, nodeInfo n)) ns)
-    splitNode n = Node 
-                    (nodeId n) 
+    splitNode n = Node
+                    (nodeId n)
                     (infoSetLabel (nodeInfo n) $ infoOriginalLabel $ nodeInfo n)
-    mergeOrSplit ns = case ns of 
-                        n:[] -> splitNode n 
+    mergeOrSplit ns = case ns of
+                        n:[] -> splitNode n
                         _ -> mergeGroup ns
     mergedNodes = map mergeOrSplit nodesGroups
 
@@ -133,19 +135,12 @@ mergeEdges :: [Edge Info] -> M.Map EdgeId EdgeId -> [Edge Info]
 mergeEdges edges mapping = mergedEdges
   where
     edgesGroups = M.elems $ foldr (addToGroup mapping edgeId) M.empty edges
-    mergeGroup es = Edge 
-                    (maximum $ map edgeId es) 
-                    (sourceId $ head es) 
-                    (targetId $ head es) 
+    mergeGroup es = Edge
+                    (maximum $ map edgeId es)
+                    (sourceId $ head es)
+                    (targetId $ head es)
                     (mergeInfos $ map (\e -> (fromEnum $ edgeId e, edgeInfo e)) es)
     mergedEdges = map mergeGroup edgesGroups
-
-
-
-    
-
-
-    
 
 updateNodeId :: NodeId -> M.Map NodeId NodeId -> NodeId
 updateNodeId nid m = Maybe.fromMaybe nid $ M.lookup nid m

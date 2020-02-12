@@ -202,10 +202,10 @@ startGUI = do
   currentLC       <- newIORef (0,0,0) -- the color to init new edges and the line and text of new nodes
 
   -- variables to specify hostGraphs
-  -- Possible types that a node can have in a hostGraph. 
-  --  Each node type is identified by a string and specifies a pair with 
+  -- Possible types that a node can have in a hostGraph.
+  --  Each node type is identified by a string and specifies a pair with
   --  Graphical information and the position of the entry in the comboBox
-  possibleNodeTypes   <- newIORef ( M.empty :: M.Map String (NodeGI, Int32)) 
+  possibleNodeTypes   <- newIORef ( M.empty :: M.Map String (NodeGI, Int32))
   possibleEdgeTypes   <- newIORef ( M.empty :: M.Map String (EdgeGI, Int32)) -- similar to above.
   activeTypeGraph     <- newIORef G.empty  -- the connection information from the active typeGraph
   currentNodeType     <- newIORef Nothing
@@ -371,8 +371,8 @@ startGUI = do
                   createNode' st (infoSetType I.empty t) auto (x',y') shape c lc context
                   setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                   setCurrentValidFlag store st activeTypeGraph currentPath
-                  
-                  case gType of 
+
+                  case gType of
                     -- if the current graph is a nac, then add the node in nacg
                     4 -> do
                       -- get the node and it's gi
@@ -564,7 +564,7 @@ startGUI = do
     ms <- get eventKey #state
     case (Gdk.ModifierTypeControlMask `elem` ms, Gdk.ModifierTypeShiftMask `elem` ms, toLower k) of
       -- F2 - rename selection
-      (False,False,'\65471') -> Gtk.widgetGrabFocus nameEntry      
+      (False,False,'\65471') -> Gtk.widgetGrabFocus nameEntry
       -- 'delete' whne the focus is on canvas - delete elements
       (False,False,'\65535') -> Gtk.menuItemActivate del
       _ -> return ()
@@ -788,9 +788,9 @@ startGUI = do
         pathIndices <- readIORef currentPath
         path <- Gtk.treePathNewFromIndices pathIndices
         (valid,iter) <- Gtk.treeModelGetIter store path
-        if not valid 
+        if not valid
           then return ()
-          else do 
+          else do
             (hasNacs, nacIter) <- Gtk.treeModelIterChildren store (Just iter)
             if not hasNacs
               then return ()
@@ -807,30 +807,35 @@ startGUI = do
                           case nacInfo of
                             Nothing -> return rest
                             Just info -> return $ (index,info):rest
-                        else case nacInfo of 
+                        else case nacInfo of
                             Nothing -> return []
                             Just info -> return [(index,info)]
                 nacInfos <- getNacInfos nacIter
-                let nacInfos' = map 
-                            (\(k,((g,gi),(nM,eM))) -> 
-                              let
-                                nM' = M.filterWithKey (\k a -> k `notElem` delNodes) nM
-                                eM' = M.filterWithKey (\k a -> k `notElem` delEdges) eM
-                                nGroups = M.elems $ foldr (addToGroup nM id) M.empty (M.keys nM')
-                                eGroups = M.elems $ foldr (addToGroup eM id) M.empty (M.keys eM')
-                                insertGroup g m = if length g > 1 
-                                                  then let elem = maximum g
-                                                      in foldr (\k m -> M.insert k elem m) m g
-                                                  else m
-                                nM'' = foldr insertGroup M.empty nGroups 
-                                eM'' = foldr insertGroup M.empty eGroups
-                                g' = foldr (\e g -> removeEdge e g) g delEdges
-                                g'' = foldr (\n g -> removeNodeAndIncidentEdges n g) g' delNodes
-                              in (k,((g'',gi),(nM'',eM'')))
-                            ) 
+                let nacInfos' = map
+                            (\(k,((g,gi),(nM,eM))) -> (k,removeElemFromRule ((g,gi), (nM,eM)) (delNodes,delEdges)))
                             nacInfos
                 modifyIORef nacInfoMapIORef $ \m -> foldr (\(k,i) m -> M.insert k i m) m nacInfos'
-                print nacInfos'
+
+                mname <- Gtk.treeModelGetValue store iter 0 >>= fromGValue :: IO (Maybe String)
+                let name = case mname of
+                            Nothing -> ""
+                            Just n -> n
+                let printNacInfos ninfos = forM_ ninfos $ \(k,((g,gi),(nM,eM))) -> do
+                            putStrLn $ "  id: " ++ (show k)
+                            putStrLn $ "    graph nodes: " ++ (show $ nodes g)
+                            putStrLn $ "    graph edges: " ++ (show $ edges g)
+                            putStrLn $ "    node mapping: " ++ (show nM)
+                            putStrLn $ "    edge mapping: " ++ (show eM)
+                putStrLn $ "deletion in Rule " ++ name
+                putStrLn $ "deleted nodes:" ++ (show delNodes)
+                putStrLn $ "deleted edges:" ++ (show delEdges)
+                putStrLn "nacs: "
+                printNacInfos nacInfos
+                putStrLn "result in nacs:"
+                printNacInfos nacInfos'
+
+
+
       4 -> do
         -- remove elements from nacg
         index <- readIORef currentGraph
@@ -1016,7 +1021,7 @@ startGUI = do
                 -- add the necessary elements to the nacg
             let nacg' = extractNacGraph g (nM''', eM'')
                 nacgi' = extractNacGI nacg' (editorGetGI es) (nM''', eM'')
-            
+
             -- modify dimensions of nodes that where merged to match the labels
             nacNgi' <- updateNodesGiDims (fst nacgi') nacg' context
 
@@ -1032,7 +1037,7 @@ startGUI = do
             stackUndo undoStack redoStack es (Just (nM,eM))
             Gtk.widgetQueueDraw canvas
             updateNacInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType mergeMappingIORef nacInspWidgets nacInspBoxes
-            
+
 
   on spt #activate $ do
     gtype <- readIORef currentGraphType
@@ -1057,8 +1062,8 @@ startGUI = do
         let eM' = M.filterWithKey (\k a -> a `notElem` seids) eM
             -- remove nacg nodes that are selected and don't have incident edges from the mapping
             hasIncidentEdges nid = let  nInContext = lookupNodeInContext nid nacg
-                                        incidents = case nInContext of 
-                                          Nothing -> [] 
+                                        incidents = case nInContext of
+                                          Nothing -> []
                                           Just n -> incidentEdges (snd n)
                                         incidents' = filter (\(_,e,_) -> not $ infoLocked (edgeInfo e)) incidents
                                    in length incidents' > 0
@@ -1587,17 +1592,17 @@ startGUI = do
                                                          (fst nacdg) (nodes ruleLG)
                             nacg' = foldr (\e g -> updateEdgePayload (edgeId e) g (\info -> infoSetType info (infoType $ edgeInfo e)))
                                           nacgWithUpdatedNodes (edges ruleLG)
-                            
-                            nacNgi' = M.mapWithKey (\k gi -> if (NodeId k `elem` nacgLNodesIds) 
+
+                            nacNgi' = M.mapWithKey (\k gi -> if (NodeId k `elem` nacgLNodesIds)
                                                               then nodeGiSetDims (dims gi) $ fromMaybe gi $ M.lookup k (fst lhsgi)
-                                                              else gi) 
+                                                              else gi)
                                                     $ fst (snd nacdg)
                             nacEgi' = M.mapWithKey (\k gi -> if (EdgeId k `elem` nacgLEdgesIds)
                                                               then edgeGiSetPosition (cPosition gi) $ fromMaybe gi $ M.lookup k (snd lhsgi)
-                                                              else gi) 
+                                                              else gi)
                                                     $ snd (snd nacdg)
                             nacdg' = (nacg', (nacNgi', nacEgi'))
-                        
+
 
                         case (G.null $ fst nacdg') of
                           True -> return (ruleLG, lhsgi) -- if there's no nac' diagraph, then the nac is just the lhs
@@ -1664,7 +1669,7 @@ startGUI = do
                   newNodeGI = M.fromList . map gn . map fn $ nodes g
                   newEdgeGI = M.fromList . map ge . map fe $ edges g
               writeIORef st (editorSetGI (newNodeGI, newEdgeGI) es)
-        
+
         let resetCurrentGI = do
                 writeIORef currentShape NCircle
                 writeIORef currentStyle ENormal
@@ -1750,7 +1755,7 @@ startGUI = do
       3 -> return iter
       4 -> do
         (valid, iterR) <- Gtk.treeModelIterParent store iter
-        if valid 
+        if valid
           then return iterR
           else return iter
     if not sel
@@ -1876,26 +1881,6 @@ getTreeStoreValues store iter = do
       newVals <- getTreeStoreValues store iter
       return $ (Tree.Node (valT, (valN, valI, valA)) subForest) : newVals
     else return $ (Tree.Node (valT, (valN, valI, valA)) subForest) : []
-  --
-  -- case valT of
-  --   -- Topic
-  --   0 -> do (valid, childIter) <- Gtk.treeModelIterChildren store (Just iter)
-  --           subForest <- if valid
-  --                         then getTreeStoreValues store childIter
-  --                         else return []
-  --           continue <- Gtk.treeModelIterNext store iter
-  --           if continue
-  --             then do
-  --               newVals <- getTreeStoreValues store iter
-  --               return $ (Tree.Node (valT, (valN, valI, valA)) subForest) : newVals
-  --             else return $ (Tree.Node (valT, (valN, valI, valA)) subForest) : []
-  --   -- Graphs
-  --   _ -> do continue <- Gtk.treeModelIterNext store iter
-  --           if continue
-  --             then do
-  --               newVals <- getTreeStoreValues store iter
-  --               return $ (Tree.Node (valT, (valN, valI, valA)) []) : newVals
-  --             else return $ (Tree.Node (valT, (valN, valI, valA)) []) : []
 
 getStructsToSave :: Gtk.TreeStore -> IORef (M.Map Int32 (EditorState, ChangeStack, ChangeStack))-> IORef (M.Map Int32 (DiaGraph,MergeMapping))-> IO (Tree.Forest SaveInfo)
 getStructsToSave store graphStates nacInfoMapIORef = do
@@ -2049,8 +2034,8 @@ renameSelected state content context = do
   es <- readIORef state
   -- auxiliar function rename
   let newInfo = str2Info content
-  let rename oldInfo = if infoLocked oldInfo 
-                       then oldInfo 
+  let rename oldInfo = if infoLocked oldInfo
+                       then oldInfo
                        else infoSetOperation (infoSetType newInfo t) op
                           where
                             op = case (infoOperation newInfo, content) of
@@ -2318,14 +2303,43 @@ joinNAC (nacdg, (nM,eM)) lhsdg@(ruleLG,ruleLGI) tg = do
     nGI = (M.union (fst nacGI) (fst ruleLGI), M.union (snd nacGI) (snd ruleLGI))
 
 updateNodesGiDims :: M.Map Int NodeGI -> Graph Info Info -> P.Context -> IO (M.Map Int NodeGI)
-updateNodesGiDims ngiM g context = do 
+updateNodesGiDims ngiM g context = do
   listOfNGIs <- forM (M.toList $ ngiM) $ \(n, gi) -> do
               let mNode = lookupNode (NodeId n) g
               case mNode of
                 Nothing -> return (n,gi)
-                Just node -> do 
+                Just node -> do
                   let info = nodeInfo node
                       label = infoLabelStr info
                   dims <- getStringDims label context Nothing
                   return (n, nodeGiSetDims dims gi)
   return $ M.fromList listOfNGIs
+
+removeElemFromRule :: NacInfo -> ([NodeId],[EdgeId]) -> NacInfo
+removeElemFromRule ((g,gi),(nM,eM)) (delNodes, delEdges) =
+  let
+    nM' = M.filterWithKey (\k a -> k `notElem` delNodes) nM
+    eM' = M.filterWithKey (\k a -> k `notElem` delEdges) eM
+    nGroups = M.elems $ foldr (addToGroup nM id) M.empty (M.keys nM')
+    eGroups = M.elems $ foldr (addToGroup eM id) M.empty (M.keys eM')
+    insertGroup g m = if length g > 1
+                      then let elem = maximum g
+                          in foldr (\k m -> M.insert k elem m) m g
+                      else m
+    nM'' = foldr insertGroup M.empty nGroups
+    eM'' = foldr insertGroup M.empty eGroups
+    fnm = foldr (\n f -> let n' = fromJust $ M.lookup n nM
+                         in (\nid -> if nid == n' then n else f nid))
+                (id)
+                (removeDuplicates $ M.elems nM'')
+    removeLabel info newId = case infoLabel info of
+        Label str -> info
+        LabelGroup lbls -> let lbls' = filter (\(k,str) -> k/=0) lbls
+                               k' = fromEnum newId
+                               lbls'' = map (\(k,str) -> if k == k' then (0,str) else (k,str)) lbls'
+                           in Info (LabelGroup lbls'') (infoOperation info) (infoType info) (infoLocked info)
+    nodesg' = map (\n -> let nid = nodeId n in Node (fnm nid) $removeLabel (nodeInfo n) nid) (nodes g)
+    g' = foldr (\e g -> removeEdge e g) g delEdges
+    g'' = foldr (\n g -> removeNodeAndIncidentEdges n g) g' delNodes
+    g''' = foldr (\n g -> insertNodeWithPayload (nodeId n) (nodeInfo n) g'') g'' nodesg'
+  in ((g''',gi),(nM'',eM''))
