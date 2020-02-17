@@ -23,17 +23,17 @@ import Editor.Helper.List
 type MergeMapping = (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
 type NacInfo = (DiaGraph, MergeMapping)
 
+-- | Given a Graph and a MergeMapping, extract the elements that are part of the nac subgraph that contains merged and added elements
+-- this function also merges the elements as defined in the MergeMapping
 extractNacGraph :: Graph Info Info -> MergeMapping -> Graph Info Info
 extractNacGraph g (nM, eM) = fromNodesAndEdges nacNodes nacEdges
   where
     lhsNodes = filter (\n -> infoLocked (nodeInfo n)) (nodes g)
-    --lhsSelectedNodes = filter (\n -> nodeId n `elem` (M.elems nM)) lhsNodes
-    lhsSelectedNodes = mergeNodes lhsNodes nM
+    lhsSelectedNodes = applyNodeMerging lhsNodes nM
     addedNodes = filter (\n -> not $ infoLocked (nodeInfo n)) (nodes g)
     nacNodes = lhsSelectedNodes ++ addedNodes
     lhsEdges = filter (\e -> infoLocked (edgeInfo e)) (edges g)
-    --lhsSelectedEdges = filter (\e -> edgeId e `elem` (M.elems eM)) lhsEdges
-    lhsSelectedEdges = mergeEdges lhsEdges eM
+    lhsSelectedEdges = applyEdgeMerging lhsEdges eM
     addedEdges = filter (\e -> not $ infoLocked (edgeInfo e)) (edges g)
     nacEdges = map (\e -> updateEdgeEndsIds e nM) (lhsSelectedEdges ++ addedEdges)
 
@@ -112,12 +112,21 @@ addToGroup mapping getKey element groupMapping =
     Just k' -> M.insertWith (++) k' [element] groupMapping
 
 
--- | merge nodes, joining their infos
--- example: mergeNodes [Node 1 "1", Node 2 "2", Node 3 "3", Node 4 "4", Node 5 "5"]
---                     [(1,3),(2,3),(3,3),(4,5),(5,5)]
---          = [Node 3 "1 2 3", Node 5 "4 5"
-mergeNodes :: [Node Info] -> M.Map NodeId NodeId -> [Node Info]
-mergeNodes nodes mapping = mergedNodes
+-- given a list of nodes and a node merge mapping, merge the list of nodes according to the mapping
+-- examples: 
+-- applyMerging [Node 1 "1", Node 2 "2", Node 3 "3"]
+--              [(1,3),(2,3),(3,3)]
+-- = [Node 3 "1 2 3"]
+-- 
+-- applyMerging [Node 3 "1,2,3"]
+--              []
+-- = []
+--
+-- applyMerging [Node 3 "1,2,3"]
+--              [(3,3)]
+-- = [Node 3 "3"]
+applyNodeMerging :: [Node Info] -> M.Map NodeId NodeId -> [Node Info]
+applyNodeMerging nodes mapping = mergedNodes
   where
     nodesGroups = M.elems $ foldr (addToGroup mapping nodeId) M.empty nodes
     mergeGroup ns = Node
@@ -127,12 +136,17 @@ mergeNodes nodes mapping = mergedNodes
                     (nodeId n)
                     (infoSetLabel (nodeInfo n) $ infoOriginalLabel $ nodeInfo n)
     mergeOrSplit ns = case ns of
-                        n:[] -> splitNode n
+                        n:[] -> case length (M.filter (== (nodeId n)) mapping) > 1 of
+                          True -> n
+                          False -> splitNode n
                         _ -> mergeGroup ns
     mergedNodes = map mergeOrSplit nodesGroups
 
-mergeEdges :: [Edge Info] -> M.Map EdgeId EdgeId -> [Edge Info]
-mergeEdges edges mapping = mergedEdges
+
+-- given a list of edges and a edge merge mapping, merge the list of edges according to the mapping
+-- examples
+applyEdgeMerging :: [Edge Info] -> M.Map EdgeId EdgeId -> [Edge Info]
+applyEdgeMerging edges mapping = mergedEdges
   where
     edgesGroups = M.elems $ foldr (addToGroup mapping edgeId) M.empty edges
     mergeGroup es = Edge
