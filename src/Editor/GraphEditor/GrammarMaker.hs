@@ -68,27 +68,14 @@ graphToRuleGraphs g = (lhs, k, rhs)
     rhs = fromNodesAndEdges rhsNodes rhsEdges
 
 
+-- | equivalent of fst . getNacPushout
 formatNac :: TypedGraph Info Info
           -> TypedGraph Info Info
           -> (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
           -> TypedGraphMorphism Info Info
-formatNac nac lhs (nmap, emap) = nacTgm'
-  where
-    -- get the mapped elements from lhs
-    knodeIds = M.keys nmap
-    kedgeIds = M.keys emap
-    knodes = map nodeFromJust $ filter (\n -> nodeId n `elem` knodeIds) $ nodes $ domainGraph lhs
-    kedges = map edgeFromJust $ filter (\e -> edgeId e `elem` kedgeIds) $ edges $ domainGraph lhs
-    -- generate a interface typed graph k
-    k = makeTypedGraph (fromNodesAndEdges knodes kedges) (TG.typeGraph lhs)
-    -- generate two morphisms
-    lhsTgm = TGM.fromGraphsAndLists k lhs (map (\n -> (n,n)) knodeIds) (map (\n -> (n,n)) kedgeIds)
-    nacTgm = TGM.fromGraphsAndLists k nac (M.toList nmap) (M.toList emap)
-    -- calculate the pushout between them
-    (nacTgm',_) = calculatePushout nacTgm lhsTgm
+formatNac nac lhs (nmap, emap) = fst $ getNacPushout nac lhs (nmap, emap)
 
--- getNacPushout nac lhs (nmap, emap)
--- given two TypedGraphs - nac and lhs
+-- | given two TypedGraphs - nac and lhs
 -- and a tuple of maps of ids - (nmap, emap),
 -- calculate the pushout of nac <- k -> lhs, where
 --  k is the interface between nac and lhs

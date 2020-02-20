@@ -811,8 +811,9 @@ startGUI = do
                             Nothing -> return []
                             Just info -> return [(index,info)]
                 nacInfos <- getNacInfos nacIter
+                let lhs = editorGetGraph es
                 let nacInfos' = map
-                            (\(k,((g,gi),(nM,eM))) -> (k,removeElemFromRule ((g,gi), (nM,eM)) (delNodes,delEdges)))
+                            (\(k,((g,gi),(nM,eM))) -> (k,removeElemFromRule lhs ((g,gi), (nM,eM)) (delNodes,delEdges)))
                             nacInfos
                 modifyIORef nacInfoMapIORef $ \m -> foldr (\(k,i) m -> M.insert k i m) m nacInfos'
 
@@ -2315,31 +2316,63 @@ updateNodesGiDims ngiM g context = do
                   return (n, nodeGiSetDims dims gi)
   return $ M.fromList listOfNGIs
 
-removeElemFromRule :: NacInfo -> ([NodeId],[EdgeId]) -> NacInfo
-removeElemFromRule ((g,gi),(nM,eM)) (delNodes, delEdges) =
-  let
+removeElemFromRule :: Graph Info Info -> NacInfo -> ([NodeId],[EdgeId]) -> NacInfo
+removeElemFromRule lhs ((g,gi),(nM,eM)) (delNodes, delEdges) = 
+  let 
+    insertGroup group m = foldr (\k m -> M.insert k elem m) m group
+        where elem = maximum group
+
+    lhs' = foldr (\n g -> removeNodeAndIncidentEdges n g) lhs delNodes
+    lhs'' = foldr (\e g -> removeEdge e g) lhs' delEdges
+
+    -- change merge mapping, removing deleted elements ids and replacing them if they're the target in the mapping
+    -- example: nM = [(1,3),(2,3),(3,3)]; delete node 3 -> newNM = [(1,2),(2,2)]
     nM' = M.filterWithKey (\k a -> k `notElem` delNodes) nM
-    eM' = M.filterWithKey (\k a -> k `notElem` delEdges) eM
     nGroups = M.elems $ foldr (addToGroup nM id) M.empty (M.keys nM')
+    newNM = foldr insertGroup M.empty nGroups
+
+    eM' = M.filterWithKey (\k a -> k `elem` edgeIds lhs'') eM
     eGroups = M.elems $ foldr (addToGroup eM id) M.empty (M.keys eM')
-    insertGroup g m = if length g > 1
-                      then let elem = maximum g
-                          in foldr (\k m -> M.insert k elem m) m g
-                      else m
-    nM'' = foldr insertGroup M.empty nGroups
-    eM'' = foldr insertGroup M.empty eGroups
+    newEM = foldr insertGroup M.empty eGroups
+
+    -- functions to update Ids based on the old and the new mergeMapping
     fnm = foldr (\n f -> let n' = fromJust $ M.lookup n nM
-                         in (\nid -> if nid == n' then n else f nid))
+                        in (\nid -> if nid == n' then n else f nid))
                 (id)
-                (removeDuplicates $ M.elems nM'')
-    removeLabel info newId = case infoLabel info of
-        Label str -> info
-        LabelGroup lbls -> let lbls' = filter (\(k,str) -> k/=0) lbls
-                               k' = fromEnum newId
-                               lbls'' = map (\(k,str) -> if k == k' then (0,str) else (k,str)) lbls'
-                           in Info (LabelGroup lbls'') (infoOperation info) (infoType info) (infoLocked info)
-    nodesg' = map (\n -> let nid = nodeId n in Node (fnm nid) $removeLabel (nodeInfo n) nid) (nodes g)
-    g' = foldr (\e g -> removeEdge e g) g delEdges
-    g'' = foldr (\n g -> removeNodeAndIncidentEdges n g) g' delNodes
-    g''' = foldr (\n g -> insertNodeWithPayload (nodeId n) (nodeInfo n) g'') g'' nodesg'
-  in ((g''',gi),(nM'',eM''))
+                (removeDuplicates $ M.elems newNM)
+
+    fem = foldr (\e f -> let e' = fromJust $ M.lookup e eM
+                        in (\eid -> if eid == e' then e else f eid))
+                (id)
+                (removeDuplicates $ M.elems newEM)
+    
+    -- modify the elements in nacg, changing their ids and updating their labels
+    lhsNodes'' = map (\n ->  n { nodeInfo = infoSetLocked (nodeInfo n) True} ) (nodes lhs'')
+    lhsEdges'' = map (\e ->  e { edgeInfo = infoSetLocked (edgeInfo e) True} ) (edges lhs'')
+    lhsAux = fromNodesAndEdges lhsNodes'' lhsEdges''
+    gAux = extractNacGraph lhsAux  (newNM,newEM)
+
+    nodesg' = map (\n -> let nid' = fnm $ nodeId n 
+                             info = case lookupNode nid' gAux of
+                               Nothing -> nodeInfo n
+                               Just n' -> infoSetLocked (nodeInfo n') True
+                        in Node nid' info) $ 
+                  filter (\n -> let nid = nodeId n 
+                                 in (fnm nid `elem` (nodeIds lhsAux)) || (nid `notElem` (M.elems nM)) ) 
+                          (nodes g)
+    edgesg' = map (\e -> let eid = fem $ edgeId e
+                             s = fnm $ sourceId e
+                             t = fnm $ targetId e
+                             info = case lookupEdge eid gAux of
+                               Nothing -> edgeInfo e
+                               Just e' -> infoSetLocked (edgeInfo e') True
+                        in Edge eid s t info)
+                  $ filter (\e -> let eid = edgeId e
+                                 in (fem eid `elem` (edgeIds lhsAux)) || (eid `notElem` (M.elems eM)) ) 
+                          (edges g)
+    newG = fromNodesAndEdges nodesg' edgesg'
+
+    nodegi' = M.mapKeys (\k -> fromEnum . fnm $ NodeId k) (fst gi)
+    edgegi' = M.mapKeys (\k -> fromEnum . fem $ EdgeId k) (snd gi)
+    newGI = (nodegi',edgegi')
+  in ((newG,newGI),(newNM,newEM))
