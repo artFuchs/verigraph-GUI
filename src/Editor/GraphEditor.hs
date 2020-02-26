@@ -783,60 +783,6 @@ startGUI = do
     es <- readIORef st
     gtype <- readIORef currentGraphType
     case gtype of
-      3 -> do
-        -- remove elements from mapping of all nacs
-        pathIndices <- readIORef currentPath
-        path <- Gtk.treePathNewFromIndices pathIndices
-        (valid,iter) <- Gtk.treeModelGetIter store path
-        if not valid
-          then return ()
-          else do
-            (hasNacs, nacIter) <- Gtk.treeModelIterChildren store (Just iter)
-            if not hasNacs
-              then return ()
-              else do
-                nacInfoMap <- readIORef nacInfoMapIORef
-                let (delNodes,delEdges) = editorGetSelected es
-                let getNacInfos iter = do
-                      index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
-                      let nacInfo = M.lookup index nacInfoMap
-                      continue <- Gtk.treeModelIterNext store iter
-                      if continue
-                        then do
-                          rest <- getNacInfos iter
-                          case nacInfo of
-                            Nothing -> return rest
-                            Just info -> return $ (index,info):rest
-                        else case nacInfo of
-                            Nothing -> return []
-                            Just info -> return [(index,info)]
-                nacInfos <- getNacInfos nacIter
-                let lhs = editorGetGraph es
-                let nacInfos' = map
-                            (\(k,((g,gi),(nM,eM))) -> (k,removeElemFromRule lhs ((g,gi), (nM,eM)) (delNodes,delEdges)))
-                            nacInfos
-                modifyIORef nacInfoMapIORef $ \m -> foldr (\(k,i) m -> M.insert k i m) m nacInfos'
-
-                mname <- Gtk.treeModelGetValue store iter 0 >>= fromGValue :: IO (Maybe String)
-                let name = case mname of
-                            Nothing -> ""
-                            Just n -> n
-                let printNacInfos ninfos = forM_ ninfos $ \(k,((g,gi),(nM,eM))) -> do
-                            putStrLn $ "  id: " ++ (show k)
-                            putStrLn $ "    graph nodes: " ++ (show $ nodes g)
-                            putStrLn $ "    graph edges: " ++ (show $ edges g)
-                            putStrLn $ "    node mapping: " ++ (show nM)
-                            putStrLn $ "    edge mapping: " ++ (show eM)
-                putStrLn $ "deletion in Rule " ++ name
-                putStrLn $ "deleted nodes:" ++ (show delNodes)
-                putStrLn $ "deleted edges:" ++ (show delEdges)
-                putStrLn "nacs: "
-                printNacInfos nacInfos
-                putStrLn "result in nacs:"
-                printNacInfos nacInfos'
-
-
-
       4 -> do
         -- remove elements from nacg
         index <- readIORef currentGraph
@@ -1058,7 +1004,8 @@ startGUI = do
             lhsg' = foldr (\e g -> G.updateEdgePayload e g (\info -> infoSetLocked info True)) lhsgWithLockedNodes (edgeIds lhsg)
         let (snids, seids) = editorGetSelected es
             g = editorGetGraph es
-            ((nacg, nacgi), (nM,eM)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup index nacInfoMap
+            ((nacg0, nacgi0), (nM,eM)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup index nacInfoMap
+            (nacg,nacgi) = remapElementsWithConflict (lhsg,lhsgi) (nacg0,nacgi0) (nM,eM)
         -- remove nacg edges that are selected from mapping
         let eM' = M.filterWithKey (\k a -> a `notElem` seids) eM
             -- remove nacg nodes that are selected and don't have incident edges from the mapping
@@ -1577,43 +1524,34 @@ startGUI = do
                     lhsIsValid = isGraphValid ruleLG tg
 
                 case lhsIsValid of
-                  False -> showError window "Parent rule have type errors. Please, correct then before loading nacGraph."
+                  False -> showError window "Parent rule have type errors. Please, correct them before loading nacGraph."
                   True -> do
                     -- load nac' diagraph
                     nacInfoMap <- readIORef nacInfoMapIORef
                     (nG,gi) <- case M.lookup index $ nacInfoMap of
                       Nothing -> return (ruleLG,lhsgi) -- if the nac' diagraph is not found, then the nac is just the lhs
                       Just (nacdg,(nM,eM)) -> do
-                        writeIORef mergeMappingIORef $ Just (nM,eM)
+                        -- if there are elements that where deleted from lhs, then remove them from the nac too
+                        let (nacdgD,(nMD,eMD)) = removeDeletedFromNAC lhsg (nacdg,(nM,eM))
                         -- ensure that elements of nacg that are mapped from lhs have the same type as of lhs
-                        let nacgLNodesIds = M.elems nM
-                            nacgLEdgesIds = M.elems eM
+                        let ((nacg',nacgi'),(nM',eM')) = updateNacTypes lhsg (nacdgD,(nMD,eMD))
 
-                            nacgWithUpdatedNodes = foldr (\n g -> updateNodePayload (nodeId n) g (\info -> infoSetType info (infoType $ nodeInfo n)))
-                                                         (fst nacdg) (nodes ruleLG)
-                            nacg' = foldr (\e g -> updateEdgePayload (edgeId e) g (\info -> infoSetType info (infoType $ edgeInfo e)))
-                                          nacgWithUpdatedNodes (edges ruleLG)
+                        -- update nodes Gis
+                        context <- Gtk.widgetGetPangoContext canvas
+                        nacGiNodes' <- updateNodesGiDims (fst nacgi') nacg' context
+                        let nacdg' = (nacg',(nacGiNodes',(snd nacgi')))
 
-                            nacNgi' = M.mapWithKey (\k gi -> if (NodeId k `elem` nacgLNodesIds)
-                                                              then nodeGiSetDims (dims gi) $ fromMaybe gi $ M.lookup k (fst lhsgi)
-                                                              else gi)
-                                                    $ fst (snd nacdg)
-                            nacEgi' = M.mapWithKey (\k gi -> if (EdgeId k `elem` nacgLEdgesIds)
-                                                              then edgeGiSetPosition (cPosition gi) $ fromMaybe gi $ M.lookup k (snd lhsgi)
-                                                              else gi)
-                                                    $ snd (snd nacdg)
-                            nacdg' = (nacg', (nacNgi', nacEgi'))
-
+                        writeIORef mergeMappingIORef $ Just (nM',eM')
+                        modifyIORef nacInfoMapIORef $ M.insert index (nacdg', (nM',eM'))
 
                         case (G.null $ fst nacdg') of
                           True -> return (ruleLG, lhsgi) -- if there's no nac' diagraph, then the nac is just the lhs
                           False -> do
+                            -- if there's a nac' diagraph, check if the graph is correct
                             let nacValid = isGraphValid (fst nacdg') tg
-                            case nacValid of -- if there's a nac' diagraph, check if the graph is correct
+                            case nacValid of 
                               True -> do
-                                modifyIORef nacInfoMapIORef $ M.insert index (nacdg', (nM,eM))
-                                --return $ joinNAC (nacdg',(nM,eM)) (ruleLG, lhsgi) tg
-                                joinNAC (nacdg',(nM,eM)) (ruleLG, lhsgi) tg
+                                joinNAC (nacdg',(nM',eM')) (ruleLG, lhsgi) tg
                               False -> do -- remove all the elements with type error
                                 let validG = correctTypeGraph (fst nacdg') tg
                                     validNids = foldr (\n ns -> if nodeInfo n then (nodeId n):ns else ns) [] (nodes validG)
@@ -1624,8 +1562,7 @@ startGUI = do
                                     newNNGI = M.filterWithKey (\k a -> NodeId k `elem` validNids) (fst . snd $ nacdg')
                                     newNEGI = M.filterWithKey (\k a -> EdgeId k `elem` validEids) (snd . snd $ nacdg')
                                     newNacdg = (newNG,(newNNGI, newNEGI))
-                                modifyIORef nacInfoMapIORef $ M.insert index (newNacdg, (nM,eM))
-                                joinNAC (newNacdg, (nM,eM)) (ruleLG, lhsgi) tg
+                                joinNAC (newNacdg, (nM',eM')) (ruleLG, lhsgi) tg
                     writeIORef st $ editorSetGI gi . editorSetGraph nG $ es
                     writeIORef undoStack u
                     writeIORef redoStack r
@@ -2316,9 +2253,18 @@ updateNodesGiDims ngiM g context = do
                   return (n, nodeGiSetDims dims gi)
   return $ M.fromList listOfNGIs
 
-removeElemFromRule :: Graph Info Info -> NacInfo -> ([NodeId],[EdgeId]) -> NacInfo
-removeElemFromRule lhs ((g,gi),(nM,eM)) (delNodes, delEdges) = 
-  let 
+
+-- if there are elements in the mergeMapping that are not in the LHS,
+-- then remove them from the mapping and from the nacgraph
+removeDeletedFromNAC :: Graph Info Info -> NacInfo -> NacInfo
+removeDeletedFromNAC lhs ((g,gi),(nM,eM)) = 
+  if (null delNodes && null delEdges)
+    then ((g,gi),(nM,eM))
+    else ((newG,newGI),(newNM,newEM))
+  where
+    delNodes = filter (\k -> k `notElem` (nodeIds lhs)) (M.keys nM)
+    delEdges = filter (\k -> k `notElem` (edgeIds lhs)) (M.keys eM)
+
     insertGroup group m = foldr (\k m -> M.insert k elem m) m group
         where elem = maximum group
 
@@ -2372,7 +2318,84 @@ removeElemFromRule lhs ((g,gi),(nM,eM)) (delNodes, delEdges) =
                           (edges g)
     newG = fromNodesAndEdges nodesg' edgesg'
 
-    nodegi' = M.mapKeys (\k -> fromEnum . fnm $ NodeId k) (fst gi)
-    edgegi' = M.mapKeys (\k -> fromEnum . fem $ EdgeId k) (snd gi)
+    nodegi' = M.filterWithKey (\k _ -> NodeId k `elem` (nodeIds newG)) 
+                              $ M.mapKeys (\k -> fromEnum . fnm $ NodeId k) (fst gi) 
+    edgegi' = M.filterWithKey (\k _ -> EdgeId k `elem` (edgeIds newG)) 
+                              $ M.mapKeys (\k -> fromEnum . fem $ EdgeId k) (snd gi)
     newGI = (nodegi',edgegi')
-  in ((newG,newGI),(newNM,newEM))
+
+-- | Update nac elements types, assuring that it preserve typping according to the corresponding lhs.
+updateNacTypes:: Graph Info Info -> NacInfo -> NacInfo
+updateNacTypes lhs ((nacg,nacgi),(nM, eM)) = ((newNacG,newNacGI),(nM'',eM''))
+  where
+    -- make sure that the elements of the nacg preserve the type of the elements of lhs
+    -- PNT = preserving node typing
+    nacgPNT = foldr (\n g -> updateNodePayload (nodeId n) g (\info -> infoSetType info (infoType $ nodeInfo n)))
+                    nacg (nodes lhs)
+    nacgPT = foldr (\e g -> updateEdgePayload (edgeId e) g (\info -> infoSetType info (infoType $ edgeInfo e)))
+                   nacgPNT (edges lhs)
+
+    -- if a element is mapped to a element of different type, remove the pair of the mapping
+    haveSameType lookupF getInfo id id' = 
+      let mt = Just (infoType . getInfo) <*> (lookupF id lhs)
+          mt' = Just (infoType . getInfo) <*> (lookupF id' nacgPT)
+          in case (mt,mt') of
+            (Just t, Just t') -> t == t'
+            _ -> False
+    nM' = M.filterWithKey (haveSameType lookupNode nodeInfo) nM
+    eM' = M.filterWithKey (haveSameType lookupEdge edgeInfo) eM
+
+    -- remove elements that appear only one time from edges mapping
+    count id m = case M.lookup id m of
+                  Nothing -> M.insert id 1 m
+                  Just c -> M.insert id (c+1) m
+    eMCounting = M.foldr count M.empty eM'
+    eM'' = M.filter (\eid -> fromJust (M.lookup eid eMCounting) > 1) eM'
+
+    -- remove elements that appear only one time AND have no incident edge in nacg from nodes mapping
+    nMCounting = M.foldr count M.empty nM'
+    hasIncidentEdges nid = let  incidents = case lookupNodeInContext nid nacgPT of
+                                  Nothing -> []
+                                  Just n -> incidentEdges (snd n)
+                                incidents' = filter (\(_,e,_) -> not $ infoLocked (edgeInfo e)) incidents
+                            in length incidents' > 0
+    nM'' = M.filter (\nid -> (fromJust (M.lookup nid nMCounting) > 1) || hasIncidentEdges nid ) nM'
+
+    -- remove from nac graph the edges and vertices removed from the edges mapping
+    nacg' = foldr (\e g -> if (edgeId e `elem` eM) && (edgeId e `notElem` eM'')
+                            then removeEdge (edgeId e) g
+                            else g) 
+                  nacgPT (edges nacgPT)
+    nacg'' = foldr (\n g -> if (nodeId n `elem` nM) && (nodeId n `notElem` nM'')
+                              then removeNodeAndIncidentEdges (nodeId n) g
+                              else g) 
+                  nacg' (nodes nacgPT)
+
+    -- create a auxiliar graph with the lhs elements merged
+    lhsNodes' = map (\n ->  n { nodeInfo = infoSetLocked (nodeInfo n) True} ) (nodes lhs)
+    lhsEdges' = map (\e ->  e { edgeInfo = infoSetLocked (edgeInfo e) True} ) (edges lhs)
+    lhsAux = fromNodesAndEdges lhsNodes' lhsEdges'
+    gAux = extractNacGraph lhsAux  (nM'',eM'')
+    
+    -- update nac graph' elements information with the auxiliar graph
+    nacnodes'' = map (\n -> case lookupNode (nodeId n) gAux of
+                                  Nothing -> n
+                                  Just n' -> n')
+                      (nodes nacg'')
+    nacedges'' = map (\e -> case lookupEdge (edgeId e) gAux of
+                                  Nothing -> e
+                                  Just e' -> e')
+                      (edges nacg'')
+    newNacG = fromNodesAndEdges nacnodes'' nacedges''
+
+    -- remove deleted elements from gi
+    newNacNGI = M.filterWithKey (\id _ -> NodeId id `elem` (nodeIds newNacG)) (fst nacgi)
+    newNacEGI = M.filterWithKey (\id _ -> EdgeId id `elem` (edgeIds newNacG)) (snd nacgi)
+    newNacGI = (newNacNGI,newNacEGI)
+
+
+
+
+
+
+    
