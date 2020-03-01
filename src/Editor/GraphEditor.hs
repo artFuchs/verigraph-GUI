@@ -695,6 +695,8 @@ startGUI = do
   -- save project
   on svn #activate $ do
     storeCurrentES
+    context <- Gtk.widgetGetPangoContext canvas
+    updateAllNacs store graphStates nacInfoMapIORef context
     structs <- getStructsToSave store graphStates nacInfoMapIORef
     saved <- saveFile structs saveProject fileName window True
     if saved
@@ -704,6 +706,8 @@ startGUI = do
   -- save project as
   sva `on` #activate $ do
     storeCurrentES
+    context <- Gtk.widgetGetPangoContext canvas
+    updateAllNacs store graphStates nacInfoMapIORef context
     structs <- getStructsToSave store graphStates nacInfoMapIORef
     saved <- saveFileAs structs saveProject fileName window True
     if saved
@@ -1524,23 +1528,21 @@ startGUI = do
                     lhsIsValid = isGraphValid ruleLG tg
 
                 case lhsIsValid of
-                  False -> showError window "Parent rule have type errors. Please, correct them before loading nacGraph."
+                  False -> do 
+                    showError window "Parent rule have type errors. Please, correct them before loading nacGraph."
+                    if (length path > 1)
+                      then do 
+                        parentPath <- Gtk.treePathNewFromIndices (init path)
+                        Gtk.treeViewSetCursor treeview parentPath (Nothing :: Maybe Gtk.TreeViewColumn) False
+                      else return ()
                   True -> do
                     -- load nac' diagraph
                     nacInfoMap <- readIORef nacInfoMapIORef
                     (nG,gi) <- case M.lookup index $ nacInfoMap of
                       Nothing -> return (ruleLG,lhsgi) -- if the nac' diagraph is not found, then the nac is just the lhs
                       Just (nacdg,(nM,eM)) -> do
-                        -- if there are elements that where deleted from lhs, then remove them from the nac too
-                        let (nacdgD,(nMD,eMD)) = removeDeletedFromNAC lhsg (nacdg,(nM,eM))
-                        -- ensure that elements of nacg that are mapped from lhs have the same type as of lhs
-                        let ((nacg',nacgi'),(nM',eM')) = updateNacTypes lhsg (nacdgD,(nMD,eMD))
-
-                        -- update nodes Gis
                         context <- Gtk.widgetGetPangoContext canvas
-                        nacGiNodes' <- updateNodesGiDims (fst nacgi') nacg' context
-                        let nacdg' = (nacg',(nacGiNodes',(snd nacgi')))
-
+                        (nacdg',(nM',eM')) <- applyLhsChangesToNac lhsg (nacdg,(nM,eM)) (Just context)
                         writeIORef mergeMappingIORef $ Just (nM',eM')
                         modifyIORef nacInfoMapIORef $ M.insert index (nacdg', (nM',eM'))
 
@@ -1869,16 +1871,19 @@ type NAC = (Graph Info Info, (MergeMapping))
 getNacList :: Gtk.TreeStore
            -> Gtk.TreeIter
            -> M.Map Int32 (DiaGraph, MergeMapping)
+           -> Graph Info Info
            -> IO [NAC]
-getNacList model iter nacInfoMap = do
+getNacList model iter nacInfoMap lhs = do
   index <- Gtk.treeModelGetValue model iter 2 >>= fromGValue :: IO Int32
   ans <- case M.lookup index nacInfoMap of
     Nothing -> return []
-    Just (diag, (nM, eM)) -> return [(fst diag, (nM,eM))]
+    Just nInfo -> do 
+      (diag,(nM,eM)) <- applyLhsChangesToNac lhs nInfo Nothing
+      return [(fst diag, (nM,eM))]
   continue <- Gtk.treeModelIterNext model iter
   if continue
     then do
-      rest <- getNacList model iter nacInfoMap
+      rest <- getNacList model iter nacInfoMap lhs
       return $ ans ++ rest
     else return ans
 
@@ -1896,12 +1901,14 @@ getRuleList model iter gStates nacInfoMapIORef = do
     (True, Nothing) -> return []
     (True, Just (es, _, _)) -> do
       (hasNac,nacIter) <- Gtk.treeModelIterChildren model (Just iter)
+      let rule = editorGetGraph es
       nacs <- case hasNac of
         True -> do
+          let (lhs,_,_) = graphToRuleGraphs rule
           nacInfoMap <- readIORef nacInfoMapIORef
-          getNacList model nacIter nacInfoMap
+          getNacList model nacIter nacInfoMap lhs
         False -> return []
-      return $ [(editorGetGraph es, nacs, name)]
+      return $ [(rule, nacs, name)]
   continue <- Gtk.treeModelIterNext model iter
   if continue
     then do
@@ -2324,9 +2331,13 @@ removeDeletedFromNAC lhs ((g,gi),(nM,eM)) =
                               $ M.mapKeys (\k -> fromEnum . fem $ EdgeId k) (snd gi)
     newGI = (nodegi',edgegi')
 
--- | Update nac elements types, assuring that it preserve typping according to the corresponding lhs.
+-- | Update nac elements types, assuring that it preserve typing according to the corresponding lhs.
 updateNacTypes:: Graph Info Info -> NacInfo -> NacInfo
-updateNacTypes lhs ((nacg,nacgi),(nM, eM)) = ((newNacG,newNacGI),(nM'',eM''))
+updateNacTypes lhs ((nacg,nacgi),(nM, eM)) = 
+  if (and $ map (\(id,id') -> haveSameType lookupNode nodeInfo lhs nacg id id') $ M.toList nM) && 
+     (and $ map (\(id,id') -> haveSameType lookupEdge edgeInfo lhs nacg id id') $ M.toList eM)
+    then ((nacg,nacgi),(nM, eM))
+    else ((newNacG,newNacGI),(nM'',eM''))
   where
     -- make sure that the elements of the nacg preserve the type of the elements of lhs
     -- PNT = preserving node typing
@@ -2336,14 +2347,14 @@ updateNacTypes lhs ((nacg,nacgi),(nM, eM)) = ((newNacG,newNacGI),(nM'',eM''))
                    nacgPNT (edges lhs)
 
     -- if a element is mapped to a element of different type, remove the pair of the mapping
-    haveSameType lookupF getInfo id id' = 
+    haveSameType lookupF getInfo lhs nacg id id' = 
       let mt = Just (infoType . getInfo) <*> (lookupF id lhs)
-          mt' = Just (infoType . getInfo) <*> (lookupF id' nacgPT)
+          mt' = Just (infoType . getInfo) <*> (lookupF id' nacg)
           in case (mt,mt') of
             (Just t, Just t') -> t == t'
             _ -> False
-    nM' = M.filterWithKey (haveSameType lookupNode nodeInfo) nM
-    eM' = M.filterWithKey (haveSameType lookupEdge edgeInfo) eM
+    nM' = M.filterWithKey (haveSameType lookupNode nodeInfo lhs nacgPT) nM
+    eM' = M.filterWithKey (haveSameType lookupEdge edgeInfo lhs nacgPT) eM
 
     -- remove elements that appear only one time from edges mapping
     count id m = case M.lookup id m of
@@ -2394,8 +2405,71 @@ updateNacTypes lhs ((nacg,nacgi),(nM, eM)) = ((newNacG,newNacGI),(nM'',eM''))
     newNacGI = (newNacNGI,newNacEGI)
 
 
+-- update the nacGraph according to the lhs 
+applyLhsChangesToNac :: Graph Info Info -> NacInfo -> Maybe P.Context -> IO NacInfo
+applyLhsChangesToNac lhs nacInfo mContext = do
+  -- if there are elements that where deleted from lhs, then remove them from the nac too
+  let nacInfoD = removeDeletedFromNAC lhs nacInfo
+  -- ensure that elements of nacg that are mapped from lhs have the same type as of lhs
+  let ((nacg,nacgi),(nM,eM)) = updateNacTypes lhs nacInfoD
+  -- if has canvas context, then update the graphical informations of nodes
+  nacdg <- case mContext of
+    Nothing -> return (nacg,nacgi)
+    Just context -> do 
+      nacGiNodes <- updateNodesGiDims (fst nacgi) nacg context
+      return (nacg,(nacGiNodes,(snd nacgi))) 
+  return (nacdg,(nM,eM))
 
+updateNacs :: Gtk.TreeStore -> Gtk.TreeIter -> Graph Info Info -> IORef (M.Map Int32 NacInfo) -> P.Context -> IO ()
+updateNacs store iter lhs nacInfoMapIORef context = do
+  nacInfoMap <- readIORef nacInfoMapIORef
+  index <- Gtk.treeModelGetValue store iter 2 >>= Gtk.fromGValue :: IO Int32
+  case M.lookup index nacInfoMap of
+    Nothing -> return ()
+    Just nacInfo -> do 
+      nacInfo' <- applyLhsChangesToNac lhs nacInfo (Just context)
+      modifyIORef nacInfoMapIORef $ M.insert index nacInfo'
+      continue <- Gtk.treeModelIterNext store iter
+      if continue
+        then do updateNacs store iter lhs nacInfoMapIORef context
+        else return ()
 
+updateRuleNacs :: Gtk.TreeStore 
+           -> Gtk.TreeIter 
+           -> IORef (M.Map Int32 (EditorState, ChangeStack, ChangeStack))
+           -> IORef (M.Map Int32 NacInfo)
+           -> P.Context 
+           -> IO ()
+updateRuleNacs store iter graphStatesIORef nacInfoMapIORef context = do
+  (hasNacs,nacIter) <- Gtk.treeModelIterChildren store (Just iter)
+  if not hasNacs
+    then return ()
+    else do
+      ruleChanged <- Gtk.treeModelGetValue store iter 1 >>= Gtk.fromGValue :: IO Int32
+      if ruleChanged == 0 
+        then return ()
+        else do
+          ruleIndex <- Gtk.treeModelGetValue store iter 2 >>= Gtk.fromGValue :: IO Int32
+          states <- readIORef graphStatesIORef
+          let (error,rule) = case M.lookup ruleIndex states of
+                  Nothing -> (True,G.empty)
+                  Just (es,_,_) -> (False, editorGetGraph es)
+              (lhs,_,_) = graphToRuleGraphs rule
+          if error 
+            then return ()
+            else updateNacs store nacIter lhs nacInfoMapIORef context
+  continue <- Gtk.treeModelIterNext store iter
+  if continue
+    then updateRuleNacs store iter graphStatesIORef nacInfoMapIORef context
+    else return ()
 
-
-    
+updateAllNacs :: Gtk.TreeStore 
+              -> IORef (M.Map Int32 (EditorState, ChangeStack, ChangeStack))
+              -> IORef (M.Map Int32 NacInfo)
+              -> P.Context 
+              -> IO ()
+updateAllNacs store graphStatesIORef nacInfoMapIORef context = do
+  (valid, iter) <- Gtk.treeModelGetIterFromString store "2:0"
+  if not valid
+    then return ()
+    else updateRuleNacs store iter graphStatesIORef nacInfoMapIORef context
