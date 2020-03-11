@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
-module Editor.GraphEditor.UpdateInspector(
+module Editor.GraphEditor.UI.UpdateInspector(
   updateTypeInspector
 , updateHostInspector
 , updateRuleInspector
@@ -201,16 +201,16 @@ updateRuleInspector st possibleNT possibleET currentNodeType currentEdgeType (en
       set edgeTBox [#visible := True]
       set nodeTBox [#visible := True]
 
-updateNacInspector :: IORef EditorState -> IORef (M.Map String (NodeGI, Int32)) -> IORef (M.Map String (EdgeGI, Int32)) 
+updateNacInspector :: IORef EditorState -> IORef (M.Map String (NodeGI, Int32)) -> IORef (M.Map String (EdgeGI, Int32))
                     -> IORef (Maybe String) -> IORef (Maybe String) -> IORef (Maybe MergeMapping)
-                    -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.Button, Gtk.Button) 
+                    -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.Button, Gtk.Button)
                     -> (Gtk.Box, Gtk.Box) -> IO()
 updateNacInspector st possibleNT possibleET currentNodeType currentEdgeType mergeMappingIORef (entry, nodeTCBox, edgeTCBox, joinBtn, splitBtn) (nodeTBox, edgeTBox) = do
   updateHostInspector st possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox)
   est <- readIORef st
-  mm <- readIORef mergeMappingIORef 
-  let (nM,eM) = case mm of 
-                      Nothing -> (M.empty, M.empty) 
+  mm <- readIORef mergeMappingIORef
+  let (nM,eM) = case mm of
+                      Nothing -> (M.empty, M.empty)
                       Just m -> m
   let g = editorGetGraph est
       (snodes,sedges) = editorGetSelected est
@@ -226,4 +226,3 @@ updateNacInspector st possibleNT possibleET currentNodeType currentEdgeType merg
   case (M.null splittableNids, M.null splittableEids) of
     (True, True) -> Gtk.widgetSetSensitive splitBtn False
     (_,_) -> Gtk.widgetSetSensitive splitBtn True
-

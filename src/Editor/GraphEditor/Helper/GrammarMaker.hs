@@ -1,4 +1,4 @@
-module Editor.GraphEditor.GrammarMaker (
+module Editor.GraphEditor.Helper.GrammarMaker (
   makeGrammar
 , graphToRuleGraphs
 , makeTypeGraph
@@ -105,12 +105,12 @@ makeTypedGraph g tg = fromGraphsAndLists g' tg npairs epairs
   where
     -- auxiliar structs to define the typedGraph
     epairs = map (\(e, et) -> (edgeId e, edgeId et)) .
-            filter (\(e,et) -> let Label lbl = infoLabel (fromJust $ edgeInfo et) 
-                               in lbl == infoType (edgeInfo e)) 
+            filter (\(e,et) -> let Label lbl = infoLabel (fromJust $ edgeInfo et)
+                               in lbl == infoType (edgeInfo e))
             $ mkpairs (edges g) (edges tg)
     npairs = map (\(n, nt) -> (nodeId n, nodeId nt)) .
             filter (\(n,nt) -> let Label lbl = infoLabel (fromJust $ nodeInfo nt)
-                               in lbl == infoType (nodeInfo n)) 
+                               in lbl == infoType (nodeInfo n))
             $ mkpairs (nodes g) (nodes tg)
     g' = fromNodesAndEdges (map nodeToJust (nodes g)) (map edgeToJust (edges g))
 
@@ -146,10 +146,10 @@ makeTypeGraph g = fromNodesAndEdges nds edgs
     edgs = map (\e -> Edge (edgeId e) (sourceId e) (targetId e) (Just $ edgeInfo e)) $ edges g
 
 
-makeGrammar :: Graph Info Info 
-            -> Graph Info Info 
-            -> [(Graph Info Info, [NAC])] 
-            -> [String] 
+makeGrammar :: Graph Info Info
+            -> Graph Info Info
+            -> [(Graph Info Info, [NAC])]
+            -> [String]
             -> Either String (Grammar (TGM.TypedGraphMorphism Info Info))
 makeGrammar tg hg rgs rulesNames = case eGrammar of
     Left msgs -> Left $ L.intercalate "\n" msgs

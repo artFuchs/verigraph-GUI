@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 
 -- | This module contains the UI definition
-module Editor.GraphEditor.UIBuilders(
+module Editor.GraphEditor.UI.UIBuilders(
   buildMainWindow
 , buildTypeInspector
 , buildHostInspector
@@ -14,16 +14,16 @@ module Editor.GraphEditor.UIBuilders(
 , createSaveDialog
 , createLoadDialog
 , createConfirmDialog
-
 ) where
 
 import qualified GI.Gtk as Gtk
 import qualified GI.Gdk as Gdk
-import qualified Data.Text as T
-import Data.GI.Base.ManagedPtr (unsafeCastTo)
+
+import Control.Monad.IO.Class
 import Data.Maybe
 import Data.GI.Base
-import Control.Monad.IO.Class
+import qualified Data.Text as T
+import Data.GI.Base.ManagedPtr (unsafeCastTo)
 
 buildMainWindow = do
   return () :: IO ()
@@ -203,8 +203,8 @@ buildHostInspector = do
 
   return (mainBox, labelBox, autoToggle, autoToggleE, nodeTypeComboBox, edgeTypeComboBox, (nodeTypeBox, edgeTypeBox))
 
-buildRuleInspector :: IO (Gtk.Box, Gtk.Box, Gtk.CheckButton, Gtk.CheckButton, 
-                          Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.ComboBoxText, 
+buildRuleInspector :: IO (Gtk.Box, Gtk.Box, Gtk.CheckButton, Gtk.CheckButton,
+                          Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.ComboBoxText,
                           (Gtk.Box, Gtk.Box))
 buildRuleInspector = do
   mainBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical
@@ -274,8 +274,8 @@ buildRuleInspector = do
 
 -- create an inspector for the nacs
 
-buildNacInspector :: IO (Gtk.Box, Gtk.Box, Gtk.CheckButton, Gtk.CheckButton, 
-                        Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.Button, 
+buildNacInspector :: IO (Gtk.Box, Gtk.Box, Gtk.CheckButton, Gtk.CheckButton,
+                        Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.Button,
                         Gtk.Button, (Gtk.Box, Gtk.Box))
 buildNacInspector = do
   -- create a host inspector
@@ -289,9 +289,9 @@ buildNacInspector = do
 
   return (mainBox, labelBox, autoN, autoE, nTCB, eTCB, joinBtn, splitBtn, (nTB, eTB))
 
-  
 
-  
+
+
 
 
 -- creates the treePanel

@@ -1,4 +1,4 @@
-module Editor.GraphEditor.SaveLoad
+module Editor.GraphEditor.Helper.SaveLoad
 ( SaveInfo(..)
 , saveFile
 , saveFileAs
@@ -10,25 +10,30 @@ module Editor.GraphEditor.SaveLoad
 , loadProject
 )where
 
-import Editor.GraphEditor.UIBuilders
-import Editor.Data.GraphicalInfo
-import Editor.Data.EditorState
+import qualified GI.Gtk as Gtk
+
+import qualified Data.Tree as Tree
+import qualified Data.Text as T
+import qualified Data.Map as M
+import Data.List
+import Data.IORef
+import qualified Control.Exception as E
+
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
-import qualified Data.Tree as Tree
-import qualified GI.Gtk as Gtk
-import qualified Control.Exception as E
-import qualified Data.Text as T
-import Data.IORef
-import Data.List
-import Abstract.Rewriting.DPO
 import qualified Data.TypedGraph.Morphism as TGM
-import XML.GGXWriter
-import Editor.GraphEditor.GrammarMaker
-import Category.TypedGraphRule (RuleMorphism)
+import Abstract.Rewriting.DPO
 import Rewriting.DPO.TypedGraph
+import Category.TypedGraphRule (RuleMorphism)
+import XML.GGXWriter
+
+import Editor.Data.GraphicalInfo
+import Editor.Data.EditorState
 import Editor.Data.Info1
-import qualified Data.Map as M
+import Editor.GraphEditor.UI.UIBuilders
+import Editor.GraphEditor.Helper.GrammarMaker
+
+
 --------------------------------------------------------------------------------
 -- structs ---------------------------------------------------------------------
 
