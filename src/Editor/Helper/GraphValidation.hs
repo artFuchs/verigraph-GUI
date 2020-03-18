@@ -12,8 +12,7 @@ import qualified Data.TypedGraph as TG
 import Editor.Data.Info1
 import Editor.Helper.List
 
--- validation ------------------------------------------------------------------
--- generate a mask graph that informs if a node/edge has a unique name
+-- | generate a mask graph that informs if a node/edge has a unique name
 -- True -> element has unique  name
 -- False -> element has conflict
 nameConflictGraph :: Graph Info Info -> Graph Bool Bool
@@ -27,11 +26,11 @@ nameConflictGraph g = fromNodesAndEdges vn ve
     uniqueN n = Node (nodeId n) $ nameIsValid (infoLabelStr $ nodeInfo n) (map (infoLabelStr . nodeInfo) $ filter (\n' -> nodeId n' /= nodeId n) ns)
     uniqueE e = Edge (edgeId e) (sourceId e) (targetId e) $ nameIsValid (infoLabelStr $ edgeInfo e) (map (infoLabelStr . edgeInfo) $ filter (\e' -> edgeId e' /= edgeId e) es)
 
--- Auxiliar function: apply a function in a pair
+-- auxiliar function: apply a function in a pair
 applyPair :: (a->b) -> (a,a) -> (b,b)
 applyPair f (a,b) = (f a, f b)
 
--- generate a mask graph that says if a node/edge is valid according to a typeGraph or not
+-- | generate a mask graph that says if a node/edge is valid according to a typeGraph
 correctTypeGraph :: Graph Info Info -> Graph Info Info -> Graph Bool Bool
 correctTypeGraph g tg = fromNodesAndEdges vn ve
   where
@@ -67,13 +66,14 @@ correctTypeGraph g tg = fromNodesAndEdges vn ve
                                   srce' = nodeId . fromJust . lookupNode (sourceId e') $ tg
                               _ -> False
 
--- check if the graph is valid
+-- | check if a graph G is valid according to a typegraph TG
 isGraphValid :: Graph Info Info -> Graph Info Info -> Bool
 isGraphValid g tg = and $ concat [map nodeInfo $ nodes validG, map edgeInfo $ edges validG]
       where
         validG = correctTypeGraph g tg
 
-
+-- | generate a mask graph that informs if the operation applied to a node/edge 
+--   of a graph G (rule) are valid
 opValidationGraph :: Graph Info Info -> Graph Bool Bool
 opValidationGraph g = fromNodesAndEdges nodes' edges'
   where

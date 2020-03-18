@@ -34,10 +34,8 @@ import Abstract.Category
 import Abstract.Rewriting.DPO
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
-import qualified Data.Relation as R
-import qualified Data.TypedGraph as TG
-import qualified Data.TypedGraph.Morphism as TGM
-import qualified Data.Graphs.Morphism as Morph
+
+
 
 -- editor modules
 import Editor.Data.GraphicalInfo
@@ -50,6 +48,7 @@ import Editor.Render.Render
 import Editor.Render.GraphDraw
 import Editor.GraphEditor.Helper.GrammarMaker
 import Editor.GraphEditor.Helper.GraphicalInfo
+import Editor.GraphEditor.Helper.Nac
 import Editor.GraphEditor.Helper.SaveLoad
 import Editor.GraphEditor.Helper.TreeStore
 import Editor.GraphEditor.UI.UIBuilders
@@ -564,16 +563,17 @@ startGUI = do
                           modifyIORef graphStates $ M.insert index (es,undo,redo)
 
       -- auxiliar function to clean the flags after saving
-  let afterSave = do  writeIORef changedProject False
+  let afterSave = do  -- first, update 
+                      writeIORef changedProject False
                       states <- readIORef graphStates
                       writeIORef changedGraph (take (length states) (repeat False))
                       writeIORef lastSavedState (M.map (\(es,_,_) -> (editorGetGraph es, editorGetGI es)) states)
+                      -- clean the changed flag foreach graph in treeStore
                       gvChanged <- toGValue (0::Int32)
                       Gtk.treeModelForeach store $ \model path iter -> do
                         Gtk.treeStoreSetValue store iter 1 gvChanged
                         return False
                       indicateProjChanged window False
-                      updateSavedState lastSavedState graphStates
                       filename <- readIORef fileName
                       case filename of
                         Nothing -> set window [#title := "Verigraph-GUI"]
@@ -1880,138 +1880,3 @@ pasteClipBoard (cGraph, (cNgiM, cEgiM)) es = editorSetGI (newngiM,newegiM) . edi
     upd (a,b) = (20+a-minX, 20+b-minY)
     cNgiM' = M.map (\gi -> nodeGiSetPosition (upd $ position gi) gi) cNgiM
     (newGraph, (newngiM,newegiM)) = diagrDisjointUnion (graph,(ngiM,egiM)) (cGraph,(cNgiM', cEgiM))
-
-
--- TreeStore Flags -------------------------------------------------------------
--- change window name to indicate if the project was modified
-indicateProjChanged :: Gtk.Window -> Bool -> IO ()
-indicateProjChanged window True = do
-  ttitle <- get window #title
-  let title = T.unpack . fromJust $ ttitle
-  if title!!0 == '*'
-    then return ()
-    else set window [#title := T.pack('*':title)]
-
-indicateProjChanged window False = do
-  ttitle <- get window #title
-  let i:title = T.unpack . fromJust $ ttitle
-  if i == '*'
-    then set window [#title := T.pack title]
-    else return ()
-
--- write in the treestore that the current graph was modified
-indicateGraphChanged :: Gtk.TreeStore -> Gtk.TreeIter -> Bool -> IO ()
-indicateGraphChanged store iter True = do
-  gtype <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
-  if gtype == 0
-    then return ()
-    else do
-      gvchanged <- toGValue (1::Int32)
-      Gtk.treeStoreSetValue store iter 1 gvchanged
-      (valid, parentIter) <- Gtk.treeModelIterParent store iter
-      if valid
-        then Gtk.treeStoreSetValue store parentIter 1 gvchanged
-        else return ()
-
-indicateGraphChanged store iter False = do
-  gvchanged <- toGValue (0::Int32)
-  Gtk.treeStoreSetValue store iter 1 gvchanged
-  (valid, parentIter) <- Gtk.treeModelIterParent store iter
-  if valid
-    then Gtk.treeStoreSetValue store parentIter 1 gvchanged
-    else return ()
-
--- change the flags that inform if the graphs and project were changed and indicate the changes
-setChangeFlags :: Gtk.Window -> Gtk.TreeStore -> IORef Bool -> IORef [Bool] -> IORef [Int32] -> IORef Int32 -> Bool -> IO ()
-setChangeFlags window store changedProject changedGraph currentPath currentGraph changed = do
-  index <- readIORef currentGraph >>= return . fromIntegral
-  xs <- readIORef changedGraph
-  let xs' = take index xs ++ [changed] ++ drop (index+1) xs
-      projChanged = or xs'
-  writeIORef changedGraph xs'
-  writeIORef changedProject $ projChanged
-  indicateProjChanged window $ projChanged
-  path <- readIORef currentPath >>= Gtk.treePathNewFromIndices
-  (valid,iter) <- Gtk.treeModelGetIter store path
-  if valid
-    then indicateGraphChanged store iter changed
-    else return ()
-
--- Analise a graph and change the flags that inform if a graph is valid/invalid
-setValidFlag :: Gtk.TreeStore -> Gtk.TreeIter -> M.Map Int32 (EditorState, ChangeStack, ChangeStack) -> Graph Info Info -> IO ()
-setValidFlag store iter states tg = do
-  index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
-  mst <- return $ M.lookup index states
-  g <- case mst of
-    Nothing -> return G.empty
-    Just (es, u, r) -> return $ editorGetGraph es
-  let valid = isGraphValid g tg
-  gvValid <- toGValue valid
-  Gtk.treeStoreSetValue store iter 5 gvValid
-
--- walk in the treeStore, applying setValidFalg for all the hostGraphs and RuleGraphs
--- should be called when occur an update to the typeGraph
-setValidFlags :: Gtk.TreeStore -> Graph Info Info -> M.Map Int32 (EditorState, ChangeStack, ChangeStack) -> IO ()
-setValidFlags store tg states = do
-  Gtk.treeModelForeach store $ \model path iter -> do
-    t <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
-    case t of
-      0 -> return ()
-      1 -> return ()
-      2 -> setValidFlag store iter states tg
-      3 -> setValidFlag store iter states tg
-      4 -> setValidFlag store iter states tg
-    return False
-
--- Change the valid flag for the graph that is being edited
--- Needed because the graphStates IORef is not updated while the user is editing the graph
-setCurrentValidFlag :: Gtk.TreeStore -> IORef EditorState -> IORef (Graph Info Info) -> IORef [Int32] -> IO ()
-setCurrentValidFlag store st typeGraph currentPath = do
-      es <- readIORef st
-      tg <- readIORef typeGraph
-      let valid = isGraphValid (editorGetGraph es) tg
-      gvValid <- toGValue valid
-      cpath <- readIORef currentPath >>= Gtk.treePathNewFromIndices
-      (validIter, iter) <- Gtk.treeModelGetIter store cpath
-      if validIter
-        then Gtk.treeStoreSetValue store iter 5 gvValid
-        else return ()
-
--- change updatedState
-updateSavedState :: IORef (M.Map Int32 DiaGraph) -> IORef (M.Map Int32 (EditorState, ChangeStack, ChangeStack)) -> IO ()
-updateSavedState sst graphStates = do
-  states <- readIORef graphStates
-  writeIORef sst $ (M.map (\(es,_,_) -> (editorGetGraph es, editorGetGI es) ) states)
-
-joinNAC :: NacInfo -> DiaGraph -> Graph Info Info -> IO DiaGraph
-joinNAC (nacdg, (nM,eM)) lhsdg@(ruleLG,ruleLGI) tg = do
-  return (nG, nGI)
-  where
-    -- change ids of elements of nacs so that those elements don't have conflicts
-    -- with elements from lhs
-    (nacG,nacGI) = remapElementsWithConflict lhsdg nacdg (nM,eM)
-    -- apply a pushout in  elements of nac
-    tg' = makeTypeGraph tg
-    lm = makeTypedGraph ruleLG tg'
-    nm = makeTypedGraph nacG tg'
-    (nacTgmLhs,nacTgmNac) = getNacPushout nm lm (nM, eM)
-    -- inverse relations from graphs resulting of pushout to change their elements ids to the correct ones
-    nIRLHS = R.inverseRelation $ Morph.nodeRelation $ TGM.mapping nacTgmLhs
-    eIRLHS = R.inverseRelation $ Morph.edgeRelation $ TGM.mapping nacTgmLhs
-    nIRNAC = R.inverseRelation $ Morph.nodeRelation $ TGM.mapping nacTgmNac
-    eIRNAC = R.inverseRelation $ Morph.edgeRelation $ TGM.mapping nacTgmNac
-    -- get nac graph with info packed into Just
-    nGJust = TG.toUntypedGraph $ TGM.codomainGraph nacTgmLhs
-    -- change Ids of elements of nGJust and extract the info from Just
-    swapNodeId' n = case (R.apply nIRLHS n ++ R.apply nIRNAC n) of
-                      []       -> n
-                      nids -> maximum (nids)
-    swapNodeId n = Node (swapNodeId' (nodeId n)) (nodeInfo n)
-    swapEdgeId e = case (R.apply eIRLHS (edgeId e) ++ R.apply eIRNAC (edgeId e)) of
-                      []       -> e
-                      eids -> Edge (maximum eids) (swapNodeId' $ sourceId e) (swapNodeId' $ targetId e) (edgeInfo e)
-    nGnodes = map swapNodeId . map nodeFromJust $ nodes nGJust
-    nGedges = map swapEdgeId . map edgeFromJust $ edges nGJust
-    nG = fromNodesAndEdges nGnodes nGedges
-    -- join the GraphicalInfos
-    nGI = (M.union (fst nacGI) (fst ruleLGI), M.union (snd nacGI) (snd ruleLGI))
