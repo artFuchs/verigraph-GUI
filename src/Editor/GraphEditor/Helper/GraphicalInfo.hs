@@ -62,6 +62,7 @@ renameSelected state content context = do
                           where
                             op = case (infoOperation newInfo, content) of
                               (Preserve, ':':cs) -> Preserve
+                              (Preserve, _) -> infoOperation oldInfo
                               (op,_) -> op
                             t = case infoType newInfo of
                                 "" -> infoType oldInfo

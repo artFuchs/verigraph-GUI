@@ -13,12 +13,12 @@ import Data.GI.Base.GType
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Zip
-import Data.IORef
 import Graphics.Rendering.Cairo
 import Graphics.Rendering.Pango.Layout
 import Graphics.Rendering.Pango
 
 -- haskell data modules
+import Data.IORef
 import Data.List
 import Data.Int
 import Data.Char
@@ -35,8 +35,6 @@ import Abstract.Rewriting.DPO
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
 
-
-
 -- editor modules
 import Editor.Data.GraphicalInfo
 import Editor.Data.Info1 hiding (empty)
@@ -46,11 +44,13 @@ import Editor.Data.EditorState
 import qualified Editor.Data.DiaGraph as DG
 import Editor.Render.Render
 import Editor.Render.GraphDraw
+import Editor.GraphEditor.Helper.Clipboard
 import Editor.GraphEditor.Helper.GrammarMaker
 import Editor.GraphEditor.Helper.GraphicalInfo
 import Editor.GraphEditor.Helper.Nac
 import Editor.GraphEditor.Helper.SaveLoad
 import Editor.GraphEditor.Helper.TreeStore
+import Editor.GraphEditor.Helper.UndoRedo
 import Editor.GraphEditor.UI.UIBuilders
 import Editor.GraphEditor.UI.RuleViewer
 import Editor.GraphEditor.UI.UpdateInspector
@@ -1796,87 +1796,3 @@ createNode' st info autoNaming pos nshape color lcolor context = do
       info' = if infoLabelStr info == "" && autoNaming then infoSetLabel info (show nid) else info
   dim <- getStringDims (infoVisible info') context Nothing
   writeIORef st $ createNode es pos dim info' nshape color lcolor
-
--- Undo / Redo -----------------------------------------------------------------
-stackUndo :: IORef ChangeStack
-          -> IORef ChangeStack
-          -> EditorState
-          -> Maybe MergeMapping
-          -> IO ()
-stackUndo undo redo es mergeM = do
-  let g = editorGetGraph es
-      gi = editorGetGI es
-  modifyIORef undo (\u -> ((g,gi), mergeM):u )
-  modifyIORef redo (\_ -> [])
-
-applyUndo :: IORef ChangeStack
-          -> IORef ChangeStack
-          -> IORef EditorState
-          -> IORef (Maybe MergeMapping)
-          -> IO ()
-applyUndo undoStack redoStack st mergeMappingIORef = do
-  es <- readIORef st
-  undo <- readIORef undoStack
-  redo <- readIORef redoStack
-  mergeM <- readIORef mergeMappingIORef
-  let apply [] r es = ([], r, es, Nothing)
-      apply (((g,gi),m):u) r es = (u, ((eg,egi), mergeM):r, editorSetGI gi . editorSetGraph g $ es, m)
-                            where
-                              eg = editorGetGraph es
-                              egi = editorGetGI es
-      (nu, nr, nes, nm) = apply undo redo es
-  writeIORef undoStack nu
-  writeIORef redoStack nr
-  writeIORef st nes
-  writeIORef mergeMappingIORef nm
-
-applyRedo :: IORef ChangeStack
-          -> IORef ChangeStack
-          -> IORef EditorState
-          -> IORef (Maybe MergeMapping)
-          -> IO ()
-applyRedo undoStack redoStack st mergeMappingIORef = do
-  undo <- readIORef undoStack
-  redo <- readIORef redoStack
-  es <- readIORef st
-  mergeM <- readIORef mergeMappingIORef
-  let apply u [] es = (u, [], es, Nothing)
-      apply u (((g,gi),m):r) es = (((eg,egi), mergeM):u , r, editorSetGI gi . editorSetGraph g $ es, m)
-                            where
-                              eg = editorGetGraph es
-                              egi = editorGetGI es
-      (nu, nr, nes, nm) = apply undo redo es
-  writeIORef undoStack nu
-  writeIORef redoStack nr
-  writeIORef st nes
-  writeIORef mergeMappingIORef nm
-
-
--- Copy / Paste / Cut ----------------------------------------------------------
-copySelected :: EditorState -> DiaGraph
-copySelected  es = (cg,(ngiM',egiM'))
-  where
-    (nids,eids) = editorGetSelected es
-    g = editorGetGraph es
-    (ngiM, egiM) = editorGetGI es
-    cnodes = foldr (\n ns -> if nodeId n `elem` nids
-                              then (Node (nodeId n) (infoSetLocked (nodeInfo n) False)):ns
-                              else ns) [] (nodes g)
-    cedges = foldr (\e es -> if edgeId e `elem` eids
-                              then (Edge (edgeId e) (sourceId e) (targetId e) (infoSetLocked (edgeInfo e) False):es)
-                              else es) [] (edges g)
-    cg = fromNodesAndEdges cnodes cedges
-    ngiM' = M.filterWithKey (\k _ -> NodeId k `elem` nids) ngiM
-    egiM' = M.filterWithKey (\k _ -> EdgeId k `elem` eids) egiM
-
-pasteClipBoard :: DiaGraph -> EditorState -> EditorState
-pasteClipBoard (cGraph, (cNgiM, cEgiM)) es = editorSetGI (newngiM,newegiM) . editorSetGraph newGraph . editorSetSelected ([], [])$ es
-  where
-    graph = editorGetGraph es
-    (ngiM, egiM) = editorGetGI es
-    allPositions = concat [map position (M.elems cNgiM), map (getEdgePosition cGraph (cNgiM, cEgiM)) (edges cGraph)]
-    minX = minimum $ map fst allPositions
-    minY = minimum $ map snd allPositions
-    upd (a,b) = (20+a-minX, 20+b-minY)
-    cNgiM' = M.map (\gi -> nodeGiSetPosition (upd $ position gi) gi) cNgiM
-    (newGraph, (newngiM,newegiM)) = diagrDisjointUnion (graph,(ngiM,egiM)) (cGraph,(cNgiM', cEgiM))
