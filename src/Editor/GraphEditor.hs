@@ -1510,25 +1510,27 @@ startGUI = do
                   True -> do
                     -- load nac' diagraph
                     context <- Gtk.widgetGetPangoContext canvas
+                    lhsNgi' <- updateNodesGiDims (fst lhsgi) ruleLG context
+                    let lhsgi' = (lhsNgi', snd lhsgi)
                     nacInfoMap <- readIORef nacInfoMapIORef
                     (nG,gi) <- case M.lookup index $ nacInfoMap of
                       Nothing -> do -- if the nac' diagraph is not found, then the nac must contain the lhs
-                        lhsNGI <- updateNodesGiDims (fst lhsgi) ruleLG context
-                        return (ruleLG,(lhsNGI,snd lhsgi))
+                        return (ruleLG,lhsgi')
                       Just (nacdg,(nM,eM)) -> do
                         (nacdg',(nM',eM')) <- applyLhsChangesToNac lhsg (nacdg,(nM,eM)) (Just context)
                         writeIORef mergeMappingIORef $ Just (nM',eM')
                         modifyIORef nacInfoMapIORef $ M.insert index (nacdg', (nM',eM'))
-
                         case (G.null $ fst nacdg') of
-                          True -> return (ruleLG, lhsgi) -- if there's no nac' diagraph, then the nac is just the lhs
+                          True -> return (ruleLG, lhsgi') -- if there's no nac' diagraph, then the nac is just the lhs
                           False -> do
                             -- if there's a nac' diagraph, check if the graph is correct
                             let nacValid = isGraphValid (fst nacdg') tg
                             case nacValid of
-                              True -> do
-                                joinNAC (nacdg',(nM',eM')) (ruleLG, lhsgi) tg
-                              False -> do -- remove all the elements with type error
+                              True -> 
+                                -- join nac
+                                joinNAC (nacdg',(nM',eM')) (ruleLG, lhsgi') tg 
+                              False -> do 
+                                -- remove all the elements with type error
                                 let validG = correctTypeGraph (fst nacdg') tg
                                     validNids = foldr (\n ns -> if nodeInfo n then (nodeId n):ns else ns) [] (nodes validG)
                                     validEids = foldr (\e es -> if edgeInfo e then (edgeId e):es else es) [] (edges validG)
@@ -1538,7 +1540,8 @@ startGUI = do
                                     newNNGI = M.filterWithKey (\k a -> NodeId k `elem` validNids) (fst . snd $ nacdg')
                                     newNEGI = M.filterWithKey (\k a -> EdgeId k `elem` validEids) (snd . snd $ nacdg')
                                     newNacdg = (newNG,(newNNGI, newNEGI))
-                                joinNAC (newNacdg, (nM',eM')) (ruleLG, lhsgi) tg
+                                -- join nac
+                                joinNAC (newNacdg, (nM',eM')) (ruleLG, lhsgi') tg
                     writeIORef st $ editorSetGI gi . editorSetGraph nG $ es
                     writeIORef undoStack u
                     writeIORef redoStack r

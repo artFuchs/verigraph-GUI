@@ -21,8 +21,13 @@ import Editor.GraphEditor.Helper.GrammarMaker
 import Editor.GraphEditor.Helper.GraphicalInfo
 import Editor.Helper.List
 
+-- for debugging
+import Control.Monad
+import Control.Monad.IO.Class
+import Editor.Data.GraphicalInfo
 
--- | join the part of the nac and the lhs of the rule, showing the complete nac.
+
+-- | Join the part of the nac and the lhs of the rule, showing the complete nac.
 joinNAC :: NacInfo -> DiaGraph -> Graph Info Info -> IO DiaGraph
 joinNAC (nacdg, (nM,eM)) lhsdg@(ruleLG,ruleLGI) tg = do
   return (nG, nGI)
@@ -56,7 +61,7 @@ joinNAC (nacdg, (nM,eM)) lhsdg@(ruleLG,ruleLGI) tg = do
     -- join the GraphicalInfos
     nGI = (M.union (fst nacGI) (fst ruleLGI), M.union (snd nacGI) (snd ruleLGI))
 
--- | function to modify ids of nac nodes that aren't in mapping and have id conflict with elems from lhs
+-- | Modify ids of nac nodes that aren't in mapping and have id conflict with elems from lhs.
 -- (g1,(ngi1,egi1)) must be the lhs diagraph, while (g2,(ngi2,egi2)) must be the nac diagraph
 remapElementsWithConflict :: DiaGraph -> DiaGraph -> MergeMapping -> DiaGraph
 remapElementsWithConflict (g1,(ngi1,egi1)) (g2,(ngi2,egi2)) (nodeMapping, edgeMapping) = (g3,gi3)
@@ -94,7 +99,9 @@ applyLhsChangesToNac lhs nacInfo mContext = do
   -- if there are elements that where deleted from lhs, then remove them from the nac too
   let nacInfoD = removeDeletedFromNAC lhs nacInfo
   -- ensure that elements of nacg that are mapped from lhs have the same type as of lhs
-  let ((nacg,nacgi),(nM,eM)) = updateNacTypes lhs nacInfoD
+  let nacInfoDT = updateNacTypes lhs nacInfoD
+  -- ensure that elements of nacg have the same labels of lhs elements
+  let ((nacg,nacgi),(nM,eM)) = updateNacLabels lhs nacInfoDT
   -- if has canvas context, then update the graphical informations of nodes
   nacdg <- case mContext of
     Nothing -> return (nacg,nacgi)
@@ -245,3 +252,34 @@ updateNacTypes lhs ((nacg,nacgi),(nM, eM)) =
     newNacNGI = M.filterWithKey (\id _ -> NodeId id `elem` (nodeIds newNacG)) (fst nacgi)
     newNacEGI = M.filterWithKey (\id _ -> EdgeId id `elem` (edgeIds newNacG)) (snd nacgi)
     newNacGI = (newNacNGI,newNacEGI)
+
+
+updateNacLabels :: Graph Info Info -> NacInfo -> NacInfo
+updateNacLabels lhs ((nacg, nacgi), (nM,eM)) = ((nacg'',nacgi),(nM,eM))
+  where
+    changeInfoLabel id' lbl' i =
+      case infoLabel i of
+        Label _ -> infoSetLabel i lbl'
+        LabelGroup lbls -> 
+          let lbls' = map (\(id,lbl) -> if id == id' then (id,lbl') else (id,lbl)) lbls
+          in i {infoLabel = LabelGroup lbls'}
+
+    nodesWithMapping = foldr (\n l -> case M.lookup (nodeId n) nM of
+                                        Nothing -> l
+                                        Just id -> (n,id):l) [] (nodes lhs)
+    edgesWithMapping = foldr (\e l -> case M.lookup (edgeId e) eM of
+                                        Nothing -> l
+                                        Just id -> (e,id):l) [] (edges lhs)
+
+    nacg' = foldr (\(n,id) g -> let id' = if nodeId n == id then 0 else fromEnum $ nodeId n
+                                in updateNodePayload  id
+                                                      g
+                                                      (changeInfoLabel id' (infoLabelStr $ nodeInfo n)))
+                  nacg 
+                  nodesWithMapping
+    nacg'' = foldr (\(e,id) g -> let id' = if edgeId e == id then 0 else fromEnum $ edgeId e 
+                                 in updateEdgePayload id
+                                                      g
+                                                      (changeInfoLabel id' (infoLabelStr $ edgeInfo e)))
+                  nacg'
+                  edgesWithMapping
