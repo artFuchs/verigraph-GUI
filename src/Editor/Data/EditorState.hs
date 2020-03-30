@@ -34,8 +34,8 @@ import qualified Data.Graphs as G
 import Editor.Data.GraphicalInfo
 import Editor.Helper.Geometry
 import Data.List
-import Editor.Data.Info1 hiding (empty)
-import qualified Editor.Data.Info1 as I
+import Editor.Data.Info hiding (empty)
+import qualified Editor.Data.Info as I
 
 -- | Graph Editor State
 -- A tuple containing all the informations needed to draw the graph in the canvas

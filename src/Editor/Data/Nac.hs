@@ -16,7 +16,7 @@ import Data.Graphs
 
 import Editor.Data.DiaGraph
 import Editor.Data.GraphicalInfo
-import Editor.Data.Info1
+import Editor.Data.Info
 import Editor.Helper.List
 
 type MergeMapping = (M.Map NodeId NodeId, M.Map EdgeId EdgeId)

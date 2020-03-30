@@ -37,8 +37,8 @@ import qualified Data.Graphs as G
 
 -- editor modules
 import Editor.Data.GraphicalInfo
-import Editor.Data.Info1 hiding (empty)
-import qualified Editor.Data.Info1 as I
+import Editor.Data.Info hiding (empty)
+import qualified Editor.Data.Info as I
 import Editor.Data.DiaGraph hiding (empty)
 import Editor.Data.EditorState
 import qualified Editor.Data.DiaGraph as DG

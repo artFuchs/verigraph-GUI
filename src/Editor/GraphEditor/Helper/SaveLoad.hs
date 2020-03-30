@@ -29,7 +29,7 @@ import XML.GGXWriter
 
 import Editor.Data.GraphicalInfo
 import Editor.Data.EditorState
-import Editor.Data.Info1
+import Editor.Data.Info
 import Editor.GraphEditor.UI.UIBuilders
 import Editor.GraphEditor.Helper.GrammarMaker
 

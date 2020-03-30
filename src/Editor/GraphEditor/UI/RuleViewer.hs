@@ -17,7 +17,7 @@ import Data.Graphs
 
 import Editor.Data.EditorState
 import Editor.Data.GraphicalInfo
-import Editor.Data.Info1 hiding (empty)
+import Editor.Data.Info hiding (empty)
 import Editor.GraphEditor.UI.UIBuilders
 import Editor.Render.Render
 import Editor.Helper.Geometry

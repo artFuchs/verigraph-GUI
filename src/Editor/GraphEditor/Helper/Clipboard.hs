@@ -9,7 +9,7 @@ import Data.Graphs
 
 import Editor.Data.DiaGraph
 import Editor.Data.EditorState
-import Editor.Data.Info1
+import Editor.Data.Info
 import Editor.Data.GraphicalInfo
 
 

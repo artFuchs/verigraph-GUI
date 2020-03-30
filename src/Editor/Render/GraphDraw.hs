@@ -12,7 +12,7 @@ import Graphics.Rendering.Cairo
 
 import Data.Graphs
 
-import Editor.Data.Info1
+import Editor.Data.Info
 import Editor.Data.EditorState
 import Editor.Data.GraphicalInfo
 import Editor.Data.Nac

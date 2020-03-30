@@ -26,7 +26,7 @@ import Rewriting.DPO.TypedGraph
 import qualified Data.TypedGraph as TG
 import qualified Data.TypedGraph.Morphism as TGM
 
-import Editor.Data.Info1
+import Editor.Data.Info
 import Editor.Helper.List
 import Data.Graphs.Morphism
 import Editor.Data.Nac

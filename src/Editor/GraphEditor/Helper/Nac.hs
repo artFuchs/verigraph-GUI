@@ -15,7 +15,7 @@ import qualified Data.TypedGraph as TG
 import qualified Data.TypedGraph.Morphism as TGM
 
 import Editor.Data.DiaGraph
-import Editor.Data.Info1
+import Editor.Data.Info
 import Editor.Data.Nac
 import Editor.GraphEditor.Helper.GrammarMaker
 import Editor.GraphEditor.Helper.GraphicalInfo

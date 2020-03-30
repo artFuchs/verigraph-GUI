@@ -19,7 +19,7 @@ import Data.Graphs
 
 import Editor.Data.GraphicalInfo
 import Editor.Data.EditorState
-import Editor.Data.Info1
+import Editor.Data.Info
 
 -- | given a text, compute the size of it's bounding box
 -- uses the pango lib

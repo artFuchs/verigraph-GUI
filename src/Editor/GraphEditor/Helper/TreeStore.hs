@@ -36,7 +36,7 @@ import qualified Data.Text as T
 import Data.Graphs hiding (empty, null)
 import qualified Data.Graphs as G
 
-import Editor.Data.Info1
+import Editor.Data.Info
 import Editor.Data.Nac
 import Editor.Data.DiaGraph hiding (empty)
 import qualified Editor.Data.DiaGraph as DG
