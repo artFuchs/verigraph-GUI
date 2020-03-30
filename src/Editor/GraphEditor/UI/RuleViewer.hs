@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
-module Editor.GraphEditor.RuleViewer (
+module Editor.GraphEditor.UI.RuleViewer (
   createRuleViewerWindow
 , buildRuleViewPanel
 ) where
@@ -8,25 +8,27 @@ module Editor.GraphEditor.RuleViewer (
 import qualified GI.Gtk as Gtk
 import qualified GI.Gdk as Gdk
 import Data.GI.Base
-import Control.Monad.IO.Class
-import Data.Graphs
 
 import qualified Data.Map as M
+import Data.IORef
+import Control.Monad.IO.Class
+
+import Data.Graphs
 
 import Editor.Data.EditorState
 import Editor.Data.GraphicalInfo
-import Editor.GraphEditor.UIBuilders
+import Editor.Data.Info hiding (empty)
+import Editor.GraphEditor.UI.UIBuilders
 import Editor.Render.Render
 import Editor.Helper.Geometry
 import Editor.Render.GraphDraw
 
-import Data.IORef
 
 
 createRuleViewerWindow :: IO (Gtk.Window, Gtk.Label, Gtk.DrawingArea,
                               Gtk.DrawingArea, IORef EditorState,
-                              IORef EditorState, IORef (Graph String String),
-                              IORef (Graph String String))
+                              IORef EditorState, IORef (Graph Info Info),
+                              IORef (Graph Info Info))
 createRuleViewerWindow = do
 
   lesIOR <- newIORef emptyES
@@ -53,8 +55,8 @@ createRuleViewerWindow = do
 
 connectRuleViewerCanvasSignals :: Gtk.DrawingArea
                                   -> IORef EditorState
-                                  -> IORef (Graph String String)
-                                  -> IORef (Graph String String)
+                                  -> IORef (Graph Info Info)
+                                  -> IORef (Graph Info Info)
                                   -> IORef (Double, Double)
                                   -> IO ()
 connectRuleViewerCanvasSignals canvas esIOR tgIOR kIOR oldPointIOR = do

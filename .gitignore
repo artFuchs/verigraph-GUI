@@ -1,3 +1,4 @@
 .stack-work/
 graph-editor-gi-gtk.cabal
 *~
+stack.yaml.lock

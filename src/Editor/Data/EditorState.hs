@@ -28,27 +28,29 @@ module Editor.Data.EditorState(
 ) where
 
 import qualified Data.Map as M
+import Data.Maybe
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
 import Editor.Data.GraphicalInfo
 import Editor.Helper.Geometry
 import Data.List
-import Editor.Data.Info
+import Editor.Data.Info hiding (empty)
+import qualified Editor.Data.Info as I
 
 -- | Graph Editor State
 -- A tuple containing all the informations needed to draw the graph in the canvas
 -- (graph, GraphicalInfo, elected nodes and edges, zoom, pan)
-type EditorState = (Graph String String, GraphicalInfo, ([NodeId],[EdgeId]) , Double, (Double,Double))
+type EditorState = (Graph Info Info, GraphicalInfo, ([NodeId],[EdgeId]) , Double, (Double,Double))
 
 -- constructor
 emptyES :: EditorState
 emptyES = (G.empty, (M.empty, M.empty), ([], []), 1.0, (0.0,0.0))
 
 -- getters and setters
-editorGetGraph :: EditorState -> Graph String String
+editorGetGraph :: EditorState -> Graph Info Info
 editorGetGraph (g,_,_,_,_) = g
 
-editorSetGraph :: Graph String String-> EditorState -> EditorState
+editorSetGraph :: Graph Info Info -> EditorState -> EditorState
 editorSetGraph g (_,gi,s,z,p) = (g,gi,s,z,p)
 
 editorGetGI :: EditorState -> GraphicalInfo
@@ -93,7 +95,7 @@ selectNodeInPosition (nodesG,_) (x,y) =
 
 
 -- check if a given point is close of an edge control point
-selectEdgeInPosition:: Graph String String -> GraphicalInfo -> (Double,Double) -> Maybe EdgeId
+selectEdgeInPosition:: Graph Info Info -> GraphicalInfo -> (Double,Double) -> Maybe EdgeId
 selectEdgeInPosition g gi (x,y) =
   case find (\e -> isSelected e) $ edges g of
     Nothing -> Nothing
@@ -103,7 +105,7 @@ selectEdgeInPosition g gi (x,y) =
     edgePos e = getEdgePosition g gi e
 
 -- get edge position in cartesian coordinate system
-getEdgePosition:: Graph String String -> GraphicalInfo -> Edge String -> (Double,Double)
+getEdgePosition:: Graph Info Info -> GraphicalInfo -> Edge Info -> (Double,Double)
 getEdgePosition g (nodesGi, edgesGi) e = pos
   where
     eid = edgeId e
@@ -121,27 +123,27 @@ getEdgePosition g (nodesGi, edgesGi) e = pos
 
 -- create/delete operations ----------------------------------------------------
 -- create a new node with it's default Info and GraphicalInfo
-createNode :: EditorState -> GIPos -> GIDim -> String -> NodeShape -> GIColor -> GIColor -> EditorState
-createNode es pos dim content nshape color lcolor = editorSetGraph newGraph . editorSetGI newGI . editorSetSelected ([nid], []) $ es
+createNode :: EditorState -> GIPos -> GIDim -> Info -> NodeShape -> GIColor -> GIColor -> EditorState
+createNode es pos dim info nshape color lcolor = editorSetGraph newGraph . editorSetGI newGI . editorSetSelected ([nid], []) $ es
   where
     graph = editorGetGraph es
     nid = head $ newNodes graph
-    newGraph = insertNodeWithPayload nid content graph
+    newGraph = insertNodeWithPayload nid info graph
     newNgi = NodeGI {position = pos, fillColor = color, lineColor = lcolor, dims = dim, shape = nshape}
     newGI = (M.insert (fromEnum nid) newNgi $ fst (editorGetGI es) , snd (editorGetGI es))
 
 
 -- create edges between the selected nodes and a target node
-createEdges:: EditorState -> NodeId -> String -> Bool -> EdgeStyle -> (Double,Double,Double) -> EditorState
-createEdges es dstNode content autoNaming estyle ecolor = editorSetGraph newGraph . editorSetGI (ngiM, newegiM) . editorSetSelected ([],createdEdges) $ es
+createEdges:: EditorState -> NodeId -> Info -> Bool -> EdgeStyle -> (Double,Double,Double) -> EditorState
+createEdges es dstNode info autoNaming estyle ecolor = editorSetGraph newGraph . editorSetGI (ngiM, newegiM) . editorSetSelected ([],createdEdges) $ es
   where selectedNodes = fst $ editorGetSelected es
         graph = editorGetGraph es
         (ngiM,egiM) = editorGetGI es
         (newGraph, newegiM, createdEdges) = foldl create (graph, egiM, []) selectedNodes
         create = (\(g,giM,eids) nid -> let
                                     eid = head $ newEdges g
-                                    content' = if infoLabel content == "" && autoNaming then infoSetLabel content (show eid) else content
-                                    ng = insertEdgeWithPayload eid nid dstNode content' g
+                                    info' = if infoLabel info == (Label "") && autoNaming then infoSetLabel info (show eid) else info
+                                    ng = insertEdgeWithPayload eid nid dstNode info' g
                                     newPos = if (dstNode == nid) then newLoopPos nid (g,(ngiM,egiM)) else newEdgePos nid dstNode (g,(ngiM,egiM))
                                     negi = EdgeGI {cPosition = newPos, color = ecolor, style = estyle}
                                   in (ng, M.insert (fromEnum eid) negi giM, eid:eids))
@@ -151,11 +153,15 @@ deleteSelected:: EditorState -> EditorState
 deleteSelected es = editorSetSelected ([],[]) . editorSetGI (newngiM, newegiM) . editorSetGraph newGraph $ es
   where graph = editorGetGraph es
         (nids,eids) = editorGetSelected es
+        foundNodes = map (\nid -> fromMaybe (Node (NodeId 0) I.empty) $ lookupNode nid graph) nids
+        foundEdges = map (\eid -> fromMaybe (Edge (EdgeId 0) (NodeId 0) (NodeId 0) I.empty) $ lookupEdge eid graph) eids
+        nids' = map nodeId $ filter (\n -> not $ infoLocked $ nodeInfo n) foundNodes
+        eids' = map edgeId $ filter (\e -> not $ infoLocked $ edgeInfo e) foundEdges
         (ngiM, egiM) = editorGetGI es
-        newngiM = foldl (\giM n -> M.delete n giM) ngiM (map fromEnum nids)
-        newegiM = foldl (\giM n -> M.delete n giM) egiM (map fromEnum eids)
-        graph' = foldl (\g e -> removeEdge e g) graph eids
-        newGraph = foldl (\g n -> removeNodeAndIncidentEdges n g) graph' nids
+        newngiM = foldl (\giM n -> M.delete n giM) ngiM (map fromEnum nids')
+        newegiM = foldl (\giM n -> M.delete n giM) egiM (map fromEnum eids')
+        graph' = foldl (\g e -> removeEdge e g) graph eids'
+        newGraph = foldl (\g n -> removeNodeAndIncidentEdges n g) graph' nids'
 
 -- auxiliar functions to createEdges
 -- return a list of numbers

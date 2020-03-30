@@ -1,11 +1,12 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 
 -- | This module contains the UI definition
-module Editor.GraphEditor.UIBuilders(
+module Editor.GraphEditor.UI.UIBuilders(
   buildMainWindow
 , buildTypeInspector
 , buildHostInspector
 , buildRuleInspector
+, buildNacInspector
 , buildTreePanel
 , buildAboutDialog
 , buildHelpWindow
@@ -13,16 +14,16 @@ module Editor.GraphEditor.UIBuilders(
 , createSaveDialog
 , createLoadDialog
 , createConfirmDialog
-
 ) where
 
 import qualified GI.Gtk as Gtk
 import qualified GI.Gdk as Gdk
-import qualified Data.Text as T
-import Data.GI.Base.ManagedPtr (unsafeCastTo)
+
+import Control.Monad.IO.Class
 import Data.Maybe
 import Data.GI.Base
-import Control.Monad.IO.Class
+import qualified Data.Text as T
+import Data.GI.Base.ManagedPtr (unsafeCastTo)
 
 buildMainWindow = do
   return () :: IO ()
@@ -60,7 +61,9 @@ buildMainWindow = do
   sallItem <- Gtk.builderGetObject builder  "sall_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   snodesItem <- Gtk.builderGetObject builder  "snodes_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   sedgesItem <- Gtk.builderGetObject builder  "sedges_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  let editItems = (delItem, undoItem,redoItem,copyItem,pasteItem,cutItem,sallItem,snodesItem,sedgesItem)
+  mergeItem <- Gtk.builderGetObject builder  "merge_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  splitItem <- Gtk.builderGetObject builder  "split_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  let editItems = (delItem, undoItem,redoItem,copyItem,pasteItem,cutItem,sallItem,snodesItem,sedgesItem,mergeItem,splitItem)
 
   zoomInItem <- Gtk.builderGetObject builder  "zoomin_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   zoomOutItem <- Gtk.builderGetObject builder  "zoomout_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
@@ -200,7 +203,9 @@ buildHostInspector = do
 
   return (mainBox, labelBox, autoToggle, autoToggleE, nodeTypeComboBox, edgeTypeComboBox, (nodeTypeBox, edgeTypeBox))
 
-buildRuleInspector :: IO (Gtk.Box, Gtk.Box, Gtk.CheckButton, Gtk.CheckButton, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.ComboBoxText, (Gtk.Box, Gtk.Box))
+buildRuleInspector :: IO (Gtk.Box, Gtk.Box, Gtk.CheckButton, Gtk.CheckButton,
+                          Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.ComboBoxText,
+                          (Gtk.Box, Gtk.Box))
 buildRuleInspector = do
   mainBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical
                          , #spacing := 8
@@ -267,6 +272,28 @@ buildRuleInspector = do
   --
   return (mainBox, entryBox, autoToggle, autoToggleE, nodeTypeComboBox, edgeTypeComboBox, operationComboBox, (nodeTypeBox, edgeTypeBox))
 
+-- create an inspector for the nacs
+
+buildNacInspector :: IO (Gtk.Box, Gtk.Box, Gtk.CheckButton, Gtk.CheckButton,
+                        Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.Button,
+                        Gtk.Button, (Gtk.Box, Gtk.Box))
+buildNacInspector = do
+  -- create a host inspector
+  (mainBox, labelBox, autoN, autoE, nTCB, eTCB, (nTB, eTB)) <- buildHostInspector
+  -- create a button to join elements
+  joinBtn <- new Gtk.Button [#label := "Merge"]
+  Gtk.boxPackStart mainBox joinBtn False False 0
+  -- create a button to split elements
+  splitBtn <- new Gtk.Button [#label := "Split"]
+  Gtk.boxPackStart mainBox splitBtn False False 0
+
+  return (mainBox, labelBox, autoN, autoE, nTCB, eTCB, joinBtn, splitBtn, (nTB, eTB))
+
+
+
+
+
+
 -- creates the treePanel
 buildTreePanel = do
   return () :: IO ()
@@ -293,13 +320,16 @@ buildTreePanel = do
   Gtk.cellLayoutPackStart colActive rendererActive False
 
 
-  btnNew <- new Gtk.Button [#label := "New Rule"]
-  Gtk.boxPackStart mainBox btnNew False False 0
+  btnNewR <- new Gtk.Button [#label := "New Rule"]
+  Gtk.boxPackStart mainBox btnNewR False False 0
 
   btnRmv <- new Gtk.Button [#label := "Remove Rule"]
   Gtk.boxPackStart mainBox btnRmv False False 0
 
-  return (mainBox, treeview, rendererChanges, rendererProj, rendererActive, btnNew, btnRmv)
+  btnNewN <- new Gtk.Button [#label := "New NAC"]
+  Gtk.boxPackStart mainBox btnNewN False False 0
+
+  return (mainBox, treeview, rendererChanges, rendererProj, rendererActive, btnNewR, btnRmv, btnNewN)
 
 buildAboutDialog :: IO ()
 buildAboutDialog = do
