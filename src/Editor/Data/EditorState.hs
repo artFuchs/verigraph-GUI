@@ -19,6 +19,7 @@ module Editor.Data.EditorState(
 , selectEdgeInPosition
 , getEdgePosition
 , createNode
+, createEdge
 , createEdges
 , deleteSelected
 , moveNodes
@@ -133,18 +134,31 @@ createNode es pos dim info nshape color lcolor = editorSetGraph newGraph . edito
     newGI = (M.insert (fromEnum nid) newNgi $ fst (editorGetGI es) , snd (editorGetGI es))
 
 
+-- create a single edge between a src node and a target node
+createEdge :: EditorState -> NodeId -> NodeId -> Info -> Bool -> EdgeStyle -> (Double,Double,Double) -> EditorState
+createEdge es srcNode tgtNode info autoNaming estyle ecolor = editorSetGraph newGraph . editorSetGI (ngiM, newEgiM) . editorSetSelected ([],[eid]) $ es
+  where 
+    graph = editorGetGraph es
+    (ngiM,egiM) = editorGetGI es
+    eid = head $ newEdges graph
+    info' = if infoLabel info == (Label "") && autoNaming then infoSetLabel info (show eid) else info
+    newGraph = insertEdgeWithPayload eid srcNode tgtNode info' graph
+    newPos = if (tgtNode == srcNode) then newLoopPos srcNode (graph,(ngiM,egiM)) else newEdgePos srcNode tgtNode (graph,(ngiM,egiM))
+    negi = EdgeGI {cPosition = newPos, color = ecolor, style = estyle}
+    newEgiM = M.insert (fromEnum eid) negi egiM
+
 -- create edges between the selected nodes and a target node
 createEdges:: EditorState -> NodeId -> Info -> Bool -> EdgeStyle -> (Double,Double,Double) -> EditorState
-createEdges es dstNode info autoNaming estyle ecolor = editorSetGraph newGraph . editorSetGI (ngiM, newegiM) . editorSetSelected ([],createdEdges) $ es
+createEdges es tgtNode info autoNaming estyle ecolor = editorSetGraph newGraph . editorSetGI (ngiM, newegiM) . editorSetSelected ([],createdEdges) $ es
   where selectedNodes = fst $ editorGetSelected es
         graph = editorGetGraph es
         (ngiM,egiM) = editorGetGI es
-        (newGraph, newegiM, createdEdges) = foldl create (graph, egiM, []) selectedNodes
-        create = (\(g,giM,eids) nid -> let
+        (newGraph, newegiM, createdEdges) = foldr create (graph, egiM, []) selectedNodes
+        create = (\nid (g,giM,eids) -> let
                                     eid = head $ newEdges g
                                     info' = if infoLabel info == (Label "") && autoNaming then infoSetLabel info (show eid) else info
-                                    ng = insertEdgeWithPayload eid nid dstNode info' g
-                                    newPos = if (dstNode == nid) then newLoopPos nid (g,(ngiM,egiM)) else newEdgePos nid dstNode (g,(ngiM,egiM))
+                                    ng = insertEdgeWithPayload eid nid tgtNode info' g
+                                    newPos = if (tgtNode == nid) then newLoopPos nid (g,(ngiM,egiM)) else newEdgePos nid tgtNode (g,(ngiM,egiM))
                                     negi = EdgeGI {cPosition = newPos, color = ecolor, style = estyle}
                                   in (ng, M.insert (fromEnum eid) negi giM, eid:eids))
 

@@ -162,31 +162,37 @@ startGUI = do
   st              <- newIORef emptyES -- actual state: all the necessary info to draw the graph
   oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
   squareSelection <- newIORef Nothing -- selection box : Maybe (x,y,w,h)
-  undoStack       <- newIORef ([] :: ChangeStack )
-  redoStack       <- newIORef ([] :: ChangeStack )
   movingGI        <- newIORef False -- if the user started moving some object - necessary to add a position to the undoStack
   clipboard       <- newIORef DG.empty -- clipboard - DiaGraph
   fileName        <- newIORef (Nothing :: Maybe String) -- name of the opened file
   currentPath     <- newIORef [0] -- index of path to current graph being edited
   currentGraph    <- newIORef 0 -- index of the current graph being edited
+
+  -- number specifying the type of the current graph 
+  -- (see possible values in the module Editor.GraphEditor.Helper.TreeStore - in the comments of GraphStore)
+  currentGraphType <- newIORef 1 
+          
   -- map of states foreach graph in the editor
   graphStates     <- newIORef (M.empty :: M.Map Int32 (EditorState, ChangeStack, ChangeStack) )
   writeIORef graphStates $ M.fromList [(0, (emptyES,[],[])), (1, (emptyES, [], [])), (2, (emptyES, [], []))]
+
+  -- variables to keep track of changes
+  undoStack       <- newIORef ([] :: ChangeStack )
+  redoStack       <- newIORef ([] :: ChangeStack )
   changedProject  <- newIORef False -- set this flag as True when the graph is changed somehow
   changedGraph    <- newIORef [False] -- when modify a graph, set the flag in the 'currentGraph' to True
   lastSavedState  <- newIORef (M.empty :: M.Map Int32 DiaGraph)
-  currentGraphType <- newIORef 1
 
-  -- variables to specify graphs
+  -- variables used to edit visual elements of type graphs
   currentShape    <- newIORef NCircle -- the shape that all new nodes must have
   currentStyle    <- newIORef ENormal -- the style that all new edges must have
   currentC        <- newIORef (1,1,1) -- the color to init new nodes
   currentLC       <- newIORef (0,0,0) -- the color to init new edges and the line and text of new nodes
 
-  -- variables to specify hostGraphs
-  -- Possible types that a node can have in a hostGraph.
+  -- variables to specify typed graphs (hostGraphs, ruleGraphs, NACs)
+  -- Possible types that a node can have in a typed graph.
   --  Each node type is identified by a string and specifies a pair with
-  --  Graphical information and the position of the entry in the comboBox
+  --  a GraphicalInfo and the position of the entry in the comboBox
   possibleNodeTypes   <- newIORef ( M.empty :: M.Map String (NodeGI, Int32))
   possibleEdgeTypes   <- newIORef ( M.empty :: M.Map String (EdgeGI, Int32)) -- similar to above.
   activeTypeGraph     <- newIORef G.empty  -- the connection information from the active typeGraph
@@ -389,16 +395,43 @@ startGUI = do
                 cColor <- readIORef currentLC
                 auto <- Gtk.toggleButtonGetActive autoLabelE
                 es <- readIORef st
-                (t,estyle,color) <- case metype of
-                  Nothing -> return ("", cEstyle, cColor)
-                  Just t -> do
-                    pet <- readIORef possibleEdgeTypes
-                    let pet' = M.map (\(gi,i) -> gi) pet
-                        megi = M.lookup t pet'
-                    case megi of
-                      Nothing -> return ("", cEstyle, cColor)
-                      Just gi -> return (t, style gi, color gi)
-                writeIORef st $ createEdges es nid (infoSetType I.empty t) auto estyle color
+                tg <- readIORef activeTypeGraph
+                pet <- readIORef possibleEdgeTypes 
+                pet' <- return $ M.map (\(gi,i) -> gi) pet
+
+                let sNids = fst $ editorGetSelected es
+                    g = editorGetGraph es
+                    srcNodes = map (\nid -> fromJust $ G.lookupNode nid g) sNids
+                    tgtNode = fromJust $ G.lookupNode nid g
+                    edgesTs = map (\src -> (nodeId src, infereEdgeType tg src tgtNode metype)) srcNodes
+                    checkType mt = case mt of
+                                          Nothing -> ("", cEstyle, cColor)
+                                          Just t -> let megi = M.lookup t pet'
+                                                    in case megi of
+                                                          Nothing -> ("", cEstyle, cColor)
+                                                          Just gi -> (t, style gi, color gi)
+                    (es', createdEdges) = 
+                              foldr (\(srcId, mt) (es,eids) -> 
+                                        let (t,estyle,color) = checkType mt
+                                            es' = createEdge es srcId nid (infoSetType I.empty t) auto estyle color
+                                            eids' = (snd $ editorGetSelected es') ++ eids
+                                        in (es',eids'))
+                                (es,[]) edgesTs
+                
+                writeIORef st $ editorSetSelected ([],createdEdges) es' 
+                    
+
+                -- (t,estyle,color) <- case metype of
+                --   Nothing -> return ("", cEstyle, cColor)
+                --   Just t -> do
+                --     pet <- readIORef possibleEdgeTypes
+                --     let pet' = M.map (\(gi,i) -> gi) pet
+                --         megi = M.lookup t pet'
+                --     case megi of
+                --       Nothing -> return ("", cEstyle, cColor)
+                --       Just gi -> return (t, style gi, color gi)
+                -- writeIORef st $ createEdges es nid (infoSetType I.empty t) auto estyle color
+
                 setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                 setCurrentValidFlag store st activeTypeGraph currentPath
                 -- if the current graph is a nac, then add the created edges in the nacg
@@ -1319,11 +1352,11 @@ startGUI = do
         updateTG
 
 
-
+  -- callback to choose a type for the nodes using a comboBox
   let nodeTCBoxChangedCallback comboBox= do
           gt <- readIORef currentGraphType
           if gt < 2
-            then return ()
+            then return () -- if the current graph type is 
             else do
               index <- Gtk.comboBoxGetActive comboBox
               if index == (-1)
@@ -1361,6 +1394,7 @@ startGUI = do
   on nodeTCBoxR #changed $ nodeTCBoxChangedCallback nodeTCBoxR
   on nodeTCBoxN #changed $ nodeTCBoxChangedCallback nodeTCBoxN
 
+  -- callback to choose a type for the edges using a comboBox
   let edgeTCBoxCallback comboBox = do
           gt <- readIORef currentGraphType
           if gt < 2
@@ -1798,4 +1832,29 @@ createNode' st info autoNaming pos nshape color lcolor context = do
   let nid = head $ newNodes (editorGetGraph es)
       info' = if infoLabelStr info == "" && autoNaming then infoSetLabel info (show nid) else info
   dim <- getStringDims (infoVisible info') context Nothing
-  writeIORef st $ createNode es pos dim info' nshape color lcolor
+  writeIORef st $ createNode es pos dim info' nshape color lcolor    
+
+-- infere a type for a edge based on the nodes
+infereEdgeType :: Graph Info Info -> Node Info -> Node Info -> Maybe String -> Maybe String
+infereEdgeType tg src tgt preferedType = inferedType
+  where 
+    srcT = infoType $ nodeInfo src
+    tgtT = infoType $ nodeInfo tgt
+    getId t = case filter (\n -> infoLabelStr (nodeInfo n) == t) (nodes tg) of 
+                [] -> Nothing
+                [n] -> Just (nodeId n)
+    srcId = getId srcT
+    tgtId = getId tgtT
+    
+    inferedType = case (srcId,tgtId) of
+      (Nothing,_) -> Nothing
+      (_,Nothing) -> Nothing
+      (Just s, Just t) -> 
+        let
+          possibleEdges = filter (\e -> sourceId e == s && targetId e == t) (edges tg)
+          possibleTypes = map (infoLabelStr . edgeInfo) possibleEdges
+        in 
+          case (possibleTypes, preferedType) of
+            ([],_) -> Nothing
+            (t:ts,Nothing) -> Just t
+            (t:ts,Just pt) -> if pt `elem` (t:ts) then Just pt else Just t
