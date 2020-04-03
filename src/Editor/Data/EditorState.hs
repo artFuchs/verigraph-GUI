@@ -202,7 +202,7 @@ newEdgePos nid nid' (g, giM)= (-pi/2,30*k)
       _ -> 0
 
 
--- calculate a position fot the new loop
+-- calculate a position for the new loop
 newLoopPos :: NodeId -> (Graph a b, GraphicalInfo) -> (Double,Double)
 newLoopPos nid (g, giM)= (-pi/2,50+30*k)
  where
@@ -210,6 +210,7 @@ newLoopPos nid (g, giM)= (-pi/2,50+30*k)
      Just c -> genericLength $ edgesFromTo c c
      _ -> 0
 
+-- | Mode selected nodes
 moveNodes:: EditorState -> (Double,Double) -> (Double,Double) -> EditorState
 moveNodes es (xold,yold) (xnew,ynew) = editorSetGI (movedNGIs,egiM)  es
   where
@@ -223,6 +224,7 @@ moveNodes es (xold,yold) (xnew,ynew) = editorSetGI (movedNGIs,egiM)  es
                                      in M.insert nid (nodeGiSetPosition (addPoint (position gi) (deltaX,deltaY)) gi) giMap
       movedNGIs = foldl moveN ngiM sNodes
 
+-- | Move selected edges
 moveEdges:: EditorState -> (Double,Double) -> (Double,Double) -> EditorState
 moveEdges es (xold,yold) (xnew,ynew) = editorSetGI (ngi,newegi) es
   where graph = editorGetGraph es
@@ -253,7 +255,7 @@ moveEdges es (xold,yold) (xnew,ynew) = editorSetGI (ngi,newegi) es
           Nothing -> egiM)
         newegi = foldl moveE egi sEdges
 
--- change the selected nodes shape
+-- | Change the selected nodes shape
 changeNodeShape :: EditorState -> NodeShape -> EditorState
 changeNodeShape es s = editorSetGI (newNgiM, egiM) es
   where
@@ -261,7 +263,7 @@ changeNodeShape es s = editorSetGI (newNgiM, egiM) es
       (ngiM, egiM) = editorGetGI es
       newNgiM = M.mapWithKey (\k gi -> if NodeId k `elem` nids then nodeGiSetShape s gi else gi) ngiM
 
--- change the selected edges style
+-- | Change the selected edges style
 changeEdgeStyle :: EditorState -> EdgeStyle -> EditorState
 changeEdgeStyle es s = editorSetGI (ngiM, newEgiM) es
   where

@@ -5,8 +5,6 @@ main = startGUI
 
 {-
 Tarefas ---------------------------------------------------------------------
-
-*Criar uma espécie de inferência de tipos de arestas quando criá-las
 *Quando editar o nome de uma aresta ou nodo no grafo de tipos, fazer update em todos os grafos que usam o objeto
 *permitir que o usuário escolha como será vista a regra (formato L->R, ou L<-K->R)
 *permitir a reordenação das regras por drag n' drop
@@ -21,6 +19,11 @@ Ideias -------------------------------------------------------------------------
 *mostrar menu de contexto ao clicar em um elemento com o botão direito
 
 Progresso -------------------------------------------------------------------
-*Testar programa procurando por bugs
-*Reorganizar código
+*Inferência de tipos de arestas
+  *Quando o tipo de um nodo das extremidades de uma aresta for modificado
+  *Mostrar tipos validos para a aresta quando o usuario for modificar o tipo dela
+
+Feito ------------------------------------------------------------------------
+*Inferência de tipos de arestas
+  *Criação de arestas com tipos automáticos (dando preferência pelo tipo selecionado na comboBox, se for válido)
 -}
