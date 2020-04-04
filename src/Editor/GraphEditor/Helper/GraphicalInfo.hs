@@ -51,9 +51,8 @@ updateNodesGiDims ngiM g context = do
   return $ M.fromList listOfNGIs
 
 -- rename the selected itens, modifying the sizes of nodes according to the text
-renameSelected:: IORef EditorState -> String -> P.Context -> IO()
-renameSelected state content context = do
-  es <- readIORef state
+renameSelected:: EditorState -> String -> P.Context -> IO EditorState
+renameSelected es content context = do
   -- auxiliar function rename
   let newInfo = str2Info content
   let rename oldInfo = if infoLocked oldInfo
@@ -87,4 +86,4 @@ renameSelected state content context = do
                                         Nothing -> gi)
                              ngiM
       newEs   = editorSetGI (newNgiM,egiM) . editorSetGraph newGraph $ es
-  writeIORef state newEs
+  return newEs

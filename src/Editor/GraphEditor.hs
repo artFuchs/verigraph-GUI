@@ -778,6 +778,8 @@ startGUI = do
     saveFileAs (g,gi) saveGraph fileName window False
     return ()
 
+
+  -- auxiliar function - perform actions according to the type of graph
   let updateByType = do
         gt <- readIORef currentGraphType
         case gt of
@@ -1160,16 +1162,28 @@ startGUI = do
 
   -- when the entry lose focus
   on nameEntry #focusOutEvent $ \event -> do
+    -- rename selected node
     es <- readIORef st
-    gt <- readIORef currentGraphType
     stackUndo undoStack redoStack es Nothing
     setChangeFlags window store changedProject changedGraph currentPath currentGraph True
     name <- Gtk.entryGetText nameEntry >>= return . T.unpack
     context <- Gtk.widgetGetPangoContext canvas
-    renameSelected st name context
+    es <- readIORef st
+    es' <- renameSelected es name context
+
+    -- edges type inference
+    typesE <- readIORef possibleEdgeTypes
+    tg <- readIORef activeTypeGraph
+    let 
+      typesE' = M.map fst typesE
+      es'' = infereEdgesTypesAfterNodeChange es' tg typesE'
+    
+    writeIORef st es''
     Gtk.widgetQueueDraw canvas
     updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
     updateByType
+
+    gt <- readIORef currentGraphType
     if gt == 4
       then do
         index <- readIORef currentGraph
@@ -1353,9 +1367,8 @@ startGUI = do
                 else do
                   typeInfo <- Gtk.comboBoxTextGetActiveText comboBox >>= return . T.unpack
                   typeNGI <- readIORef possibleNodeTypes >>= return . fst . fromJust . M.lookup typeInfo
-                  typesE <- readIORef possibleEdgeTypes
                   es <- readIORef st
-                  tg <- readIORef activeTypeGraph
+                  
                   let (sNids,sEids) = editorGetSelected es
                       g = editorGetGraph es
                       -- foreach selected node, change their types
@@ -1369,42 +1382,23 @@ startGUI = do
                                                  in M.insert (fromEnum nid) (typeNGI {position = position ngi, dims = dims ngi}) giM) 
                                       (fst giM)
                                       acceptableSNids
+                      es' = editorSetGraph g' . editorSetGI (newNGI, snd giM) $ es
 
                       -- foreach changed node, change the type of the edges connected to it
-                      nodesInContext = map (\nid -> fromJust $ G.lookupNodeInContext nid g') acceptableSNids
-                      incidentEdgesInContext = concat $ map (G.incidentEdges . snd) nodesInContext
-                      edgesWithEndings = foldr (\((src,srcC),e,(tgt,tgtC)) l -> 
-                                                        if G.edgeId e `elem` map (\(_,e,_) -> G.edgeId e) l
-                                                          then l
-                                                          else (src,e,tgt):l) 
-                                                [] incidentEdgesInContext
-                      edgesIdsAndTypes = map 
-                                          (\(src,e,tgt) -> 
-                                            let t = infoLabelStr $ edgeInfo e
-                                                t' = case infereEdgeType tg src tgt (Just t) of
-                                                      Nothing -> t 
-                                                      Just it -> it
-                                            in (G.edgeId e, t')
-                                          )
-                                          edgesWithEndings
-                      newGraph = foldr (\(eid, t) g -> updateEdgePayload eid g (\info -> infoSetType info t)) g' edgesIdsAndTypes
-                      newEGI = foldr (\(eid,t) giM -> let egi = getEdgeGI (fromEnum eid) giM
-                                                          typeEGI = fst . fromJust $ M.lookup t typesE
-                                                 in M.insert (fromEnum eid) (typeEGI {cPosition = cPosition egi}) giM)
-                                      (snd giM)
-                                      edgesIdsAndTypes
-
-
+                  typesE <- readIORef possibleEdgeTypes >>= return . M.map fst
+                  tg <- readIORef activeTypeGraph
+                  let es'' = infereEdgesTypesAfterNodeChange es' tg typesE
+                    
                   case gt of
                     4 -> do
                       nacInfoMap <- readIORef nacInfoMapIORef
                       index <- readIORef currentGraph
                       let ((ng,ngiM), nacM) = fromJust $ M.lookup index nacInfoMap
-                          newNG = extractNacGraph newGraph nacM
-                          newNGIM = extractNacGI newGraph (newNGI,newEGI) nacM
+                          newNG = extractNacGraph (editorGetGraph es'') nacM
+                          newNGIM = extractNacGI (editorGetGraph es'') (editorGetGI es'') nacM
                       modifyIORef nacInfoMapIORef $ M.insert index ((newNG, newNGIM), nacM)
                     _ -> return ()
-                  writeIORef st (editorSetGI (newNGI, newEGI) . editorSetGraph newGraph $ es)
+                  writeIORef st es''
                   writeIORef currentNodeType $ Just typeInfo
                   Gtk.widgetQueueDraw canvas
                   setCurrentValidFlag store st activeTypeGraph currentPath
@@ -1882,3 +1876,34 @@ infereEdgeType tg src tgt preferedType = inferedType
       ([],_) -> Nothing
       (t:ts,Nothing) -> Just t
       (t:ts,Just pt) -> if pt `elem` (t:ts) then preferedType else Just t
+
+
+infereEdgesTypesAfterNodeChange :: EditorState -> Graph Info Info -> M.Map String EdgeGI -> EditorState
+infereEdgesTypesAfterNodeChange es tg typesE = editorSetGraph newGraph . editorSetGI newGIM  $ es
+  where 
+    g = editorGetGraph es
+    (sNIds,sEIds) = editorGetSelected es
+    giM = editorGetGI es
+    nodesInContext = map (\nid -> fromJust $ G.lookupNodeInContext nid g) sNIds
+    incidentEdgesInContext = concat $ map (G.incidentEdges . snd) nodesInContext
+    edgesWithEndings = foldr (\((src,srcC),e,(tgt,tgtC)) l -> 
+                                  if G.edgeId e `elem` map (\(_,e,_) -> G.edgeId e) l
+                                    then l
+                                    else (src,e,tgt):l) 
+                                [] incidentEdgesInContext
+    edgesIdsAndTypes = map
+                      (\(src,e,tgt) -> 
+                        let t = infoLabelStr $ edgeInfo e
+                            t' = case infereEdgeType tg src tgt (Just t) of
+                                  Nothing -> t 
+                                  Just it -> it
+                        in (G.edgeId e, t')
+                      )
+                      edgesWithEndings
+    newGraph = foldr (\(eid, t) g -> updateEdgePayload eid g (\info -> infoSetType info t)) g edgesIdsAndTypes
+    newEGI = foldr (\(eid,t) giM -> let egi = getEdgeGI (fromEnum eid) giM
+                                        typeEGI = fromJust $ M.lookup t typesE
+                                    in M.insert (fromEnum eid) (typeEGI {cPosition = cPosition egi}) giM)
+                    (snd giM)
+                    edgesIdsAndTypes
+    newGIM = ((fst $ editorGetGI es),newEGI)
