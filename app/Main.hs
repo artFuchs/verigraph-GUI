@@ -6,6 +6,7 @@ main = startGUI
 {-
 Tarefas ---------------------------------------------------------------------
 *Quando editar o nome de uma aresta ou nodo no grafo de tipos, fazer update em todos os grafos que usam o objeto
+*Permitir que arestas no typeGraph tenham o mesmo nome, desde que tenham origem e destino diferentes
 *permitir que o usuário escolha como será vista a regra (formato L->R, ou L<-K->R)
 *permitir a reordenação das regras por drag n' drop
 *modificar sistema undo/redo para funcionar com todo o projeto ao invés de grafos individuais
@@ -20,10 +21,10 @@ Ideias -------------------------------------------------------------------------
 
 Progresso -------------------------------------------------------------------
 *Inferência de tipos de arestas
-  *Quando o tipo de um nodo das extremidades de uma aresta for modificado
-  *Mostrar tipos validos para a aresta quando o usuario for modificar o tipo dela
+  *Modificar lista de elementos mostrados na comboBox de tipos de arestas de acordo com a aresta selecionada
 
 Feito ------------------------------------------------------------------------
 *Inferência de tipos de arestas
   *Criação de arestas com tipos automáticos (dando preferência pelo tipo selecionado na comboBox, se for válido)
+  *Quando o tipo de um nodo das extremidades de uma aresta for modificado
 -}

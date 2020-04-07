@@ -50,6 +50,7 @@ import Editor.GraphEditor.Helper.GraphicalInfo
 import Editor.GraphEditor.Helper.Nac
 import Editor.GraphEditor.Helper.SaveLoad
 import Editor.GraphEditor.Helper.TreeStore
+import Editor.GraphEditor.Helper.TypeInfer
 import Editor.GraphEditor.Helper.UndoRedo
 import Editor.GraphEditor.UI.UIBuilders
 import Editor.GraphEditor.UI.RuleViewer
@@ -196,8 +197,8 @@ startGUI = do
   possibleNodeTypes   <- newIORef ( M.empty :: M.Map String (NodeGI, Int32))
   possibleEdgeTypes   <- newIORef ( M.empty :: M.Map String (EdgeGI, Int32)) -- similar to above.
   activeTypeGraph     <- newIORef G.empty  -- the connection information from the active typeGraph
-  currentNodeType     <- newIORef Nothing
-  currentEdgeType     <- newIORef Nothing
+  currentNodeType     <- newIORef ( Nothing :: Maybe String)
+  currentEdgeType     <- newIORef ( Nothing :: Maybe String)
 
   -- variables to specify NACs
   -- Diagraph from the rule - togetter with lhs it make the editor state
@@ -232,7 +233,7 @@ startGUI = do
   -- auxiliar function to update the active type graph
   let updateTG = do
         curr <- readIORef currentGraph
-        if curr /= 0 -- if the current graph is the active typeGraph, update
+        if curr /= 0 -- update only if the current graph is the active typeGraph
           then return ()
           else do
                 updateActiveTG st activeTypeGraph possibleNodeTypes possibleEdgeTypes
@@ -1819,7 +1820,8 @@ updateActiveTG st activeTypeGraph possibleNodeTypes possibleEdgeTypes = do
                         (allDiff (map (infoLabelStr . edgeInfo) edgs)) &&
                         notElem "" (concat [(map (infoLabelStr . edgeInfo) edgs), (map (infoLabelStr . nodeInfo) nds)])
         if diffNames
-          then do -- load the variables with the info from the typeGraph
+          -- if so, load the variables with the info from the typeGraph
+          then do 
             writeIORef activeTypeGraph g
             writeIORef possibleNodeTypes $
                 M.fromList $
@@ -1847,63 +1849,3 @@ createNode' st info autoNaming pos nshape color lcolor context = do
       info' = if infoLabelStr info == "" && autoNaming then infoSetLabel info (show nid) else info
   dim <- getStringDims (infoVisible info') context Nothing
   writeIORef st $ createNode es pos dim info' nshape color lcolor    
-
--- get a list of the possible types an edge can have based on its source and target nodes
-listPossibleEdgeTypes :: Graph Info Info -> Node Info -> Node Info -> [String]
-listPossibleEdgeTypes tg src tgt = possibleTypes
-  where
-    srcT = infoType $ nodeInfo src
-    tgtT = infoType $ nodeInfo tgt
-    getId t = case filter (\n -> infoLabelStr (nodeInfo n) == t) (nodes tg) of 
-                [] -> Nothing
-                [n] -> Just (nodeId n)
-    srcId = getId srcT
-    tgtId = getId tgtT
-    possibleTypes = case (srcId,tgtId) of
-      (Nothing,_) -> []
-      (_,Nothing) -> []
-      (Just s, Just t) -> 
-        let possibleEdges = filter (\e -> sourceId e == s && targetId e == t) (edges tg)
-        in  map (infoLabelStr . edgeInfo) possibleEdges
-
--- | Infere a type for a edge based on its ending nodes. 
---   The function gives preference to a type specified. If no type is found to be infered
-infereEdgeType :: Graph Info Info -> Node Info -> Node Info -> Maybe String -> Maybe String
-infereEdgeType tg src tgt preferedType = inferedType
-  where 
-    possibleTypes = listPossibleEdgeTypes tg src tgt
-    inferedType = case (possibleTypes, preferedType) of
-      ([],_) -> Nothing
-      (t:ts,Nothing) -> Just t
-      (t:ts,Just pt) -> if pt `elem` (t:ts) then preferedType else Just t
-
-
-infereEdgesTypesAfterNodeChange :: EditorState -> Graph Info Info -> M.Map String EdgeGI -> EditorState
-infereEdgesTypesAfterNodeChange es tg typesE = editorSetGraph newGraph . editorSetGI newGIM  $ es
-  where 
-    g = editorGetGraph es
-    (sNIds,sEIds) = editorGetSelected es
-    giM = editorGetGI es
-    nodesInContext = map (\nid -> fromJust $ G.lookupNodeInContext nid g) sNIds
-    incidentEdgesInContext = concat $ map (G.incidentEdges . snd) nodesInContext
-    edgesWithEndings = foldr (\((src,srcC),e,(tgt,tgtC)) l -> 
-                                  if G.edgeId e `elem` map (\(_,e,_) -> G.edgeId e) l
-                                    then l
-                                    else (src,e,tgt):l) 
-                                [] incidentEdgesInContext
-    edgesIdsAndTypes = map
-                      (\(src,e,tgt) -> 
-                        let t = infoLabelStr $ edgeInfo e
-                            t' = case infereEdgeType tg src tgt (Just t) of
-                                  Nothing -> t 
-                                  Just it -> it
-                        in (G.edgeId e, t')
-                      )
-                      edgesWithEndings
-    newGraph = foldr (\(eid, t) g -> updateEdgePayload eid g (\info -> infoSetType info t)) g edgesIdsAndTypes
-    newEGI = foldr (\(eid,t) giM -> let egi = getEdgeGI (fromEnum eid) giM
-                                        typeEGI = fromJust $ M.lookup t typesE
-                                    in M.insert (fromEnum eid) (typeEGI {cPosition = cPosition egi}) giM)
-                    (snd giM)
-                    edgesIdsAndTypes
-    newGIM = ((fst $ editorGetGI es),newEGI)
