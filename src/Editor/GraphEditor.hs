@@ -108,6 +108,10 @@ startGUI = do
     ruleInspWidgets = (nameEntry, nodeTCBoxR, edgeTCBoxR, operationCBox)
     nacInspWidgets  = (nameEntry, nodeTCBoxN, edgeTCBoxN, joinBtn, splitBtn)
 
+  let
+    nodeTypeCBoxes = [nodeTCBox, nodeTCBoxR, nodeTCBoxN]
+    edgeTypeCBoxes = [edgeTCBox, edgeTCBoxR, edgeTCBoxN]
+
   -- (rvwindow, lhsCanvas, rhsCanvas) <- buildRuleViewWindow window
 
   #showAll window
@@ -196,6 +200,7 @@ startGUI = do
   --  a GraphicalInfo and the position of the entry in the comboBox
   possibleNodeTypes   <- newIORef ( M.empty :: M.Map String (NodeGI, Int32))
   possibleEdgeTypes   <- newIORef ( M.empty :: M.Map String (EdgeGI, Int32)) -- similar to above.
+  possibleSelectableEdgeTypes <- newIORef (M.empty :: M.Map String (EdgeGI, Int32)) -- subset of possible Edge Types for selected edges
   activeTypeGraph     <- newIORef G.empty  -- the connection information from the active typeGraph
   currentNodeType     <- newIORef ( Nothing :: Maybe String)
   currentEdgeType     <- newIORef ( Nothing :: Maybe String)
@@ -239,23 +244,11 @@ startGUI = do
                 updateActiveTG st activeTypeGraph possibleNodeTypes possibleEdgeTypes
                 possibleNT <- readIORef possibleNodeTypes
                 possibleET <- readIORef possibleEdgeTypes
+                writeIORef possibleSelectableEdgeTypes possibleET
                 tg <- readIORef activeTypeGraph
                 -- update the comboBoxes
-                Gtk.comboBoxTextRemoveAll nodeTCBox
-                Gtk.comboBoxTextRemoveAll edgeTCBox
-                Gtk.comboBoxTextRemoveAll nodeTCBoxR
-                Gtk.comboBoxTextRemoveAll edgeTCBoxR
-                Gtk.comboBoxTextRemoveAll nodeTCBoxN
-                Gtk.comboBoxTextRemoveAll edgeTCBoxN
-                forM_ (M.keys possibleNT) $ \k -> do
-                    Gtk.comboBoxTextAppendText nodeTCBox (T.pack k)
-                    Gtk.comboBoxTextAppendText nodeTCBoxR (T.pack k)
-                    Gtk.comboBoxTextAppendText nodeTCBoxN (T.pack k)
-                forM_ (M.keys possibleET) $ \k -> do
-                    Gtk.comboBoxTextAppendText edgeTCBox (T.pack k)
-                    Gtk.comboBoxTextAppendText edgeTCBoxR (T.pack k)
-                    Gtk.comboBoxTextAppendText edgeTCBoxN (T.pack k)
-
+                updateComboBoxesText nodeTypeCBoxes (map T.pack $ M.keys possibleNT)
+                updateComboBoxesText edgeTypeCBoxes (map T.pack $ M.keys possibleET)
                 -- update the valid flags
                 states <- readIORef graphStates
                 setValidFlags store tg states
@@ -294,34 +287,50 @@ startGUI = do
                   Nothing -> []
                   Just eid -> [eid]
           -- add/remove elements of selection
+          tg <- readIORef activeTypeGraph
           case (sNode, sEdge, Gdk.ModifierTypeShiftMask `elem` ms, Gdk.ModifierTypeControlMask `elem` ms) of
-            -- clicked in blank space with Shift not pressed
+            -- clicked in blank space with Shift not pressed -> clean selection, start square seleciton
             ([], [], False, _) -> do
               modifyIORef st (editorSetSelected ([],[]))
               writeIORef squareSelection $ Just (x',y',0,0)
-            -- selected nodes or edges with shift pressed:
+              if gType > 1
+                  then changeEdgeTypeCBoxesByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBoxes es tg []
+                  else return ()
+            -- selected nodes or edges without modifier key:
             (n, e, False, _) -> do
               let nS = if null n then False else n!!0 `elem` oldSN
                   eS = if null e then False else e!!0 `elem` oldSE
               if nS || eS
               then return ()
-              else modifyIORef st (editorSetSelected (n, e))
+              else do 
+                modifyIORef st (editorSetSelected (n, e))
+
+                if gType > 1
+                  then do 
+                    changeEdgeTypeCBoxesByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBoxes es tg e
+                  else return ()
             -- selected nodes or edges with Shift pressed -> add to selection
             (n, e, True, False) -> do
-              let jointSN = foldl (\ns n -> if n `notElem` ns then n:ns else ns) [] $ sNode ++ oldSN
-                  jointSE = foldl (\ns n -> if n `notElem` ns then n:ns else ns) [] $ sEdge ++ oldSE
+              let jointSN = removeDuplicates $ sNode ++ oldSN
+                  jointSE = removeDuplicates $ sEdge ++ oldSE
               modifyIORef st (editorSetGraph graph . editorSetSelected (jointSN,jointSE))
+              if gType > 1
+                  then changeEdgeTypeCBoxesByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBoxes es tg jointSE
+                  else return ()
             -- selected nodes or edges with Shift + Ctrl pressed -> remove from selection
             (n, e, True, True) -> do
               let jointSN = if null n then oldSN else delete (n!!0) oldSN
                   jointSE = if null e then oldSE else delete (e!!0) oldSE
               modifyIORef st (editorSetGraph graph . editorSetSelected (jointSN,jointSE))
+              if gType > 1
+                  then changeEdgeTypeCBoxesByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBoxes es tg jointSE
+                  else return ()
           Gtk.widgetQueueDraw canvas
           updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
           case gType of
-            2 -> updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
-            3 -> updateRuleInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
-            4 -> updateNacInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType mergeMappingIORef nacInspWidgets nacInspBoxes
+            2 -> updateHostInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
+            3 -> updateRuleInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
+            4 -> updateNacInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMappingIORef nacInspWidgets nacInspBoxes
             _ -> return ()
         -- right button click: create nodes and insert edges
         (3, False) -> liftIO $ do
@@ -422,8 +431,13 @@ startGUI = do
                 
                 writeIORef st $ editorSetSelected ([],createdEdges) es' 
 
+                if gType > 1
+                  then changeEdgeTypeCBoxesByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBoxes es' tg createdEdges
+                  else return ()
+
                 setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                 setCurrentValidFlag store st activeTypeGraph currentPath
+
                 -- if the current graph is a nac, then add the created edges in the nacg
                 if gType /= 4
                   then return ()
@@ -453,16 +467,12 @@ startGUI = do
                         nM' = foldr (\n m -> if n `elem` (M.elems m) then m else M.insert n n m) nM (map nodeId nodesFromLHS)
                     modifyIORef nacInfoMapIORef $ M.insert index ((nacg', (fst nacgi, nacEgi')), (nM',eM))
 
-
-
-
-
           Gtk.widgetQueueDraw canvas
           updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
           case gType of
-            2 -> updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
-            3 -> updateRuleInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
-            4 -> updateNacInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType mergeMappingIORef nacInspWidgets nacInspBoxes
+            2 -> updateHostInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
+            3 -> updateRuleInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
+            4 -> updateNacInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMappingIORef nacInspWidgets nacInspBoxes
             _ -> return ()
         _           -> return ()
       return True
@@ -536,11 +546,17 @@ startGUI = do
                                                     in pointInsideRectangle pos (x + (w/2), y + (h/2), abs w, abs h)) $ edges graph
                 newEs = editorSetSelected (sNodes, sEdges) $ es
             writeIORef st newEs
+
+            tg <- readIORef activeTypeGraph
+            if gType > 1
+              then changeEdgeTypeCBoxesByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBoxes es tg sEdges
+              else return ()
+
             updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
             case gType of
-              2 -> updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
-              3 -> updateRuleInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
-              4 -> updateNacInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType mergeMappingIORef nacInspWidgets nacInspBoxes
+              2 -> updateHostInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
+              3 -> updateRuleInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
+              4 -> updateNacInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMappingIORef nacInspWidgets nacInspBoxes
               _ -> return ()
           ((n,e), Nothing) -> return ()
           _ -> return ()
@@ -1849,3 +1865,79 @@ createNode' st info autoNaming pos nshape color lcolor context = do
       info' = if infoLabelStr info == "" && autoNaming then infoSetLabel info (show nid) else info
   dim <- getStringDims (infoVisible info') context Nothing
   writeIORef st $ createNode es pos dim info' nshape color lcolor    
+
+updateComboBoxesText :: [Gtk.ComboBoxText] -> [T.Text] -> IO ()
+updateComboBoxesText cboxs texts =
+
+  forM_ cboxs $ \cbox -> do
+    -- clean comboBox values
+    Gtk.comboBoxTextRemoveAll cbox  
+    -- populate cbox
+    forM_ texts $ \t -> Gtk.comboBoxTextAppendText cbox t
+
+changeEdgeTypeCBoxesByContext :: IORef (M.Map String (EdgeGI,Int32)) 
+                              -> IORef (M.Map String (EdgeGI,Int32))
+                              -> [Gtk.ComboBoxText]
+                              -> EditorState 
+                              -> Graph Info Info 
+                              -> [EdgeId]
+                              -> IO ()
+changeEdgeTypeCBoxesByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBoxes es tg sEdges = do
+  pET <- readIORef possibleEdgeTypes
+  case (G.null tg, sEdges) of
+    -- typegraph is null -> impossible to do anything
+    (True,_) -> return () 
+    -- no edge selected -> all edge types are selectable
+    (False, []) -> do
+      writeIORef possibleSelectableEdgeTypes pET
+      updateComboBoxesText edgeTypeCBoxes (map T.pack $ M.keys pET)
+    -- one edge selected -> modify comboboxes to show what kind of types this edge can have
+    (False,[eid]) -> do
+      let 
+        g = editorGetGraph es
+        e = fromJust $ lookupEdge eid g
+        src = fromJust $ lookupNode (sourceId e) g
+        tgt = fromJust $ lookupNode (targetId e) g
+        possibleTypes = listPossibleEdgeTypes tg src tgt
+        pEST = M.filterWithKey (\k _ -> k `elem` possibleTypes) pET
+        posF acc v = (acc+1,(fst v,acc))
+        pEST' = snd $ M.mapAccum posF 0 pEST
+      writeIORef possibleSelectableEdgeTypes pEST'
+      updateComboBoxesText edgeTypeCBoxes (map T.pack $ M.keys pEST')
+    -- many edges selected
+    (False,eids) -> do
+      let
+        g = editorGetGraph es
+        edgs = map (\eid -> fromJust $ lookupEdge eid g) eids
+        checkEndings e ends = 
+          case ends of
+            (False,_) -> (False,[])
+            (True,[]) -> (True, [(src,tgt)])
+            (True,[(src',tgt')]) -> 
+              let
+                srcMatch = (infoType $ nodeInfo src') == (infoType $ nodeInfo src)
+                tgtMatch = (infoType $ nodeInfo tgt') == (infoType $ nodeInfo tgt)
+              in (srcMatch && tgtMatch, [(src,tgt)])
+          where
+            src = fromJust $ lookupNode (sourceId e) g
+            tgt = fromJust $ lookupNode (targetId e) g
+          
+        endings = foldr checkEndings (True,[]) edgs
+      case endings of
+        -- all selected edges have source and target nodes of same types -> 
+        --      modify comboboxes to show what kind of types these edges can have
+        (True,(src,tgt):l) -> do
+          let
+            possibleTypes = listPossibleEdgeTypes tg src tgt
+            pEST = M.filterWithKey (\k _ -> k `elem` possibleTypes) pET
+            posF acc v = (acc+1,(fst v,acc))
+            pEST' = snd $ M.mapAccum posF 0 pEST
+          writeIORef possibleSelectableEdgeTypes pEST'
+          updateComboBoxesText edgeTypeCBoxes (map T.pack $ M.keys pEST')
+        -- the selected edges have source and target nodes of different types ->
+        --      all edge types are selectable
+        (False,_) -> do
+          writeIORef possibleSelectableEdgeTypes pET
+          updateComboBoxesText edgeTypeCBoxes (map T.pack $ M.keys pET)
+
+
