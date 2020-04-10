@@ -1884,49 +1884,71 @@ changeEdgeTypeCBoxesByContext :: IORef (M.Map String (EdgeGI,Int32))
                               -> IO ()
 changeEdgeTypeCBoxesByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBoxes es tg sEdges = do
   pET <- readIORef possibleEdgeTypes
+  let defaultAction = do
+        writeIORef possibleSelectableEdgeTypes pET
+        updateComboBoxesText edgeTypeCBoxes (map T.pack $ M.keys pET)
   case (G.null tg, sEdges) of
     -- typegraph is null -> impossible to do anything
     (True,_) -> return () 
     -- no edge selected -> all edge types are selectable
-    (False, []) -> do
-      writeIORef possibleSelectableEdgeTypes pET
-      updateComboBoxesText edgeTypeCBoxes (map T.pack $ M.keys pET)
+    (False, []) -> defaultAction
     -- one edge selected -> modify comboboxes to show what kind of types this edge can have
     (False,[eid]) -> do
-      let 
-        g = editorGetGraph es
-        e = fromJust $ lookupEdge eid g
-        src = fromJust $ lookupNode (sourceId e) g
-        tgt = fromJust $ lookupNode (targetId e) g
-        possibleTypes = listPossibleEdgeTypes tg src tgt
-        pEST = M.filterWithKey (\k _ -> k `elem` possibleTypes) pET
-        posF acc v = (acc+1,(fst v,acc))
-        pEST' = snd $ M.mapAccum posF 0 pEST
-      writeIORef possibleSelectableEdgeTypes pEST'
-      updateComboBoxesText edgeTypeCBoxes (map T.pack $ M.keys pEST')
+      let g = editorGetGraph es
+      case lookupEdge eid g of
+        Just e -> do
+          let 
+            mSrc = lookupNode (sourceId e) g
+            mTgt = lookupNode (targetId e) g
+          case (mSrc,mTgt) of
+            (Just src, Just tgt) -> do
+              let
+                possibleTypes = listPossibleEdgeTypes tg src tgt
+                pEST = M.filterWithKey (\k _ -> k `elem` possibleTypes) pET
+                posF acc v = (acc+1,(fst v,acc))
+                pEST' = snd $ M.mapAccum posF 0 pEST
+              writeIORef possibleSelectableEdgeTypes pEST'
+              updateComboBoxesText edgeTypeCBoxes (map T.pack $ M.keys pEST')
+            _ -> do 
+              putStrLn "Error: lookupNode returning Nothing"
+              print e
+              print g
+              defaultAction
+        _ -> do
+          putStrLn "Error: lookupEdge returning Nothing"
+          print eid
+          print g
+          defaultAction
     -- many edges selected
     (False,eids) -> do
       let
         g = editorGetGraph es
-        edgs = map (\eid -> fromJust $ lookupEdge eid g) eids
-        checkEndings e ends = 
+        edgs = map fromJust . filter (\e -> not $ null e) $ map (\eid -> lookupEdge eid g) eids
+        checkEndings e ends =
           case ends of
-            (False,_) -> (False,[])
-            (True,[]) -> (True, [(src,tgt)])
-            (True,[(src',tgt')]) -> 
+            (False,_) -> (False,Nothing)
+            (True,Nothing) -> dfRes
+            (True,Just (s,t)) -> 
               let
-                srcMatch = (infoType $ nodeInfo src') == (infoType $ nodeInfo src)
-                tgtMatch = (infoType $ nodeInfo tgt') == (infoType $ nodeInfo tgt)
-              in (srcMatch && tgtMatch, [(src,tgt)])
+                srcMatch = case mSrc of
+                  Nothing -> False
+                  Just src -> (infoType $ nodeInfo s) == (infoType $ nodeInfo src)
+                tgtMatch = case mTgt of
+                  Nothing -> False
+                  Just tgt -> (infoType $ nodeInfo t) == (infoType $ nodeInfo tgt)
+              in (srcMatch && tgtMatch, Just (s,t))
           where
-            src = fromJust $ lookupNode (sourceId e) g
-            tgt = fromJust $ lookupNode (targetId e) g
-          
-        endings = foldr checkEndings (True,[]) edgs
+            mSrc = lookupNode (sourceId e) g
+            mTgt = lookupNode (targetId e) g
+            dfRes = case (mSrc,mTgt) of
+                      (Just s, Just t) -> (True,Just (s,t))
+                      _ -> (False,Nothing)
+        
+        endings = foldr checkEndings (True,Nothing) edgs
       case endings of
         -- all selected edges have source and target nodes of same types -> 
         --      modify comboboxes to show what kind of types these edges can have
-        (True,(src,tgt):l) -> do
+        (True,Just (src,tgt)) -> do
           let
             possibleTypes = listPossibleEdgeTypes tg src tgt
             pEST = M.filterWithKey (\k _ -> k `elem` possibleTypes) pET
@@ -1936,8 +1958,6 @@ changeEdgeTypeCBoxesByContext possibleEdgeTypes possibleSelectableEdgeTypes edge
           updateComboBoxesText edgeTypeCBoxes (map T.pack $ M.keys pEST')
         -- the selected edges have source and target nodes of different types ->
         --      all edge types are selectable
-        (False,_) -> do
-          writeIORef possibleSelectableEdgeTypes pET
-          updateComboBoxesText edgeTypeCBoxes (map T.pack $ M.keys pET)
+        (False,_) -> defaultAction
 
 

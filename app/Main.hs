@@ -22,6 +22,7 @@ Ideias -------------------------------------------------------------------------
 Progresso -------------------------------------------------------------------
 *Inferência de tipos de arestas
   *Modificar lista de elementos mostrados na comboBox de tipos de arestas de acordo com a aresta selecionada
+    *arrumar bug onde operação interfere
 
 Feito ------------------------------------------------------------------------
 *Inferência de tipos de arestas
