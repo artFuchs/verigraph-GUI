@@ -253,6 +253,16 @@ startGUI = do
                 states <- readIORef graphStates
                 setValidFlags store tg states
 
+  -- auxiliar function to update inspector
+  let updateInspector = do
+        gType <- readIORef currentGraphType
+        updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
+        case gType of
+          2 -> updateHostInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
+          3 -> updateRuleInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
+          4 -> updateNacInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMappingIORef nacInspWidgets nacInspBoxes
+          _ -> return ()
+
   -- mouse button pressed on canvas
   on canvas #buttonPressEvent $ \eventButton -> do
     b <- get eventButton #button
@@ -304,7 +314,6 @@ startGUI = do
               then return ()
               else do 
                 modifyIORef st (editorSetSelected (n, e))
-
                 if gType > 1
                   then do 
                     changeEdgeTypeCBoxesByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBoxes es tg e
@@ -326,12 +335,7 @@ startGUI = do
                   then changeEdgeTypeCBoxesByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBoxes es tg jointSE
                   else return ()
           Gtk.widgetQueueDraw canvas
-          updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
-          case gType of
-            2 -> updateHostInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
-            3 -> updateRuleInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
-            4 -> updateNacInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMappingIORef nacInspWidgets nacInspBoxes
-            _ -> return ()
+          updateInspector
         -- right button click: create nodes and insert edges
         (3, False) -> liftIO $ do
           let g = editorGetGraph es
@@ -468,12 +472,7 @@ startGUI = do
                     modifyIORef nacInfoMapIORef $ M.insert index ((nacg', (fst nacgi, nacEgi')), (nM',eM))
 
           Gtk.widgetQueueDraw canvas
-          updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
-          case gType of
-            2 -> updateHostInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
-            3 -> updateRuleInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
-            4 -> updateNacInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMappingIORef nacInspWidgets nacInspBoxes
-            _ -> return ()
+          updateInspector
         _           -> return ()
       return True
 
@@ -549,15 +548,11 @@ startGUI = do
 
             tg <- readIORef activeTypeGraph
             if gType > 1
-              then changeEdgeTypeCBoxesByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBoxes es tg sEdges
+              then changeEdgeTypeCBoxesByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBoxes newEs tg sEdges
               else return ()
 
-            updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
-            case gType of
-              2 -> updateHostInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
-              3 -> updateRuleInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
-              4 -> updateNacInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMappingIORef nacInspWidgets nacInspBoxes
-              _ -> return ()
+            updateInspector
+
           ((n,e), Nothing) -> return ()
           _ -> return ()
       _ -> return ()
@@ -1179,7 +1174,7 @@ startGUI = do
 
   -- when the entry lose focus
   on nameEntry #focusOutEvent $ \event -> do
-    -- rename selected node
+    -- rename selected element(s)
     es <- readIORef st
     stackUndo undoStack redoStack es Nothing
     setChangeFlags window store changedProject changedGraph currentPath currentGraph True
@@ -1188,16 +1183,16 @@ startGUI = do
     es <- readIORef st
     es' <- renameSelected es name context
 
-    -- edges type inference
+    -- infere the types of edge(s) connected to the renamed node(s)
     typesE <- readIORef possibleEdgeTypes
     tg <- readIORef activeTypeGraph
     let 
       typesE' = M.map fst typesE
       es'' = infereEdgesTypesAfterNodeChange es' tg typesE'
-    
+
     writeIORef st es''
     Gtk.widgetQueueDraw canvas
-    updateHostInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
+    updateInspector
     updateByType
 
     gt <- readIORef currentGraphType
@@ -1498,7 +1493,6 @@ startGUI = do
             let newNgiM = foldl (\giM (nid, dim) -> let gi = nodeGiSetDims dim $ getNodeGI (fromEnum nid) giM
                                                     in M.insert (fromEnum nid) gi giM) (fst gi) ndims
             writeIORef st (editorSetGI (newNgiM, snd gi) . editorSetGraph newGraph' $ es)
-            updateRuleInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
             Gtk.widgetQueueDraw canvas
 
 

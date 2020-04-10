@@ -10,6 +10,7 @@ Tarefas ---------------------------------------------------------------------
 *permitir que o usuário escolha como será vista a regra (formato L->R, ou L<-K->R)
 *permitir a reordenação das regras por drag n' drop
 *modificar sistema undo/redo para funcionar com todo o projeto ao invés de grafos individuais
+*Refatorar funções do módulo UpdateInspector
 
 Ideias -------------------------------------------------------------------------
 *criação de nodos através de clique duplo em um espaço em branco
@@ -20,12 +21,10 @@ Ideias -------------------------------------------------------------------------
 *mostrar menu de contexto ao clicar em um elemento com o botão direito
 
 Progresso -------------------------------------------------------------------
-*Inferência de tipos de arestas
-  *Modificar lista de elementos mostrados na comboBox de tipos de arestas de acordo com a aresta selecionada
-    *arrumar bug onde operação interfere
 
 Feito ------------------------------------------------------------------------
 *Inferência de tipos de arestas
   *Criação de arestas com tipos automáticos (dando preferência pelo tipo selecionado na comboBox, se for válido)
   *Quando o tipo de um nodo das extremidades de uma aresta for modificado
+  *Modificar lista de elementos mostrados na comboBox de tipos de arestas de acordo com a aresta selecionada
 -}

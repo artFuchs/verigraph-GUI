@@ -18,7 +18,7 @@ import qualified Data.Map as M
 import qualified Data.Text as T
 
 
-import Data.Graphs
+import Data.Graphs hiding (null)
 
 import Editor.Data.EditorState
 import Editor.Data.GraphicalInfo
@@ -110,41 +110,33 @@ updateHostInspector st possibleNT possibleET currentNodeType currentEdgeType (en
       ns = filter (\n -> elem (nodeId n) $ fst $ editorGetSelected est) $ nodes g
       es = filter (\e -> elem (edgeId e) $ snd $ editorGetSelected est) $ edges g
       (ngiM,egiM) = editorGetGI est
+      unifyNames [] = ""
       unifyNames (x:xs) = if all (==x) xs then x else ""
+      
+      typeN = if null ns 
+                then cNT
+                else unifyNames $ map (infoType . nodeInfo) ns
+      typeE = if null es 
+                then cET
+                else unifyNames $ map (infoType . edgeInfo) es
+      typeNIndex = case M.lookup typeN pNT of
+                    Nothing -> -1
+                    Just (gi,i) -> i
+      typeEIndex = case M.lookup typeE pET of
+                    Nothing -> -1
+                    Just (gi,i) -> i
+                    
+  Gtk.comboBoxSetActive nodeTCBox typeNIndex
+  Gtk.comboBoxSetActive edgeTCBox typeEIndex
+
   case (length ns, length es) of
-    (0,0) -> do
-      Gtk.comboBoxSetActive nodeTCBox $ fromMaybe (-1) (Just snd <*> (M.lookup cNT pNT))
-      Gtk.comboBoxSetActive edgeTCBox $ fromMaybe (-1) (Just snd <*> (M.lookup cET pET))
-      set nodeTBox [#visible := True]
-      set edgeTBox [#visible := True]
     (n,0) -> do
-      let typeL = unifyNames $ map (infoType . nodeInfo) ns
-          typeI = case M.lookup typeL pNT of
-                  Nothing -> -1
-                  Just (gi,i) -> i
-      Gtk.comboBoxSetActive nodeTCBox typeI
       set nodeTBox [#visible := True]
       set edgeTBox [#visible := False]
     (0,e) -> do
-      let typeL = unifyNames $ map (infoType . edgeInfo) es
-          typeI = case M.lookup typeL pET of
-                  Nothing -> -1
-                  Just (gi,i) -> i
-
-      Gtk.comboBoxSetActive edgeTCBox typeI
       set edgeTBox [#visible := True]
       set nodeTBox [#visible := False]
-    (n,e) -> do
-      let typeNL = unifyNames $ map (infoType . nodeInfo) ns
-          typeNI = case M.lookup typeNL pNT of
-                  Nothing -> -1
-                  Just (gi,i) -> i
-          typeEL = unifyNames $ map (infoType . edgeInfo) es
-          typeEI = case M.lookup typeEL pET of
-                  Nothing -> -1
-                  Just (gi,i) -> i
-      Gtk.comboBoxSetActive nodeTCBox typeNI
-      Gtk.comboBoxSetActive edgeTCBox typeEI
+    _ -> do
       set edgeTBox [#visible := True]
       set nodeTBox [#visible := True]
 
@@ -152,54 +144,20 @@ updateRuleInspector :: IORef EditorState -> IORef (M.Map String (NodeGI, Int32))
                        IORef (Maybe String) -> IORef (Maybe String) -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.ComboBoxText) ->
                        (Gtk.Box, Gtk.Box) -> IO()
 updateRuleInspector st possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox, operationCBox) (nodeTBox, edgeTBox) = do
+  updateHostInspector st possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox)
   est <- readIORef st
-  pNT <- readIORef possibleNT
-  pET <- readIORef possibleET
-  cNT <- readIORef currentNodeType >>= \x -> return $ fromMaybe "" x
-  cET <- readIORef currentEdgeType >>= \x -> return $ fromMaybe "" x
   let g = editorGetGraph est
       ns = filter (\n -> elem (nodeId n) $ fst $ editorGetSelected est) $ nodes g
       es = filter (\e -> elem (edgeId e) $ snd $ editorGetSelected est) $ edges g
-      (ngiM,egiM) = editorGetGI est
       unifyNames [] = ""
       unifyNames (x:xs) = if all (==x) xs then x else "------"
-      typeNL = unifyNames $ map (infoType . nodeInfo) ns
-      typeEL = unifyNames $ map (infoType . edgeInfo) es
       operation = unifyNames $ concat [map (infoOperationStr . edgeInfo) es, map (infoOperationStr . nodeInfo) ns]
-      typeNI = case M.lookup typeNL pNT of
-              Nothing -> -1
-              Just (gi,i) -> i
-      typeEI = case M.lookup typeEL pET of
-              Nothing -> -1
-              Just (gi,i) -> i
       opI = case operation of
         "" -> 0
         "new:" -> 1
         "del:" -> 2
         _ -> -1
-  case (length ns, length es) of
-    (0,0) -> do
-      Gtk.comboBoxSetActive nodeTCBox $ fromMaybe (-1) (Just snd <*> (M.lookup cNT pNT))
-      Gtk.comboBoxSetActive edgeTCBox $ fromMaybe (-1) (Just snd <*> (M.lookup cET pET))
-      Gtk.comboBoxSetActive operationCBox opI
-      set nodeTBox [#visible := True]
-      set edgeTBox [#visible := True]
-    (n,0) -> do
-      Gtk.comboBoxSetActive nodeTCBox typeNI
-      Gtk.comboBoxSetActive operationCBox opI
-      set nodeTBox [#visible := True]
-      set edgeTBox [#visible := False]
-    (0,e) -> do
-      Gtk.comboBoxSetActive edgeTCBox typeEI
-      Gtk.comboBoxSetActive operationCBox opI
-      set edgeTBox [#visible := True]
-      set nodeTBox [#visible := False]
-    (n,e) -> do
-      Gtk.comboBoxSetActive nodeTCBox typeNI
-      Gtk.comboBoxSetActive edgeTCBox typeEI
-      Gtk.comboBoxSetActive operationCBox opI
-      set edgeTBox [#visible := True]
-      set nodeTBox [#visible := True]
+  Gtk.comboBoxSetActive operationCBox opI
 
 updateNacInspector :: IORef EditorState -> IORef (M.Map String (NodeGI, Int32)) -> IORef (M.Map String (EdgeGI, Int32))
                     -> IORef (Maybe String) -> IORef (Maybe String) -> IORef (Maybe MergeMapping)
