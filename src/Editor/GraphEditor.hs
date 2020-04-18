@@ -195,12 +195,18 @@ startGUI = do
   currentLC       <- newIORef (0,0,0) -- the color to init new edges and the line and text of new nodes
 
   -- variables to specify typed graphs (hostGraphs, ruleGraphs, NACs)
+
   -- Possible types that a node can have in a typed graph.
   --  Each node type is identified by a string and specifies a pair with
-  --  a GraphicalInfo and the position of the entry in the comboBox
+  --  a NodeGI and the position of the entry in the comboBox
   possibleNodeTypes   <- newIORef ( M.empty :: M.Map String (NodeGI, Int32))
-  possibleEdgeTypes   <- newIORef ( M.empty :: M.Map String (EdgeGI, Int32)) -- similar to above.
-  possibleSelectableEdgeTypes <- newIORef (M.empty :: M.Map String (EdgeGI, Int32)) -- subset of possible Edge Types for selected edges
+  -- Possible types that an edge can have in a typed graph.
+  --  Each edge type is identified by a string and specifies a pair
+  --  with a map of EdgeGI, which keys are a pair of Strings (Source, Target), 
+  --  and the position in the comboBox
+  possibleEdgeTypes   <- newIORef ( M.empty :: M.Map String (M.Map (String, String) EdgeGI, Int32))
+  -- Subset of possible Edge Types for selected edges with changed positions in the combobox
+  possibleSelectableEdgeTypes <- newIORef (M.empty :: M.Map String (M.Map (String, String) EdgeGI, Int32))
   activeTypeGraph     <- newIORef G.empty  -- the connection information from the active typeGraph
   currentNodeType     <- newIORef ( Nothing :: Maybe String)
   currentEdgeType     <- newIORef ( Nothing :: Maybe String)
@@ -257,10 +263,16 @@ startGUI = do
   let updateInspector = do
         gType <- readIORef currentGraphType
         updateTypeInspector st currentC currentLC typeInspWidgets tPropBoxes
+        es <- readIORef st
+        pNT <- readIORef possibleNodeTypes >>= return . M.map snd
+        pET <- readIORef possibleSelectableEdgeTypes >>= return . M.map snd
+        cNT <- readIORef currentNodeType >>= \x -> return $ fromMaybe "" x
+        cET <- readIORef currentEdgeType >>= \x -> return $ fromMaybe "" x
+        mergeMapping <- readIORef mergeMappingIORef
         case gType of
-          2 -> updateHostInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType hostInspWidgets hostInspBoxes
-          3 -> updateRuleInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType ruleInspWidgets ruleInspBoxes
-          4 -> updateNacInspector st possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMappingIORef nacInspWidgets nacInspBoxes
+          2 -> updateHostInspector es pNT pET cNT cET hostInspWidgets hostInspBoxes
+          3 -> updateRuleInspector es pNT pET cNT cET ruleInspWidgets ruleInspBoxes
+          4 -> updateNacInspector es pNT pET cNT cET mergeMapping nacInspWidgets nacInspBoxes
           _ -> return ()
 
   -- mouse button pressed on canvas
@@ -411,23 +423,29 @@ startGUI = do
                 es <- readIORef st
                 tg <- readIORef activeTypeGraph
                 pet <- readIORef possibleEdgeTypes 
-                pet' <- return $ M.map (\(gi,i) -> gi) pet
+                pet' <- return $ M.map fst pet
 
                 -- create edges infering their types
                 let sNids = fst $ editorGetSelected es
                     g = editorGetGraph es
                     srcNodes = map (\nid -> fromJust $ G.lookupNode nid g) sNids
                     tgtNode = fromJust $ G.lookupNode nid g
-                    edgesTs = map (\src -> (nodeId src, infereEdgeType tg src tgtNode metype)) srcNodes
-                    checkType mt = case mt of
+                    tgtType = infoType $ nodeInfo tgtNode
+                    edgesTs = map (\src -> (src, infereEdgeType tg src tgtNode metype)) srcNodes
+                    -- auxiliar function that checks if the type mt, exist in possibleEdgeTypes.
+                      -- returns the correspondent triple (type, style, color)
+                    checkType mt srcType = case mt of
                                           Nothing -> ("", cEstyle, cColor)
                                           Just t -> let megi = M.lookup t pet'
                                                     in case megi of
                                                           Nothing -> ("", cEstyle, cColor)
-                                                          Just gi -> (t, style gi, color gi)
+                                                          Just sm -> case M.lookup (srcType,tgtType) sm of
+                                                                        Nothing -> ("", cEstyle, cColor)
+                                                                        Just gi -> (t, style gi, color gi)
                     (es', createdEdges) = 
-                              foldr (\(srcId, mt) (es,eids) -> 
-                                        let (t,estyle,color) = checkType mt
+                              foldr (\(src, mt) (es,eids) -> 
+                                        let srcId = nodeId src
+                                            (t,estyle,color) = checkType mt (infoType $ nodeInfo src)
                                             es' = createEdge es srcId nid (infoSetType I.empty t) auto estyle color
                                             eids' = (snd $ editorGetSelected es') ++ eids
                                         in (es',eids'))
@@ -743,7 +761,7 @@ startGUI = do
     let rulesNames = map (\(_,_,name) -> name) rules
         rulesNnacs = map (\(r,ns,_) -> (r,ns)) rules
 
-    let efstOrderGG = makeGrammar tg hg rulesNnacs rulesNames
+    efstOrderGG <- makeGrammar tg hg rulesNnacs rulesNames
     case efstOrderGG of
       Left msg -> showError window (T.pack msg)
       Right fstOrderGG -> do
@@ -1006,7 +1024,7 @@ startGUI = do
             modifyIORef st (editorSetGraph g' . editorSetGI gi' . editorSetSelected ([maxNID], [maxEID]))
             stackUndo undoStack redoStack es (Just (nM,eM))
             Gtk.widgetQueueDraw canvas
-            updateNacInspector st possibleNodeTypes possibleEdgeTypes currentNodeType currentEdgeType mergeMappingIORef nacInspWidgets nacInspBoxes
+            updateInspector
 
 
   on spt #activate $ do
@@ -1421,7 +1439,7 @@ startGUI = do
   on nodeTCBoxN #changed $ nodeTCBoxChangedCallback nodeTCBoxN
 
   -- callback to choose a type for the edges using a comboBox
-  let edgeTCBoxCallback comboBox = do
+  let edgeTCBoxChangedCallback comboBox = do
           gt <- readIORef currentGraphType
           if gt < 2
             then return ()
@@ -1432,25 +1450,32 @@ startGUI = do
                 else do
                   es <- readIORef st
                   typeInfo <- Gtk.comboBoxTextGetActiveText comboBox >>= return . T.unpack
-                  typeGI <- readIORef possibleEdgeTypes >>= return . fst . fromJust . M.lookup typeInfo
+                  pET <- readIORef possibleEdgeTypes >>= return . fst . fromJust . M.lookup typeInfo
                   let (sNids,sEids) = editorGetSelected es
                       g = editorGetGraph es
-                      acceptableSEids = filter (\eid -> case lookupEdge eid g of
-                                                          Nothing -> False
-                                                          Just e -> not $ infoLocked (edgeInfo e)) sEids
                       giM = editorGetGI es
-                      newEGI = foldl (\gi eid -> let egi = getEdgeGI (fromEnum eid) gi
-                                                 in M.insert (fromEnum eid) (edgeGiSetPosition (cPosition egi) typeGI) gi) (snd giM) acceptableSEids
+                      acceptableSEids = filter (\eid -> case lookupEdge eid g of
+                                                           Nothing -> False
+                                                           Just e -> not $ infoLocked (edgeInfo e)) sEids
+                      edgesInContext = map (\eid -> fromJust $ lookupEdgeInContext eid g) acceptableSEids
+
+                      changeEdgeGI ((src,_),e,(tgt,_)) giM = 
+                            let eid = fromEnum $ edgeId e
+                                egi = getEdgeGI eid giM
+                            in case M.lookup (infoType $ nodeInfo src, infoType $ nodeInfo tgt) pET of 
+                                    Nothing -> giM
+                                    Just typeGI -> M.insert eid (typeGI {cPosition = cPosition egi}) giM
+                      newEGI = foldr changeEdgeGI (snd giM) edgesInContext
                       newGI = (fst giM, newEGI)
-                      newGraph = foldl (\g eid -> updateEdgePayload eid g (\info -> infoSetType info typeInfo)) g acceptableSEids
+                      newGraph = foldr (\eid g -> updateEdgePayload eid g (\info -> infoSetType info typeInfo)) g acceptableSEids
                   case gt of
                     4 -> do
                       nacInfoMap <- readIORef nacInfoMapIORef
                       index <- readIORef currentGraph
                       let ((ng,ngiM), nacM) = fromJust $ M.lookup index nacInfoMap
-                          newNG = foldr (\eid g -> if eid `elem` edgeIds g then updateEdgePayload eid g (\info -> infoSetType info typeInfo) else g) ng acceptableSEids
-                          newNacEGI = M.foldrWithKey (\k e giM -> if k `elem` (M.keys giM) then M.insert k e giM else giM) (snd ngiM) newEGI
-                          newNacdg = (newNG, (fst ngiM, newNacEGI))
+                          newNG = extractNacGraph newGraph nacM
+                          newNacGI = extractNacGI newGraph newGI nacM
+                          newNacdg = (newNG, newNacGI)
                       modifyIORef nacInfoMapIORef $ M.insert index (newNacdg, nacM)
                     _ -> return ()
                   writeIORef st (editorSetGI newGI . editorSetGraph newGraph $ es)
@@ -1459,9 +1484,9 @@ startGUI = do
                   setCurrentValidFlag store st activeTypeGraph currentPath
 
   -- choose a type in the type comboBox for edges
-  on edgeTCBox #changed $ edgeTCBoxCallback edgeTCBox
-  on edgeTCBoxR #changed $ edgeTCBoxCallback edgeTCBoxR
-  on edgeTCBoxN #changed $ edgeTCBoxCallback edgeTCBoxN
+  on edgeTCBox #changed $ edgeTCBoxChangedCallback edgeTCBox
+  on edgeTCBoxR #changed $ edgeTCBoxChangedCallback edgeTCBoxR
+  on edgeTCBoxN #changed $ edgeTCBoxChangedCallback edgeTCBoxN
 
   -- choose a operaion in the operation comboBox
   on operationCBox #changed $ do
@@ -1637,13 +1662,18 @@ startGUI = do
                   gn (i,t,gi) = case M.lookup t pnt of
                                   Nothing -> (i,gi)
                                   Just (gi',_) -> (i,nodeGiSetColor (fillColor gi') . nodeGiSetShape (shape gi') $ gi)
-                  fe edge = (eid, infoType (edgeInfo edge), getEdgeGI eid egi)
+                  fe ((src,_), edge, (tgt,_)) = (eid, eType, srcType, tgtType, getEdgeGI eid egi)
                             where eid = fromEnum (edgeId edge)
-                  ge (i,t,gi) = case M.lookup t pet of
+                                  eType = infoType (edgeInfo edge)
+                                  srcType = infoType $ nodeInfo src
+                                  tgtType = infoType $ nodeInfo tgt
+                  ge (i,et,st,tt,gi) = case M.lookup et pet of
                                   Nothing -> (i,gi)
-                                  Just (gi',_) -> (i,edgeGiSetColor (color gi') . edgeGiSetStyle (style gi') $ gi)
+                                  Just (sm,_) -> case M.lookup (st,tt) sm of 
+                                    Nothing -> (i,gi)
+                                    Just gi' -> (i, gi' {cPosition = cPosition gi})
                   newNodeGI = M.fromList . map gn . map fn $ nodes g
-                  newEdgeGI = M.fromList . map ge . map fe $ edges g
+                  newEdgeGI = M.fromList . map ge . map fe $ edgesInContext g
               writeIORef st (editorSetGI (newNodeGI, newEdgeGI) es)
 
         let resetCurrentGI = do
@@ -1815,7 +1845,10 @@ genTreeId (Tree.Node x f) i = (Tree.Node i f', i')
     i' = (maximum (fmap maximum f')) + 1
 
 -- update the active typegraph if the corresponding diagraph is valid, set it as empty if not
-updateActiveTG :: IORef EditorState -> IORef (Graph Info Info) -> IORef (M.Map String (NodeGI, Int32)) -> IORef (M.Map String (EdgeGI, Int32)) -> IO ()
+updateActiveTG :: IORef EditorState 
+                -> IORef (Graph Info Info) 
+                -> IORef (M.Map String (NodeGI, Int32))
+                 -> IORef (M.Map String (M.Map (String,String) EdgeGI, Int32)) -> IO ()
 updateActiveTG st activeTypeGraph possibleNodeTypes possibleEdgeTypes = do
         es <- readIORef st
         -- check if all edges and nodes have different names
@@ -1823,28 +1856,33 @@ updateActiveTG st activeTypeGraph possibleNodeTypes possibleEdgeTypes = do
             giM = editorGetGI es
             nds = nodes g
             edgs = edges g
-            allDiff l = case l of
-                          [] -> True
-                          x:xs -> (notElem x xs) && (allDiff xs)
-            diffNames = (allDiff (map (infoLabelStr . nodeInfo) nds)) &&
-                        (allDiff (map (infoLabelStr . edgeInfo) edgs)) &&
-                        notElem "" (concat [(map (infoLabelStr . edgeInfo) edgs), (map (infoLabelStr . nodeInfo) nds)])
+
+            nameConflictG = nameConflictGraph g
+            diffNames = and (map nodeInfo (nodes nameConflictG)) &&
+                        and (map edgeInfo (edges nameConflictG))
         if diffNames
           -- if so, load the variables with the info from the typeGraph
           then do 
             writeIORef activeTypeGraph g
             writeIORef possibleNodeTypes $
-                M.fromList $
+                M.fromList $ 
                 zipWith (\i (k,gi) -> (k, (gi, i)) ) [0..] $
                 M.toList $
                 foldr (\(Node nid info) m -> let ngi = getNodeGI (fromEnum nid) (fst giM)
                                                  in M.insert (infoLabelStr info) ngi m) M.empty nds
             writeIORef possibleEdgeTypes $
                 M.fromList $
-                zipWith (\i (k,gi) -> (k, (gi, i)) ) [0..] $
+                zipWith (\i (k,sm) -> (k, (sm, i)) ) [0..] $
                 M.toList $
-                foldr (\(Edge eid _ _ info) m -> let egi = getEdgeGI (fromEnum eid) (snd giM)
-                                                     in M.insert (infoLabelStr info) egi m) M.empty edgs
+                foldr (\(Edge eid s t info) m -> let sourceT = infoLabelStr . nodeInfo . fromJust $ lookupNode s g
+                                                     targetT = infoLabelStr . nodeInfo . fromJust $ lookupNode t g
+                                                     edgeT = infoLabelStr info
+                                                     egi = getEdgeGI (fromEnum eid) (snd giM)
+                                                     subM = case M.lookup edgeT m of 
+                                                       Nothing -> M.singleton (sourceT,targetT) egi
+                                                       Just sm -> M.insert (sourceT,targetT) egi sm
+                                                  in M.insert edgeT subM m) 
+                      M.empty edgs
           else do
             writeIORef activeTypeGraph (G.empty)
             writeIORef possibleNodeTypes (M.empty)
@@ -1869,8 +1907,8 @@ updateComboBoxesText cboxs texts =
     -- populate cbox
     forM_ texts $ \t -> Gtk.comboBoxTextAppendText cbox t
 
-changeEdgeTypeCBoxesByContext :: IORef (M.Map String (EdgeGI,Int32)) 
-                              -> IORef (M.Map String (EdgeGI,Int32))
+changeEdgeTypeCBoxesByContext :: IORef (M.Map String (M.Map (String,String)EdgeGI,Int32)) 
+                              -> IORef (M.Map String (M.Map (String,String)EdgeGI,Int32))
                               -> [Gtk.ComboBoxText]
                               -> EditorState 
                               -> Graph Info Info 

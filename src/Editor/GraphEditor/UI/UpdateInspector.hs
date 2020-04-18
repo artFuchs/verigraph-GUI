@@ -97,15 +97,9 @@ updateTypeInspector st currentC currentLC (nameEntry, colorBtn, lcolorBtn, radio
       set frameShape [#visible := True]
       set frameStyle [#visible := True]
 
-updateHostInspector :: IORef EditorState -> IORef (M.Map String (NodeGI, Int32)) -> IORef (M.Map String (EdgeGI, Int32)) ->
-                       IORef (Maybe String) -> IORef (Maybe String) -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText) ->
-                       (Gtk.Box, Gtk.Box) -> IO()
-updateHostInspector st possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox) = do
-  est <- readIORef st
-  pNT <- readIORef possibleNT
-  pET <- readIORef possibleET
-  cNT <- readIORef currentNodeType >>= \x -> return $ fromMaybe "" x
-  cET <- readIORef currentEdgeType >>= \x -> return $ fromMaybe "" x
+updateHostInspector :: EditorState -> M.Map String Int32 -> M.Map String Int32 -> String -> String 
+                    -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText) -> (Gtk.Box, Gtk.Box) -> IO()
+updateHostInspector est pNT pET cNT cET (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox) = do
   let g = editorGetGraph est
       ns = filter (\n -> elem (nodeId n) $ fst $ editorGetSelected est) $ nodes g
       es = filter (\e -> elem (edgeId e) $ snd $ editorGetSelected est) $ edges g
@@ -119,12 +113,8 @@ updateHostInspector st possibleNT possibleET currentNodeType currentEdgeType (en
       typeE = if null es 
                 then cET
                 else unifyNames $ map (infoType . edgeInfo) es
-      typeNIndex = case M.lookup typeN pNT of
-                    Nothing -> -1
-                    Just (gi,i) -> i
-      typeEIndex = case M.lookup typeE pET of
-                    Nothing -> -1
-                    Just (gi,i) -> i
+      typeNIndex = fromMaybe (-1) $ M.lookup typeN pNT
+      typeEIndex = fromMaybe (-1) $ M.lookup typeE pET
                     
   Gtk.comboBoxSetActive nodeTCBox typeNIndex
   Gtk.comboBoxSetActive edgeTCBox typeEIndex
@@ -140,12 +130,10 @@ updateHostInspector st possibleNT possibleET currentNodeType currentEdgeType (en
       set edgeTBox [#visible := True]
       set nodeTBox [#visible := True]
 
-updateRuleInspector :: IORef EditorState -> IORef (M.Map String (NodeGI, Int32)) -> IORef (M.Map String (EdgeGI, Int32)) ->
-                       IORef (Maybe String) -> IORef (Maybe String) -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.ComboBoxText) ->
-                       (Gtk.Box, Gtk.Box) -> IO()
-updateRuleInspector st possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox, operationCBox) (nodeTBox, edgeTBox) = do
-  updateHostInspector st possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox)
-  est <- readIORef st
+updateRuleInspector :: EditorState -> M.Map String Int32 -> M.Map String Int32 -> String -> String 
+                    -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.ComboBoxText) -> (Gtk.Box, Gtk.Box) -> IO()
+updateRuleInspector est possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox, operationCBox) (nodeTBox, edgeTBox) = do
+  updateHostInspector est possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox)
   let g = editorGetGraph est
       ns = filter (\n -> elem (nodeId n) $ fst $ editorGetSelected est) $ nodes g
       es = filter (\e -> elem (edgeId e) $ snd $ editorGetSelected est) $ edges g
@@ -159,15 +147,11 @@ updateRuleInspector st possibleNT possibleET currentNodeType currentEdgeType (en
         _ -> -1
   Gtk.comboBoxSetActive operationCBox opI
 
-updateNacInspector :: IORef EditorState -> IORef (M.Map String (NodeGI, Int32)) -> IORef (M.Map String (EdgeGI, Int32))
-                    -> IORef (Maybe String) -> IORef (Maybe String) -> IORef (Maybe MergeMapping)
-                    -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.Button, Gtk.Button)
-                    -> (Gtk.Box, Gtk.Box) -> IO()
-updateNacInspector st possibleNT possibleET currentNodeType currentEdgeType mergeMappingIORef (entry, nodeTCBox, edgeTCBox, joinBtn, splitBtn) (nodeTBox, edgeTBox) = do
-  updateHostInspector st possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox)
-  est <- readIORef st
-  mm <- readIORef mergeMappingIORef
-  let (nM,eM) = case mm of
+updateNacInspector :: EditorState -> M.Map String Int32 -> M.Map String Int32 -> String -> String -> Maybe MergeMapping
+                  -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.Button, Gtk.Button) -> (Gtk.Box, Gtk.Box) -> IO()
+updateNacInspector est possibleNT possibleET currentNodeType currentEdgeType mergeMapping (entry, nodeTCBox, edgeTCBox, joinBtn, splitBtn) (nodeTBox, edgeTBox) = do
+  updateHostInspector est possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox)
+  let (nM,eM) = case mergeMapping of
                       Nothing -> (M.empty, M.empty)
                       Just m -> m
   let g = editorGetGraph est

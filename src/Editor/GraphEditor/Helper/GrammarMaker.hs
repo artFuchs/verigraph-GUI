@@ -99,14 +99,19 @@ getNacPushout nac lhs (nmap, emap) = calculatePushout nacTgm lhsTgm
 
 
 makeTypedGraph :: Graph Info Info
-               -> Graph (Maybe Info) (Maybe Info)
+               -> TypeGraph Info Info
                -> TG.TypedGraph Info Info
 makeTypedGraph g tg = fromGraphsAndLists g' tg npairs epairs
   where
     -- auxiliar structs to define the typedGraph
     epairs = map (\(e, et) -> (edgeId e, edgeId et)) .
-            filter (\(e,et) -> let Label lbl = infoLabel (fromJust $ edgeInfo et)
-                               in lbl == infoType (edgeInfo e))
+            filter (\(e,et) -> let Label eLbl = infoLabel (fromJust $ edgeInfo et)
+                                   eType = infoType (edgeInfo e)
+                                   Label srcLbl = infoLabel . fromJust . nodeInfo . fromJust $ lookupNode (sourceId et) tg
+                                   Label tgtLbl = infoLabel . fromJust . nodeInfo . fromJust $ lookupNode (targetId et) tg
+                                   srcType = infoType . nodeInfo . fromJust $ lookupNode (sourceId e) g
+                                   tgtType = infoType . nodeInfo . fromJust $ lookupNode (targetId e) g
+                               in eLbl == eType && srcLbl == srcType && tgtLbl == tgtType)
             $ mkpairs (edges g) (edges tg)
     npairs = map (\(n, nt) -> (nodeId n, nodeId nt)) .
             filter (\(n,nt) -> let Label lbl = infoLabel (fromJust $ nodeInfo nt)
@@ -150,8 +155,10 @@ makeGrammar :: Graph Info Info
             -> Graph Info Info
             -> [(Graph Info Info, [NAC])]
             -> [String]
-            -> Either String (Grammar (TGM.TypedGraphMorphism Info Info))
-makeGrammar tg hg rgs rulesNames = case eGrammar of
+            -> IO (Either String (Grammar (TGM.TypedGraphMorphism Info Info)))
+makeGrammar tg hg rgs rulesNames = do 
+  print initGraph
+  return $ case eGrammar of
     Left msgs -> Left $ L.intercalate "\n" msgs
     Right grammar -> case validate grammar of
       IsValid -> Right grammar

@@ -43,7 +43,7 @@ infereEdgeType tg src tgt preferedType = inferedType
       (t:ts,Just pt) -> if pt `elem` (t:ts) then preferedType else Just t
 
 -- | Infere edges types based on the selected nodes in the editorState
-infereEdgesTypesAfterNodeChange :: EditorState -> Graph Info Info -> M.Map String EdgeGI -> EditorState
+infereEdgesTypesAfterNodeChange :: EditorState -> Graph Info Info -> M.Map String (M.Map (String,String) EdgeGI) -> EditorState
 infereEdgesTypesAfterNodeChange es tg typesE = editorSetGraph newGraph . editorSetGI newGIM  $ es
   where 
     g = editorGetGraph es
@@ -55,20 +55,27 @@ infereEdgesTypesAfterNodeChange es tg typesE = editorSetGraph newGraph . editorS
                                   if edgeId e `elem` map (\(_,e,_) -> edgeId e) l
                                     then l
                                     else (src,e,tgt):l) 
-                                [] incidentEdgesInContext
+                                [] incidentEdgesInContext                    
     edgesIdsAndTypes = map
                       (\(src,e,tgt) -> 
                         let t = infoLabelStr $ edgeInfo e
                             t' = case infereEdgeType tg src tgt (Just t) of
                                   Nothing -> t 
                                   Just it -> it
-                        in (edgeId e, t')
+                            srcT = infoType $ nodeInfo src
+                            tgtT = infoType $ nodeInfo tgt
+                        in (edgeId e, t', (srcT, tgtT))
                       )
                       edgesWithEndings
-    newGraph = foldr (\(eid, t) g -> updateEdgePayload eid g (\info -> infoSetType info t)) g edgesIdsAndTypes
-    newEGI = foldr (\(eid,t) giM -> let egi = getEdgeGI (fromEnum eid) giM
-                                        typeEGI = fromJust $ M.lookup t typesE
-                                    in M.insert (fromEnum eid) (typeEGI {cPosition = cPosition egi}) giM)
-                    (snd giM)
-                    edgesIdsAndTypes
+    newGraph = foldr (\(eid, t, _) g -> updateEdgePayload eid g (\info -> infoSetType info t)) g edgesIdsAndTypes
+
+    changeEGI (eid,t,ndsT) giM = 
+      case M.lookup t typesE of
+        Nothing -> giM
+        Just sm -> case M.lookup ndsT sm of
+          Nothing -> giM
+          Just typeEGI -> M.insert (fromEnum eid) (typeEGI {cPosition = cPosition egi}) giM
+            where egi = getEdgeGI (fromEnum eid) giM
+
+    newEGI = foldr changeEGI (snd giM) edgesIdsAndTypes
     newGIM = ((fst $ editorGetGI es),newEGI)

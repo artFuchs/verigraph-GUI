@@ -6,7 +6,6 @@ main = startGUI
 {-
 Tarefas ---------------------------------------------------------------------
 *Quando editar o nome de uma aresta ou nodo no grafo de tipos, fazer update em todos os grafos que usam o objeto
-*Permitir que arestas no typeGraph tenham o mesmo nome, desde que tenham origem e destino diferentes
 *permitir que o usuário escolha como será vista a regra (formato L->R, ou L<-K->R)
 *permitir a reordenação das regras por drag n' drop
 *modificar sistema undo/redo para funcionar com todo o projeto ao invés de grafos individuais
@@ -21,6 +20,7 @@ Ideias -------------------------------------------------------------------------
 *mostrar menu de contexto ao clicar em um elemento com o botão direito
 
 Progresso -------------------------------------------------------------------
+*Permitir que arestas no typeGraph tenham o mesmo nome, desde que tenham origem e destino diferentes
 
 Feito ------------------------------------------------------------------------
 *Inferência de tipos de arestas
