@@ -119,11 +119,11 @@ updateHostInspector est pNT pET cNT cET (entry, nodeTCBox, edgeTCBox) (nodeTBox,
   Gtk.comboBoxSetActive nodeTCBox typeNIndex
   Gtk.comboBoxSetActive edgeTCBox typeEIndex
 
-  case (length ns, length es) of
-    (n,0) -> do
+  case (length ns > 0, length es > 0) of
+    (True,False) -> do
       set nodeTBox [#visible := True]
       set edgeTBox [#visible := False]
-    (0,e) -> do
+    (False,True) -> do
       set edgeTBox [#visible := True]
       set nodeTBox [#visible := False]
     _ -> do
