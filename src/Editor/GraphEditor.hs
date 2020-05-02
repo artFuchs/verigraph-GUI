@@ -608,11 +608,23 @@ startGUI = do
   -- auxiliar functions to create/open/save the project
       -- auxiliar function to prepare the treeStore to save
       -- auxiliar function, add the current editor state in the graphStates list
-  let storeCurrentES = do es <- readIORef st
-                          undo <- readIORef undoStack
-                          redo <- readIORef redoStack
-                          index <- readIORef currentGraph
-                          modifyIORef graphStates $ M.insert index (es,undo,redo)
+  let storeCurrentES = do 
+        es <- readIORef st
+        undo <- readIORef undoStack
+        redo <- readIORef redoStack
+        index <- readIORef currentGraph
+        modifyIORef graphStates $ M.insert index (es,undo,redo)
+        gtype <- readIORef currentGraphType
+        -- if the current graph is a NAC, then update the nacInfo
+        if gtype == 4 
+          then do
+            nacInfo <- readIORef nacInfoMapIORef >>= return . M.lookup index
+            case nacInfo of
+              Nothing -> showError window (T.pack $ "error: could not retrieve nacInfo of nac" ++ (show index))
+              Just ((ng,_), mergeM) -> do
+                let nacGI = extractNacGI (editorGetGraph es) (editorGetGI es) mergeM
+                modifyIORef nacInfoMapIORef $ M.insert index ((ng,nacGI),mergeM)
+          else return ()
 
       -- auxiliar function to clean the flags after saving
   let afterSave = do  -- first, update 
@@ -1557,19 +1569,21 @@ startGUI = do
         index <- Gtk.treeModelGetValue model iter 2 >>= fromGValue  :: IO Int32
         gType <- Gtk.treeModelGetValue model iter 3 >>= fromGValue  :: IO Int32
 
-        -- change the graph
+        -- change the graph according to selection
         case (cIndex == index, gType) of
-          -- same graph
-          (True, _)  -> do
-            -- just update the current path
-            writeIORef currentPath path
+          -- case the selection did not change, just update the path
+          (True, _)  -> writeIORef currentPath path
+          
+          -- case the selection in the treeview is just a Topic, do nothing
           (False, 0) -> return ()
 
+          -- case the selection is a NAC, mount the graph with the LHS part, the additional elements and the merge information
           (False, 4) -> do
             -- update the current path
             writeIORef currentPath path
             -- update the current graph in the tree
             storeCurrentES
+
             -- build the graph for the nac
             writeIORef currentGraphType gType
             states <- readIORef graphStates
@@ -1632,6 +1646,7 @@ startGUI = do
                     writeIORef currentGraph index
               Nothing -> return ()
 
+          -- case the selection is another type of graph, get the graph from the map
           (False, _) -> do
             -- update the current path
             writeIORef currentPath path
