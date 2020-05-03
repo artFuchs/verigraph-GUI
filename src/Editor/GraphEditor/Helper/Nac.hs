@@ -15,6 +15,7 @@ import qualified Data.TypedGraph as TG
 import qualified Data.TypedGraph.Morphism as TGM
 
 import Editor.Data.DiaGraph
+import Editor.Data.EditorState
 import Editor.Data.Info
 import Editor.Data.Nac
 import Editor.GraphEditor.Helper.GrammarMaker
@@ -30,7 +31,7 @@ import Editor.Data.GraphicalInfo
 -- | Join the part of the nac and the lhs of the rule, showing the complete nac.
 joinNAC :: NacInfo -> DiaGraph -> Graph Info Info -> IO DiaGraph
 joinNAC (nacdg, (nM,eM)) lhsdg@(ruleLG,ruleLGI) tg = do
-  return (nG, nGI)
+  return (nG, nGI')
   where
     -- change ids of elements of nacs so that those elements don't have conflicts
     -- with elements from lhs
@@ -60,6 +61,38 @@ joinNAC (nacdg, (nM,eM)) lhsdg@(ruleLG,ruleLGI) tg = do
     nG = fromNodesAndEdges nGnodes nGedges
     -- join the GraphicalInfos
     nGI = (M.union (fst nacGI) (fst ruleLGI), M.union (snd nacGI) (snd ruleLGI))
+
+    -- modify the position of the loops of merged nodes
+    ----------------------------------------------------------------------------------------------                
+    -- auxiliar function
+    -- (EdgeId, Double) -> Double -> (Int, EdgeGI)
+    updEdgeY (eid,yRel) minY = let k = (fromEnum eid)
+                                   egi = (getEdgeGI k (snd nGI)) {cPosition = (-pi/2,yRel + minY)}
+                               in (k,egi)
+
+    -- foreach merged node, check if there are loops pointing to it
+    mergeNodesInContext = map (\nid -> fromJust $ lookupNodeInContext nid nG) $ removeDuplicates (M.elems nM)
+    loops = map (\nc -> (nodeId (fst nc), edgesFromTo nc nc)) mergeNodesInContext -- :: [(NodeId,[Edge])]
+    
+    -- foreach loop in the list, increment the distance from the node
+    -- first, calculate the relative distance foreach (Y here means the distance)
+    calcRelY l = foldr (\e lPos -> (edgeId e, 30 * (1 + (fromIntegral $ length lPos))::Double):lPos) [] l
+    loopsRelY = map (\(nid,e) -> (nid,calcRelY e)) loops -- :: [(NodeId,[(EdgeId,Double)])]
+
+    -- then update the edges GraphicalInfos with this value + the height of the node            
+    loopsGIs =  concat $ 
+                map (\(nid,loopsInfos) -> let ngi = fromJust $ M.lookup (fromEnum nid) (fst nGI)
+                                              ndims = dims ngi
+                                              minY = case shape ngi of
+                                                      NCircle -> (max (fst ndims) (snd ndims)/2)
+                                                      NSquare -> (max (fst ndims) (snd ndims)/2)
+                                                      NRect -> snd ndims
+                                          in map (\lInfo -> updEdgeY lInfo minY) loopsInfos)
+                loopsRelY
+
+    nacEgi' = foldr (\(k,gi) giM -> M.insert k gi giM) (snd nGI) loopsGIs
+    nGI' = (fst nGI, nacEgi')
+    ----------------------------------------------------------------------------------------------
 
 -- | Modify ids of nac nodes that aren't in mapping and have id conflict with elems from lhs.
 -- (g1,(ngi1,egi1)) must be the lhs diagraph, while (g2,(ngi2,egi2)) must be the nac diagraph

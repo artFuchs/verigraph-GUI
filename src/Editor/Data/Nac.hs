@@ -22,7 +22,8 @@ import Editor.Helper.List
 type MergeMapping = (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
 type NacInfo = (DiaGraph, MergeMapping)
 
--- | Given a Graph and a MergeMapping, extract the elements that are part of the nac subgraph that contains merged and added elements
+-- | Given a Graph and a MergeMapping, extract the elements that are part of the nac subgraph that contains merged 
+--   and added elements.
 -- this function also merges the elements as defined in the MergeMapping
 extractNacGraph :: Graph Info Info -> MergeMapping -> Graph Info Info
 extractNacGraph g (nM, eM) = fromNodesAndEdges nacNodes nacEdges
@@ -36,6 +37,7 @@ extractNacGraph g (nM, eM) = fromNodesAndEdges nacNodes nacEdges
     addedEdges = filter (\e -> not $ infoLocked (edgeInfo e)) (edges g)
     nacEdges = map (\e -> updateEdgeEndsIds e nM) (lhsSelectedEdges ++ addedEdges)
 
+-- | Given a Graph, a GraphicalInfo and a MergeMapping, extract the graphical information that are part of the nac.
 extractNacGI :: Graph Info Info -> GraphicalInfo -> MergeMapping -> GraphicalInfo
 extractNacGI g (ngi,egi) (nM,eM) = (ngi',egi')
   where
@@ -43,16 +45,14 @@ extractNacGI g (ngi,egi) (nM,eM) = (ngi',egi')
     addedEids = map (fromEnum . edgeId) $ filter (\e -> not $ infoLocked (edgeInfo e)) (edges g)
     mergedNids = map fromEnum $ M.elems nM
     mergedEids = map fromEnum $ M.elems eM
-    addedNgi = M.filterWithKey (\k a -> k `elem` addedNids) ngi
-    mergedNgi = M.filterWithKey (\k a -> k `elem` mergedNids) ngi
-    ngi' = M.union addedNgi mergedNgi
+    ngi' = M.filterWithKey (\k a -> k `elem` addedNids || k `elem` mergedNids) ngi
     egi' = M.filterWithKey (\k a -> k `elem` addedEids || k `elem` mergedEids) egi
 
 
 
 
--- mergeInfos: function to merge a list of Info in one Info, with their labels separated by "\n ".
---   The rest of the data of first Info (type, operation, locked) in the list is used for the result
+-- | Merge a list of Info in one Info, with their labels separated by "\n ".
+--   The rest of the data of first Info (type, operation, locked) in the list is used for the result.
 -- examples: mergeInfos ["1{1}","2{1}","3{1}"] = "1\n2\n3{1}"
 --           mergeInfos ["1{1}","2{2}","3{3}"] = "1\n2\n3{1}"
 mergeInfos :: [(Int,Info)] -> Info
@@ -83,7 +83,7 @@ addToGroup mapping getKey element groupMapping =
     Just k' -> M.insertWith (++) k' [element] groupMapping
 
 
--- given a list of nodes and a node merge mapping, merge the list of nodes according to the mapping
+-- | Given a list of nodes and a node merge mapping, merge the list of nodes according to the mapping
 -- examples: 
 -- applyMerging [Node 1 "1", Node 2 "2", Node 3 "3"]
 --              [(1,3),(2,3),(3,3)]
@@ -114,8 +114,7 @@ applyNodeMerging nodes mapping = mergedNodes
     mergedNodes = map mergeOrSplit nodesGroups
 
 
--- given a list of edges and a edge merge mapping, merge the list of edges according to the mapping
--- examples
+-- | Given a list of edges and a edge merge mapping, merge the list of edges according to the mapping
 applyEdgeMerging :: [Edge Info] -> M.Map EdgeId EdgeId -> [Edge Info]
 applyEdgeMerging edges mapping = mergedEdges
   where

@@ -1025,14 +1025,14 @@ startGUI = do
             -- modify dimensions of nodes that where merged to match the labels
             nacNgi' <- updateNodesGiDims (fst nacgi') nacg' context
 
-            let nacgi'' = (nacNgi', snd nacgi')
-            let nacInfo' = ((nacg',nacgi''), (nM''', eM''))
+            let nacInfo = ((nacg',(nacNgi', snd nacgi')), (nM''', eM''))
 
-            modifyIORef nacInfoMapIORef $ M.insert index nacInfo'
-            writeIORef mergeMappingIORef $ Just (nM''', eM'')
             -- remount nacGraph, joining the elements
-            (g',gi') <- joinNAC nacInfo' (lhsg', lhsgi) tg
-            -- modify editor state
+            (g',gi') <- joinNAC nacInfo (lhsg', lhsgi) tg
+
+            -- modify IORefs and update the UI
+            modifyIORef nacInfoMapIORef $ M.insert index nacInfo
+            writeIORef mergeMappingIORef $ Just (nM''', eM'')
             modifyIORef st (editorSetGraph g' . editorSetGI gi' . editorSetSelected ([maxNID], [maxEID]))
             stackUndo undoStack redoStack es (Just (nM,eM))
             Gtk.widgetQueueDraw canvas

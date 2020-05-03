@@ -22,6 +22,7 @@ module Editor.Data.EditorState(
 , createEdge
 , createEdges
 , deleteSelected
+, edgesFromTo
 , moveNodes
 , moveEdges
 , changeNodeShape
@@ -178,7 +179,7 @@ deleteSelected es = editorSetSelected ([],[]) . editorSetGI (newngiM, newegiM) .
         newGraph = foldl (\g n -> removeNodeAndIncidentEdges n g) graph' nids'
 
 -- auxiliar functions to createEdges
--- return a list of numbers
+-- return a list of edges
 edgesFromTo :: NodeInContext n e -> NodeInContext n e -> [Edge e]
 edgesFromTo (n, context) (n', _) = foldl edgesTo [] econtexts
   where
