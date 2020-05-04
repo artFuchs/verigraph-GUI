@@ -30,11 +30,10 @@ import Editor.Data.GraphicalInfo
 
 -- | Join the part of the nac and the lhs of the rule, showing the complete nac.
 joinNAC :: NacInfo -> DiaGraph -> Graph Info Info -> IO DiaGraph
-joinNAC (nacdg, (nM,eM)) lhsdg@(ruleLG,ruleLGI) tg = do
-  return (nG, nGI')
+joinNAC (nacdg, (nM,eM)) lhsdg@(ruleLG,ruleLGI) tg = return (nG, nGI')
   where
-    -- change ids of elements of nacs so that those elements don't have conflicts
-    -- with elements from lhs
+    -- change ids of additional elements of nacs so that those elements don't
+    -- enter in conflict with elements from lhs
     (nacG,nacGI) = remapElementsWithConflict lhsdg nacdg (nM,eM)
     -- apply a pushout in  elements of nac
     tg' = makeTypeGraph tg
@@ -59,42 +58,14 @@ joinNAC (nacdg, (nM,eM)) lhsdg@(ruleLG,ruleLGI) tg = do
     nGnodes = map swapNodeId . map nodeFromJust $ nodes nGJust
     nGedges = map swapEdgeId . map edgeFromJust $ edges nGJust
     nG = fromNodesAndEdges nGnodes nGedges
+
     -- join the GraphicalInfos
     nGI = (M.union (fst nacGI) (fst ruleLGI), M.union (snd nacGI) (snd ruleLGI))
 
     -- modify the position of the loops of merged nodes
-    ----------------------------------------------------------------------------------------------                
-    -- auxiliar function
-    -- (EdgeId, Double) -> Double -> (Int, EdgeGI)
-    updEdgeY (eid,yRel) minY = let k = (fromEnum eid)
-                                   egi = (getEdgeGI k (snd nGI)) {cPosition = (-pi/2,yRel + minY)}
-                               in (k,egi)
+    nGI' = replaceLoops nG nGI (nM,eM)
 
-    -- foreach merged node, check if there are loops pointing to it
-    mergeNodesInContext = map (\nid -> fromJust $ lookupNodeInContext nid nG) $ removeDuplicates (M.elems nM)
-    loops = map (\nc -> (nodeId (fst nc), edgesFromTo nc nc)) mergeNodesInContext -- :: [(NodeId,[Edge])]
-    
-    -- foreach loop in the list, increment the distance from the node
-    -- first, calculate the relative distance foreach (Y here means the distance)
-    calcRelY l = foldr (\e lPos -> (edgeId e, 30 * (1 + (fromIntegral $ length lPos))::Double):lPos) [] l
-    loopsRelY = map (\(nid,e) -> (nid,calcRelY e)) loops -- :: [(NodeId,[(EdgeId,Double)])]
-
-    -- then update the edges GraphicalInfos with this value + the height of the node            
-    loopsGIs =  concat $ 
-                map (\(nid,loopsInfos) -> let ngi = fromJust $ M.lookup (fromEnum nid) (fst nGI)
-                                              ndims = dims ngi
-                                              minY = case shape ngi of
-                                                      NCircle -> (max (fst ndims) (snd ndims)/2)
-                                                      NSquare -> (max (fst ndims) (snd ndims)/2)
-                                                      NRect -> snd ndims
-                                          in map (\lInfo -> updEdgeY lInfo minY) loopsInfos)
-                loopsRelY
-
-    nacEgi' = foldr (\(k,gi) giM -> M.insert k gi giM) (snd nGI) loopsGIs
-    nGI' = (fst nGI, nacEgi')
-    ----------------------------------------------------------------------------------------------
-
--- | Modify ids of nac nodes that aren't in mapping and have id conflict with elems from lhs.
+-- | Modify ids of nac nodes that aren't in the mapping and have id conflict with elems from lhs.
 -- (g1,(ngi1,egi1)) must be the lhs diagraph, while (g2,(ngi2,egi2)) must be the nac diagraph
 remapElementsWithConflict :: DiaGraph -> DiaGraph -> MergeMapping -> DiaGraph
 remapElementsWithConflict (g1,(ngi1,egi1)) (g2,(ngi2,egi2)) (nodeMapping, edgeMapping) = (g3,gi3)
@@ -123,6 +94,40 @@ remapElementsWithConflict (g1,(ngi1,egi1)) (g2,(ngi2,egi2)) (nodeMapping, edgeMa
                              eid = fromMaybe (edgeId e) $ M.lookup (edgeId e) newEids
                           in Edge eid srcNid tgtNid (edgeInfo e))
                   (edges g2)
+
+-- | If in a NACgraph there are edges that turned in loops of merged nodes,
+--   then modify their position so that they don't be hidden by a node
+replaceLoops :: Graph Info Info -> GraphicalInfo -> MergeMapping -> GraphicalInfo
+replaceLoops g gi (nM,eM) = nGI
+  where
+    -- auxiliar function
+    updEdgeY :: (EdgeId, Double) -> Double -> (Int, EdgeGI)
+    updEdgeY (eid,yRel) minY = let k = (fromEnum eid)
+                                   egi = (getEdgeGI k (snd gi)) {cPosition = (-pi/2,yRel + minY)}
+                               in (k,egi)
+
+    -- foreach merged node, check if there are loops pointing to it
+    mergeNodesInContext = map (\nid -> fromJust $ lookupNodeInContext nid g) $ removeDuplicates (M.elems nM)
+    loops = map (\nc -> (nodeId (fst nc), edgesFromTo nc nc)) mergeNodesInContext -- :: [(NodeId,[Edge])]
+    
+    -- foreach loop in the list, increment the distance from the node
+    -- first, calculate the relative distance foreach (Y here means the distance)
+    calcRelY l = foldr (\e lPos -> (edgeId e, 30 * (1 + (fromIntegral $ length lPos))::Double):lPos) [] l
+    loopsRelY = map (\(nid,e) -> (nid,calcRelY e)) loops -- :: [(NodeId,[(EdgeId,Double)])]
+
+    -- then update the edges GraphicalInfos with this value + the height of the node            
+    loopsGIs =  concat $ 
+                map (\(nid,loopsInfos) -> let ngi = fromJust $ M.lookup (fromEnum nid) (fst gi)
+                                              ndims = dims ngi
+                                              minY = case shape ngi of
+                                                      NCircle -> (max (fst ndims) (snd ndims)/2)
+                                                      NSquare -> (max (fst ndims) (snd ndims)/2)
+                                                      NRect -> snd ndims
+                                          in map (\lInfo -> updEdgeY lInfo minY) loopsInfos)
+                loopsRelY
+
+    nacEgi = foldr (\(k,gi) giM -> M.insert k gi giM) (snd gi) loopsGIs
+    nGI = (fst gi, nacEgi)
 
 -- | update the nacGraph according to the lhs
 -- first delete the elements that should be in the LHS but are not.
