@@ -155,10 +155,9 @@ makeGrammar :: Graph Info Info
             -> Graph Info Info
             -> [(Graph Info Info, [NAC])]
             -> [String]
-            -> IO (Either String (Grammar (TGM.TypedGraphMorphism Info Info)))
-makeGrammar tg hg rgs rulesNames = do 
-  print initGraph
-  return $ case eGrammar of
+            -> Either String (Grammar (TGM.TypedGraphMorphism Info Info))
+makeGrammar tg hg rgs rulesNames =
+  case eGrammar of
     Left msgs -> Left $ L.intercalate "\n" msgs
     Right grammar -> case validate grammar of
       IsValid -> Right grammar

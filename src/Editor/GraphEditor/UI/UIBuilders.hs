@@ -3,10 +3,6 @@
 -- | This module contains the UI definition
 module Editor.GraphEditor.UI.UIBuilders(
   buildMainWindow
-, buildTypeInspector
-, buildHostInspector
-, buildRuleInspector
-, buildNacInspector
 , buildTreePanel
 , buildAboutDialog
 , buildHelpWindow
@@ -25,23 +21,74 @@ import Data.GI.Base
 import qualified Data.Text as T
 import Data.GI.Base.ManagedPtr (unsafeCastTo)
 
+
+buildMainWindow :: IO ( Gtk.Window, Gtk.DrawingArea, Gtk.Box, Gtk.Frame
+                      , Gtk.Frame, Gtk.Box, Gtk.Entry, Gtk.Label
+                      , ( Gtk.Box, Gtk.Box, Gtk.ColorButton, Gtk.Box, Gtk.ColorButton
+                        , Gtk.Frame, [Gtk.RadioButton], Gtk.Frame, [Gtk.RadioButton])
+                      , ( Gtk.Box, Gtk.CheckButton, Gtk.CheckButton
+                        , Gtk.Box, Gtk.ComboBoxText, Gtk.Box, Gtk.ComboBoxText
+                        , Gtk.Box, Gtk.ComboBoxText
+                        , Gtk.Button, Gtk.Button)
+                      , [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem])
 buildMainWindow = do
-  return () :: IO ()
   builder <- new Gtk.Builder []
   Gtk.builderAddFromFile builder "./Resources/window.ui"
   window  <- Gtk.builderGetObject builder "window" >>= unsafeCastTo Gtk.Window . fromJust
   mainBox <- Gtk.builderGetObject builder "mainBox" >>= unsafeCastTo Gtk.Box . fromJust
   treeFrame <- Gtk.builderGetObject builder "treeFrame" >>= unsafeCastTo Gtk.Frame . fromJust
-  canvasFrame <- Gtk.builderGetObject builder "canvasFrame" >>= unsafeCastTo Gtk.Frame . fromJust
-  inspectorFrame <- Gtk.builderGetObject builder "inspectorFrame" >>= unsafeCastTo Gtk.Frame . fromJust
 
-  -- creates a blank canvas
-  canvas <- new Gtk.DrawingArea []
-  Gtk.containerAdd canvasFrame canvas
-  Gtk.widgetSetCanFocus canvas True
+  -- canvas
+  canvas <- Gtk.builderGetObject builder "canvas" >>= unsafeCastTo Gtk.DrawingArea . fromJust
   Gtk.widgetSetEvents canvas [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
+  
+  -- inspector
+  inspectorFrame <- Gtk.builderGetObject builder "inspectorFrame" >>= unsafeCastTo Gtk.Frame . fromJust
+  inspectorBox <- Gtk.builderGetObject builder "inspectorBox" >>= unsafeCastTo Gtk.Box . fromJust
+  entry <- Gtk.builderGetObject builder "entry" >>= unsafeCastTo Gtk.Entry . fromJust
+  entryLabel <- Gtk.builderGetObject builder "entryLabel" >>= unsafeCastTo Gtk.Label . fromJust
 
-  menubar  <- Gtk.builderGetObject builder "menubar1" >>= unsafeCastTo Gtk.MenuBar . fromJust
+  layoutBox <- Gtk.builderGetObject builder "layoutBox" >>= unsafeCastTo Gtk.Box . fromJust
+  fillColorBox <- Gtk.builderGetObject builder "fillColorBox" >>= unsafeCastTo Gtk.Box . fromJust
+  fillColorBtn <- Gtk.builderGetObject builder "fillColorBtn" >>= unsafeCastTo Gtk.ColorButton . fromJust
+  lineColorBox <- Gtk.builderGetObject builder "lineColorBox" >>= unsafeCastTo Gtk.Box . fromJust
+  lineColorBtn <- Gtk.builderGetObject builder "lineColorBtn" >>= unsafeCastTo Gtk.ColorButton . fromJust
+  nodeShapeFrame <- Gtk.builderGetObject builder "nodeShapeFrame" >>= unsafeCastTo Gtk.Frame . fromJust
+  circleRadioBtn <- Gtk.builderGetObject builder "circleRadioBtn" >>= unsafeCastTo Gtk.RadioButton . fromJust
+  rectRadioBtn <- Gtk.builderGetObject builder "rectRadioBtn" >>= unsafeCastTo Gtk.RadioButton . fromJust
+  squareRadioBtn <- Gtk.builderGetObject builder "squareRadioBtn" >>= unsafeCastTo Gtk.RadioButton . fromJust
+  edgeStyleFrame <- Gtk.builderGetObject builder "edgeStyleFrame" >>= unsafeCastTo Gtk.Frame . fromJust
+  normalRadioBtn <- Gtk.builderGetObject builder "normalRadioBtn" >>= unsafeCastTo Gtk.RadioButton . fromJust
+  slashedRadioBtn <- Gtk.builderGetObject builder "slashedRadioBtn" >>= unsafeCastTo Gtk.RadioButton . fromJust
+  pointedRadioBtn <- Gtk.builderGetObject builder "pointedRadioBtn" >>= unsafeCastTo Gtk.RadioButton . fromJust
+  let layoutWidgets = ( layoutBox
+                      , fillColorBox, fillColorBtn
+                      , lineColorBox, lineColorBtn
+                      , nodeShapeFrame, [circleRadioBtn, rectRadioBtn, squareRadioBtn]
+                      , edgeStyleFrame, [normalRadioBtn, slashedRadioBtn, pointedRadioBtn]
+                      )
+
+  typeSelectionBox <- Gtk.builderGetObject builder "typeSelectionBox" >>= unsafeCastTo Gtk.Box . fromJust
+  nodeLabCheckBtn <- Gtk.builderGetObject builder "nodeLabCheckBtn" >>= unsafeCastTo Gtk.CheckButton . fromJust
+  edgeLabCheckBtn <- Gtk.builderGetObject builder "edgeLabCheckBtn" >>= unsafeCastTo Gtk.CheckButton . fromJust
+  nodeTypeBox <- Gtk.builderGetObject builder "nodeTypeBox" >>= unsafeCastTo Gtk.Box . fromJust
+  nodeTypeCBox <- Gtk.builderGetObject builder "nodeTypeCBox" >>= unsafeCastTo Gtk.ComboBoxText . fromJust
+  edgeTypeBox <- Gtk.builderGetObject builder "edgeTypeBox" >>= unsafeCastTo Gtk.Box . fromJust
+  edgeTypeCBox <- Gtk.builderGetObject builder "edgeTypeCBox" >>= unsafeCastTo Gtk.ComboBoxText . fromJust
+  operationBox <- Gtk.builderGetObject builder "operationBox" >>= unsafeCastTo Gtk.Box . fromJust
+  operationCBox <- Gtk.builderGetObject builder "operationCBox" >>= unsafeCastTo Gtk.ComboBoxText . fromJust
+  mergeBtn <- Gtk.builderGetObject builder "mergeBtn" >>= unsafeCastTo Gtk.Button . fromJust
+  splitBtn <- Gtk.builderGetObject builder "splitBtn" >>= unsafeCastTo Gtk.Button . fromJust
+  let typeSelectionWidgets = ( typeSelectionBox
+                             , nodeLabCheckBtn, edgeLabCheckBtn
+                             , nodeTypeBox, nodeTypeCBox
+                             , edgeTypeBox, edgeTypeCBox
+                             , operationBox, operationCBox
+                             , mergeBtn, splitBtn 
+                             )
+
+  -- menubar
+  menubar  <- Gtk.builderGetObject builder "menubar" >>= unsafeCastTo Gtk.MenuBar . fromJust
 
   newItem <- Gtk.builderGetObject builder "new_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   openItem <- Gtk.builderGetObject builder "open_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
@@ -50,7 +97,7 @@ buildMainWindow = do
   exportGGXItem <- Gtk.builderGetObject builder "export_ggx_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   saveGraphItem <- Gtk.builderGetObject builder "save_graph_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   openGraphItem <- Gtk.builderGetObject builder "open_graph_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  let fileItems = (newItem,openItem,saveItem,saveAsItem,exportGGXItem,saveGraphItem,openGraphItem)
+  let fileItems = [newItem,openItem,saveItem,saveAsItem,exportGGXItem,saveGraphItem,openGraphItem]
 
   delItem <- Gtk.builderGetObject builder  "delete_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   undoItem <- Gtk.builderGetObject builder  "undo_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
@@ -63,7 +110,7 @@ buildMainWindow = do
   sedgesItem <- Gtk.builderGetObject builder  "sedges_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   mergeItem <- Gtk.builderGetObject builder  "merge_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   splitItem <- Gtk.builderGetObject builder  "split_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  let editItems = (delItem, undoItem,redoItem,copyItem,pasteItem,cutItem,sallItem,snodesItem,sedgesItem,mergeItem,splitItem)
+  let editItems = [delItem, undoItem,redoItem,copyItem,pasteItem,cutItem,sallItem,snodesItem,sedgesItem,mergeItem,splitItem]
 
   zoomInItem <- Gtk.builderGetObject builder  "zoomin_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   zoomOutItem <- Gtk.builderGetObject builder  "zoomout_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
@@ -73,226 +120,16 @@ buildMainWindow = do
   zoom200Item <- Gtk.builderGetObject builder  "zoom200_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   resetViewItem <- Gtk.builderGetObject builder  "resetview_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   openRuleViewerItem <- Gtk.builderGetObject builder "ruleV_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  let viewItems = (zoomInItem,zoomOutItem,zoom50Item,zoom100Item,zoom150Item,zoom200Item,resetViewItem,openRuleViewerItem)
+  let viewItems = [zoomInItem,zoomOutItem,zoom50Item,zoom100Item,zoom150Item,zoom200Item,resetViewItem,openRuleViewerItem]
 
   helpItem <- Gtk.builderGetObject builder  "help_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   aboutItem <- Gtk.builderGetObject builder  "about_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  let helpItems = (helpItem, aboutItem)
+  let helpItems = [helpItem, aboutItem]
 
-  return (window, canvas, mainBox, treeFrame, inspectorFrame, fileItems, editItems, viewItems, helpItems)
-
--- creates the inspector for typed graphs
-buildTypeInspector :: IO (Gtk.Box, Gtk.Box, Gtk.ColorButton, Gtk.ColorButton, [Gtk.RadioButton], [Gtk.RadioButton], (Gtk.Box, Gtk.Frame, Gtk.Frame))
-buildTypeInspector = do
-  mainBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical
-                         , #spacing := 8
-                         ]
-
-  -- creates the title label
-  inspectorLabel <- new Gtk.Label [ #label := "Inspector" ]
-  Gtk.boxPackStart mainBox inspectorLabel False False 0
-
-  -- creates a HBox containing a label and a entry for the user change the type name
-  typeBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
-                         , #spacing := 8]
-  Gtk.boxPackStart mainBox typeBox False False 0
-  typeLabel <- new Gtk.Label [ #label := "Type: "]
-  Gtk.boxPackStart typeBox typeLabel False False 0
-
-  -- creates a HBox containing a label and ColorButton to the user change the node color
-  colorBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
-                          , #spacing := 8]
-  Gtk.boxPackStart mainBox colorBox False False 0
-  colorLabel <- new Gtk.Label [ #label := "Fill color: "]
-  Gtk.boxPackStart colorBox colorLabel False False 0
-  colorButton <- new Gtk.ColorButton []
-  Gtk.boxPackStart colorBox colorButton False False 0
-
-  -- creates a HBox containing a label and a ColorButton to the user change the line and text color
-  lineColorBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
-                              , #spacing := 8]
-  Gtk.boxPackStart mainBox lineColorBox False False 0
-  lineColorLabel <- new Gtk.Label [ #label := "Line color: "]
-  Gtk.boxPackStart lineColorBox lineColorLabel False False 0
-  lineColorButton <- new Gtk.ColorButton []
-  Gtk.boxPackStart lineColorBox lineColorButton False False 0
-
-  -- creates a frame containing a VBox with radio buttons to the user change the node shape
-  frameShape <- new Gtk.Frame [#label := "Node Shape"]
-  Gtk.boxPackStart mainBox frameShape False False 0
-  nodeShapeBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical
-                              , #spacing := 8]
-  Gtk.containerAdd frameShape nodeShapeBox
-  radioCircle <- new Gtk.RadioButton [#label := "Circle"]
-  Gtk.boxPackStart nodeShapeBox radioCircle True True 0
-  radioRect <- Gtk.radioButtonNewWithLabelFromWidget (Just radioCircle) "Rect"
-  Gtk.boxPackStart nodeShapeBox radioRect True True 0
-  radioSquare <- Gtk.radioButtonNewWithLabelFromWidget (Just radioCircle) "Square"
-  Gtk.boxPackStart nodeShapeBox radioSquare True True 0
-  let radioShapes = [radioCircle, radioRect, radioSquare]
-
-
-  -- creates a frame conataining a VBox with radioButtons to the user change the edge shape
-  frameStyle <- new Gtk.Frame [#label := "Edge Style"]
-  Gtk.boxPackStart mainBox frameStyle False False 0
-  edgeStyleBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical
-                              , #spacing := 8]
-  Gtk.containerAdd frameStyle edgeStyleBox
-  radioNormal <- new Gtk.RadioButton [#label := "Normal"]
-  Gtk.boxPackStart edgeStyleBox radioNormal True True 0
-  radioPointed <- Gtk.radioButtonNewWithLabelFromWidget (Just radioNormal) "Pointed"
-  Gtk.boxPackStart edgeStyleBox radioPointed True True 0
-  radioSlashed <- Gtk.radioButtonNewWithLabelFromWidget (Just radioNormal) "Slashed"
-  Gtk.boxPackStart edgeStyleBox radioSlashed True True 0
-  let radioStyles = [radioNormal, radioPointed, radioSlashed]
-
-  return (mainBox, typeBox, colorButton, lineColorButton, radioShapes, radioStyles, (colorBox, frameShape, frameStyle))
-
--- creates the inspector for the host graph
-buildHostInspector :: IO (Gtk.Box, Gtk.Box, Gtk.CheckButton, Gtk.CheckButton, Gtk.ComboBoxText, Gtk.ComboBoxText, (Gtk.Box, Gtk.Box))
-buildHostInspector = do
-  mainBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical
-                         , #spacing := 8
-                         ]
-
-  -- creates a title label
-  titleLabel <- new Gtk.Label [#label := "Inspector"]
-  Gtk.boxPackStart mainBox titleLabel False False 0
-
-  -- creates a HBox containing a entry for the user change the node label
-  labelBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
-                          , #spacing := 8]
-  Gtk.boxPackStart mainBox labelBox False False 0
-  labelLabel <- new Gtk.Label [ #label := "Label: "]
-  Gtk.boxPackStart labelBox labelLabel False False 0
-
-  -- create a Toggle button to choose if auto-labelling for nodes is activated
-  autoBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
-                          , #spacing := 8]
-  Gtk.boxPackStart mainBox autoBox False False 0
-  autoToggle <- Gtk.checkButtonNewWithLabel "Automatic labelling for nodes"
-  set autoToggle [ #active := True ]
-  Gtk.boxPackStart autoBox autoToggle False False 0
-
-  -- create a Toggle button to choose if auto-labelling for edges is activated
-  autoBoxE <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
-                          , #spacing := 8]
-  Gtk.boxPackStart mainBox autoBoxE False False 0
-  autoToggleE <- Gtk.checkButtonNewWithLabel "Automatic labelling for edges"
-  set autoToggleE [ #active := True ]
-  Gtk.boxPackStart autoBoxE autoToggleE False False 0
-
-  -- creates a HBox containing a ComboBox for the user change the node type
-  nodeTypeBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
-                             , #spacing := 8
-                             ]
-  Gtk.boxPackStart mainBox nodeTypeBox False False 0
-  nodeTypeLabel <- new Gtk.Label [ #label := "Node Type: "]
-  Gtk.boxPackStart nodeTypeBox nodeTypeLabel False False 0
-  nodeTypeComboBox <- new Gtk.ComboBoxText []
-  Gtk.boxPackStart nodeTypeBox nodeTypeComboBox True True 0
-
-  -- creates a HBox conataining a ComboBox for the user change the edge type
-  edgeTypeBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
-                             , #spacing := 8 ]
-  Gtk.boxPackStart mainBox edgeTypeBox False False 0
-  edgeTypeLabel <- new Gtk.Label [ #label := "Edge Type: "]
-  Gtk.boxPackStart edgeTypeBox edgeTypeLabel False False 0
-  edgeTypeComboBox <- new Gtk.ComboBoxText []
-  Gtk.boxPackStart edgeTypeBox edgeTypeComboBox True True 0
-
-  return (mainBox, labelBox, autoToggle, autoToggleE, nodeTypeComboBox, edgeTypeComboBox, (nodeTypeBox, edgeTypeBox))
-
-buildRuleInspector :: IO (Gtk.Box, Gtk.Box, Gtk.CheckButton, Gtk.CheckButton,
-                          Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.ComboBoxText,
-                          (Gtk.Box, Gtk.Box))
-buildRuleInspector = do
-  mainBox <- new Gtk.Box [ #orientation := Gtk.OrientationVertical
-                         , #spacing := 8
-                         ]
-
-  -- creates a title label
-  titleLabel <- new Gtk.Label [#label := "Inspector"]
-  Gtk.boxPackStart mainBox titleLabel False False 0
-
-  -- creates a HBox containing a entry for the user change the node label
-  entryBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
-                         , #spacing := 8]
-  Gtk.boxPackStart mainBox entryBox False False 0
-  labelLabel <- new Gtk.Label [ #label := "Label: "]
-  Gtk.boxPackStart entryBox labelLabel False False 0
-
-  -- create a Toggle button to choose if auto-labelling is activated
-  autoBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
-                          , #spacing := 8]
-  Gtk.boxPackStart mainBox autoBox False False 0
-  autoToggle <- Gtk.checkButtonNewWithLabel "Automatic labelling for nodes"
-  set autoToggle [ #active := True ]
-  Gtk.boxPackStart autoBox autoToggle False False 0
-
-  -- create a Toggle button to choose if auto-labelling is activated
-  autoBoxE <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
-                          , #spacing := 8]
-  Gtk.boxPackStart mainBox autoBoxE False False 0
-  autoToggleE <- Gtk.checkButtonNewWithLabel "Automatic labelling for edges"
-  set autoToggleE [ #active := True ]
-  Gtk.boxPackStart autoBoxE autoToggleE False False 0
-
-  -- creates a HBox containing a ComboBox for the user change the node type
-  nodeTypeBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
-                             , #spacing := 8
-                             ]
-  Gtk.boxPackStart mainBox nodeTypeBox False False 0
-  nodeTypeLabel <- new Gtk.Label [ #label := "Node Type: "]
-  Gtk.boxPackStart nodeTypeBox nodeTypeLabel False False 0
-  nodeTypeComboBox <- new Gtk.ComboBoxText []
-  Gtk.boxPackStart nodeTypeBox nodeTypeComboBox True True 0
-  --
-  -- creates a HBox containing a ComboBox for the user change the edge type
-  edgeTypeBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
-                             , #spacing := 8 ]
-  Gtk.boxPackStart mainBox edgeTypeBox False False 0
-  edgeTypeLabel <- new Gtk.Label [ #label := "Edge Type: "]
-  Gtk.boxPackStart edgeTypeBox edgeTypeLabel False False 0
-  edgeTypeComboBox <- new Gtk.ComboBoxText []
-  Gtk.boxPackStart edgeTypeBox edgeTypeComboBox True True 0
-  --
-  -- -- creates a HBox containing a ComboBox for the user change the operation to be applyed in the graph element
-  operationBox <- new Gtk.Box [ #orientation := Gtk.OrientationHorizontal
-                              , #spacing := 8 ]
-  Gtk.boxPackStart mainBox operationBox False False 0
-  operationLabel <- new Gtk.Label [ #label := "Operation: "]
-  Gtk.boxPackStart operationBox operationLabel False False 0
-  operationComboBox <- new Gtk.ComboBoxText []
-  Gtk.comboBoxTextAppendText operationComboBox "none"
-  Gtk.comboBoxTextAppendText operationComboBox "create"
-  Gtk.comboBoxTextAppendText operationComboBox "delete"
-  Gtk.boxPackStart operationBox operationComboBox True True 0
-
-  --
-  return (mainBox, entryBox, autoToggle, autoToggleE, nodeTypeComboBox, edgeTypeComboBox, operationComboBox, (nodeTypeBox, edgeTypeBox))
-
--- create an inspector for the nacs
-
-buildNacInspector :: IO (Gtk.Box, Gtk.Box, Gtk.CheckButton, Gtk.CheckButton,
-                        Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.Button,
-                        Gtk.Button, (Gtk.Box, Gtk.Box))
-buildNacInspector = do
-  -- create a host inspector
-  (mainBox, labelBox, autoN, autoE, nTCB, eTCB, (nTB, eTB)) <- buildHostInspector
-  -- create a button to join elements
-  joinBtn <- new Gtk.Button [#label := "Merge"]
-  Gtk.boxPackStart mainBox joinBtn False False 0
-  -- create a button to split elements
-  splitBtn <- new Gtk.Button [#label := "Split"]
-  Gtk.boxPackStart mainBox splitBtn False False 0
-
-  return (mainBox, labelBox, autoN, autoE, nTCB, eTCB, joinBtn, splitBtn, (nTB, eTB))
-
-
-
-
-
+  return ( window, canvas, mainBox, treeFrame
+         , inspectorFrame, inspectorBox, entry, entryLabel, layoutWidgets, typeSelectionWidgets
+         , fileItems, editItems, viewItems, helpItems
+         )
 
 -- creates the treePanel
 buildTreePanel = do
