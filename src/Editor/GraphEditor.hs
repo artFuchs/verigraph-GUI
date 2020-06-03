@@ -79,7 +79,7 @@ startGUI = do
   (window, canvas, mainBox, treeFrame, inspectorFrame, inspectorBox, nameEntry, entryLabel, layoutWidgets, typeSelectionWidgets, fileItems, editItems, viewItems, helpItems) <- buildMainWindow
 
   -- set the menubar
-  let [newm,opn,svn,sva,eggx,svg,opg] = fileItems
+  let [newm,opn,svn,sva,eggx,evgg,svg,opg] = fileItems
       [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
       [zin,zut,z50,zdf,z150,z200,vdf,orv] = viewItems
       [hlp,abt] = helpItems
@@ -749,24 +749,40 @@ startGUI = do
       then afterSave
       else return ()
 
+  let prepToExport = do
+        sts <- readIORef graphStates
+
+        let (tes,_,_) = fromJust $ M.lookup 0 sts
+            (hes,_,_) = fromJust $ M.lookup 1 sts
+            tg = editorGetGraph tes
+            hg = editorGetGraph hes
+
+        rules <- getRules store graphStates nacInfoMapIORef
+        let rulesNames = map (\(_,_,name) -> name) rules
+            rulesNnacs = map (\(r,ns,_) -> (r,ns)) rules
+        
+        let efstOrderGG = makeGrammar tg hg rulesNnacs rulesNames
+        return efstOrderGG
+
   eggx `on` #activate $ do
+    efstOrderGG <- prepToExport
     sts <- readIORef graphStates
-
     let (tes,_,_) = fromJust $ M.lookup 0 sts
-        (hes,_,_) = fromJust $ M.lookup 1 sts
         tg = editorGetGraph tes
-        hg = editorGetGraph hes
-
-    rules <- getRules store graphStates nacInfoMapIORef
-    let rulesNames = map (\(_,_,name) -> name) rules
-        rulesNnacs = map (\(r,ns,_) -> (r,ns)) rules
-    
-    let efstOrderGG = makeGrammar tg hg rulesNnacs rulesNames
     case efstOrderGG of
       Left msg -> showError window (T.pack msg)
       Right fstOrderGG -> do
         saveFileAs (fstOrderGG,tg) exportGGX fileName window False
         return ()
+
+  evgg `on` #activate $ do
+    efstOrderGG <- prepToExport
+    case efstOrderGG of
+      Left msg -> showError window (T.pack msg)
+      Right fstOrderGG -> do
+        saveFileAs fstOrderGG exportVGG fileName window False
+        return ()
+
 
   -- open graph
   on opg #activate $ do

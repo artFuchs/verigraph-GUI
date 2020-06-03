@@ -4,6 +4,7 @@ module Editor.GraphEditor.Helper.SaveLoad
 , saveFileAs
 , saveGraph
 , exportGGX
+, exportVGG
 , saveProject
 , loadFile
 , loadGraph
@@ -11,6 +12,8 @@ module Editor.GraphEditor.Helper.SaveLoad
 )where
 
 import qualified GI.Gtk as Gtk
+
+import qualified System.FilePath as FilePath
 
 import qualified Data.Tree as Tree
 import qualified Data.Text as T
@@ -20,8 +23,11 @@ import Data.IORef
 import qualified Control.Exception as E
 
 import Data.Graphs hiding (null, empty)
+import Data.Graphs.Morphism
 import qualified Data.Graphs as G
 import qualified Data.TypedGraph.Morphism as TGM
+import qualified Data.TypedGraph as TG
+import Abstract.Constraint
 import Abstract.Rewriting.DPO
 import Rewriting.DPO.TypedGraph
 import Category.TypedGraphRule (RuleMorphism)
@@ -132,7 +138,7 @@ saveProject saveInfo path = do
 
 exportGGX :: (Grammar (TGM.TypedGraphMorphism Info Info), Graph Info Info) -> String -> IO Bool
 exportGGX (fstOrderGG, tg)  path = do
-  let path' = if (tails path)!!(length path-4) == ".ggx" then path else path ++ ".ggx"
+  let path' = if FilePath.takeExtension path == ".ggx" then path else FilePath.replaceExtension path ".ggx"
   let nods = nodes tg
       edgs = edges tg
       nodeNames = map (\n -> ('N' : (show . nodeId $ n), (infoLabelStr . nodeInfo $ n) ++ "%:[NODE]:" )) nods
@@ -144,6 +150,47 @@ exportGGX (fstOrderGG, tg)  path = do
 
   writeGrammarFile (fstOrderGG,emptySndOrderGG) ggName names path'
   return True
+
+exportVGG :: Grammar (TGM.TypedGraphMorphism Info Info) -> String -> IO Bool
+exportVGG fstOrderGG path = do
+  let path' = if FilePath.takeExtension path == ".vgg" then path else FilePath.replaceExtension path ".vgg"
+
+  -- functions of conversion
+  -- Grammar (TGM.TypedGraphMorphism Info Info) -> Grammar (TGM.TypedGraphMorphism String String)
+  let changeNodes = foldr (\(id,n) l -> (id, n {nodeInfo = Just show <*> (nodeInfo n) }):l) []
+      changeEdges = foldr (\(id,e) l -> (id, e {edgeInfo = Just show <*> (edgeInfo e) }):l) []
+      -- f :: Graph Info Info -> Graph String String
+      f g = g { nodeMap = changeNodes (nodeMap g)
+              , edgeMap = changeEdges (edgeMap g)
+              }
+      -- ff :: TypedGraph Info Info -> TypedGraph String String
+      -- ff :: GraphMorphism (Maybe Info) (Maybe Info) -> GraphMorphism (Maybe String) (Maybe String)
+      ff tg = tg { domainGraph = f (domainGraph tg)
+                 , codomainGraph = f (codomainGraph tg)}
+      -- fff :: TypedGraphMorphism Info Info -> TypedGraphMorphism String String
+      fff tgm = tgm { TGM.domainGraph = ff (TGM.domainGraph tgm)
+                    , TGM.codomainGraph = ff (TGM.codomainGraph tgm)
+                    , TGM.mapping = ff (TGM.mapping tgm)}
+
+  let startGraph = ff (start fstOrderGG)
+
+  let rules = map (\(n, rule) -> (n, rule { leftMorphism = fff (leftMorphism rule)
+                                           , rightMorphism = fff (rightMorphism rule)
+                                           , nacs = map fff (nacs rule) }
+                                  )
+                  ) 
+                  (productions fstOrderGG)
+
+  let cs = [] :: [Constraint (TGM.TypedGraphMorphism String String)]
+
+  let writeVGG = writeFile path' $ show (startGraph, cs, rules) 
+  saveTry <- E.try (writeVGG) :: IO (Either E.IOException ())
+  case saveTry of
+    Left _ -> return False
+    Right _ -> return True
+
+  
+
 
 
 loadFile :: Gtk.Window -> (String -> Maybe a) -> IO (Maybe (a,String))

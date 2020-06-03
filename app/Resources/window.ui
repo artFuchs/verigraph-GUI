@@ -73,6 +73,14 @@
                       </object>
                     </child>
                     <child>
+                      <object class="GtkMenuItem" id="export_vgg_item">
+                        <property name="visible">True</property>
+                        <property name="can_focus">False</property>
+                        <property name="label" translatable="yes">E_xport to .vgg</property>
+                        <property name="use_underline">True</property>
+                      </object>
+                    </child>
+                    <child>
                       <object class="GtkSeparatorMenuItem" id="file_sep1">
                         <property name="visible">True</property>
                         <property name="can_focus">False</property>
