@@ -34,6 +34,7 @@ import Abstract.Category
 import Abstract.Rewriting.DPO
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
+import qualified Data.TypedGraph.Morphism as TGM
 
 -- editor modules
 import Editor.Data.GraphicalInfo
@@ -60,6 +61,12 @@ import Editor.Helper.List
 import Editor.Helper.Geometry
 import Editor.Helper.GraphValidation
 
+-- modules needed for analysis
+import qualified Exec.GlobalOptions        as EGO
+import qualified Exec.CriticalPairAnalysis as CPA
+import Category.TypedGraphRule (RuleMorphism)
+import Rewriting.DPO.TypedGraph (emptyGraphRule)
+
 
 
 -- | creates the Graphical User Interface and bind actions to events
@@ -76,12 +83,13 @@ startGUI = do
 
   -- main window ---------------------------------------------------------------
   -- build main window
-  (window, canvas, mainBox, treeFrame, inspectorFrame, inspectorBox, nameEntry, entryLabel, layoutWidgets, typeSelectionWidgets, fileItems, editItems, viewItems, helpItems) <- buildMainWindow
+  (window, canvas, mainBox, treeFrame, inspectorFrame, inspectorBox, nameEntry, entryLabel, layoutWidgets, typeSelectionWidgets, fileItems, editItems, viewItems, analysisItems, helpItems) <- buildMainWindow
 
   -- set the menubar
   let [newm,opn,svn,sva,eggx,evgg,svg,opg] = fileItems
       [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
       [zin,zut,z50,zdf,z150,z200,vdf,orv] = viewItems
+      [cpa] = analysisItems
       [hlp,abt] = helpItems
   Gtk.widgetSetSensitive orv False
 
@@ -648,6 +656,7 @@ startGUI = do
                                   structs <- getStructsToSave store graphStates nacInfoMapIORef
                                   saveFile structs saveProject fileName window True -- returns True if saved the file
 
+  -- File Menu ----------------------------------
   -- new project action activated
   on newm #activate $ do
     continue <- confirmOperation
@@ -749,23 +758,9 @@ startGUI = do
       then afterSave
       else return ()
 
-  let prepToExport = do
-        sts <- readIORef graphStates
-
-        let (tes,_,_) = fromJust $ M.lookup 0 sts
-            (hes,_,_) = fromJust $ M.lookup 1 sts
-            tg = editorGetGraph tes
-            hg = editorGetGraph hes
-
-        rules <- getRules store graphStates nacInfoMapIORef
-        let rulesNames = map (\(_,_,name) -> name) rules
-            rulesNnacs = map (\(r,ns,_) -> (r,ns)) rules
-        
-        let efstOrderGG = makeGrammar tg hg rulesNnacs rulesNames
-        return efstOrderGG
-
+  -- export grammar to .ggx (AGG format)
   eggx `on` #activate $ do
-    efstOrderGG <- prepToExport
+    efstOrderGG <- prepToExport store graphStates nacInfoMapIORef
     sts <- readIORef graphStates
     let (tes,_,_) = fromJust $ M.lookup 0 sts
         tg = editorGetGraph tes
@@ -776,7 +771,7 @@ startGUI = do
         return ()
 
   evgg `on` #activate $ do
-    efstOrderGG <- prepToExport
+    efstOrderGG <- prepToExport store graphStates nacInfoMapIORef
     case efstOrderGG of
       Left msg -> showError window (T.pack msg)
       Right fstOrderGG -> do
@@ -825,6 +820,7 @@ startGUI = do
     return ()
 
 
+  -- Edit Menu ----------------------------------
   -- auxiliar function - perform actions according to the type of graph
   let updateByType = do
         gt <- readIORef currentGraphType
@@ -976,6 +972,7 @@ startGUI = do
       (n,e) -> writeIORef st $ editorSetSelected (n,[]) es
     Gtk.widgetQueueDraw canvas
 
+  -- merge elements in NACs
   on mrg #activate $ do
     gtype <- readIORef currentGraphType
     if (gtype /= 4)
@@ -1005,7 +1002,7 @@ startGUI = do
             Gtk.widgetQueueDraw canvas
             updateInspector
 
-
+  -- split elements in NACs
   on spt #activate $ do
     gtype <- readIORef currentGraphType
     if (gtype /= 4)
@@ -1034,6 +1031,7 @@ startGUI = do
         stackUndo undoStack redoStack es (Just (nM,eM))
         Gtk.widgetQueueDraw canvas
 
+  -- View Menu ----------------------------------
   -- zoom in
   zin `on` #activate $ do
     modifyIORef st (\es -> editorSetZoom (editorGetZoom es * 1.1) es )
@@ -1066,6 +1064,7 @@ startGUI = do
     modifyIORef st (\es -> editorSetZoom 1 $ editorSetPan (0,0) es )
     Gtk.widgetQueueDraw canvas
 
+  -- open rule viewer
   orv `on` #activate $ do
     gt <- readIORef currentGraphType
     if gt == 3
@@ -1114,6 +1113,26 @@ startGUI = do
         #showAll rvWindow
       else return ()
 
+  -- Analysis Menu ----------------------------------
+  cpa `on` #activate $ do
+    efstOrderGG <- prepToExport store graphStates nacInfoMapIORef
+    sts <- readIORef graphStates
+    let (tes,_,_) = fromJust $ M.lookup 0 sts
+        tg = editorGetGraph tes
+    case efstOrderGG of
+      Left msg -> showError window (T.pack msg)
+      Right gg -> do
+        let emptySndOrderGG = grammar (emptyGraphRule (makeTypeGraph tg)) [] [] :: Grammar (RuleMorphism Info Info)
+            opts = CPA.Options {CPA.outputFile = Nothing, CPA.sndOrder = False, CPA.essentialFlag = False, CPA.analysisType = CPA.Both}
+            globalOpts = EGO.GOpts {EGO.arbitraryMatches = EGO.MonoMatches, EGO.verbose = False, EGO.inputFile = "", EGO.useConstraints = False}
+            dpoConf = EGO.morphismsConf globalOpts
+        CPA.processFirstOrderGrammar globalOpts opts dpoConf gg emptySndOrderGG "" []
+
+        
+
+
+
+  -- Help Menu ----------------------------------
   -- help
   hlp `on` #activate $ do
     #showAll helpWindow
@@ -1752,6 +1771,7 @@ startGUI = do
 ------------------------------------------------------------------------------
 
 -- Tree generation/manipulation ------------------------------------------------
+-- given a forest, assign an id foreach node of the trees contained in it
 genForestIds :: Tree.Forest a -> Int32 -> Tree.Forest Int32
 genForestIds [] i = []
 genForestIds (t:ts) i = t' : (genForestIds ts i')
@@ -1763,6 +1783,8 @@ genTreeId (Tree.Node x f) i = (Tree.Node i f', i')
   where
     f' = genForestIds f (i+1)
     i' = (maximum (fmap maximum f')) + 1
+--------------------------------------------------------------------------------
+
 
 -- update the active typegraph if the corresponding diagraph is valid, set it as empty if not
 updateActiveTG :: IORef EditorState 
@@ -1910,4 +1932,21 @@ changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTy
         --      all edge types are selectable
         (False,_) -> defaultAction
 
+prepToExport :: Gtk.TreeStore
+             -> IORef (M.Map Int32 (EditorState, ChangeStack, ChangeStack))
+             -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
+             -> IO (Either String (Grammar (TGM.TypedGraphMorphism Info Info)))
+prepToExport store graphStates nacInfoMapIORef = do
+  sts <- readIORef graphStates
 
+  let (tes,_,_) = fromJust $ M.lookup 0 sts
+      (hes,_,_) = fromJust $ M.lookup 1 sts
+      tg = editorGetGraph tes
+      hg = editorGetGraph hes
+
+  rules <- getRules store graphStates nacInfoMapIORef
+  let rulesNames = map (\(_,_,name) -> name) rules
+      rulesNnacs = map (\(r,ns,_) -> (r,ns)) rules
+  
+  let efstOrderGG = makeGrammar tg hg rulesNnacs rulesNames
+  return efstOrderGG

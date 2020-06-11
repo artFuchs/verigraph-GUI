@@ -30,7 +30,7 @@ buildMainWindow :: IO ( Gtk.Window, Gtk.DrawingArea, Gtk.Box, Gtk.Frame
                         , Gtk.Box, Gtk.ComboBoxText, Gtk.Box, Gtk.ComboBoxText
                         , Gtk.Box, Gtk.ComboBoxText
                         , Gtk.Button, Gtk.Button)
-                      , [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem])
+                      , [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem])
 buildMainWindow = do
   builder <- new Gtk.Builder []
   Gtk.builderAddFromFile builder "./Resources/window.ui"
@@ -123,13 +123,16 @@ buildMainWindow = do
   openRuleViewerItem <- Gtk.builderGetObject builder "ruleV_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   let viewItems = [zoomInItem,zoomOutItem,zoom50Item,zoom100Item,zoom150Item,zoom200Item,resetViewItem,openRuleViewerItem]
 
+  cpaItem <- Gtk.builderGetObject builder "cpa_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  let analysisItems = [cpaItem]
+
   helpItem <- Gtk.builderGetObject builder  "help_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   aboutItem <- Gtk.builderGetObject builder  "about_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   let helpItems = [helpItem, aboutItem]
 
   return ( window, canvas, mainBox, treeFrame
          , inspectorFrame, inspectorBox, entry, entryLabel, layoutWidgets, typeSelectionWidgets
-         , fileItems, editItems, viewItems, helpItems
+         , fileItems, editItems, viewItems, analysisItems, helpItems
          )
 
 -- creates the treePanel

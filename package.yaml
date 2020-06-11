@@ -39,7 +39,8 @@ dependencies:
 - filepath
 - parsec
 - directory
-
+- optparse-applicative
+- matrix
 
 library:
   source-dirs: src

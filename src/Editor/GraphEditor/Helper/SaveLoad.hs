@@ -141,8 +141,8 @@ exportGGX (fstOrderGG, tg)  path = do
   let path' = if FilePath.takeExtension path == ".ggx" then path else FilePath.replaceExtension path ".ggx"
   let nods = nodes tg
       edgs = edges tg
-      nodeNames = map (\n -> ('N' : (show . nodeId $ n), (infoLabelStr . nodeInfo $ n) ++ "%:[NODE]:" )) nods
-      edgeNames = map (\e -> ('E' : (show . edgeId $ e), (infoLabelStr . edgeInfo $ e) ++ "%:[EDGE]:" )) edgs
+      nodeNames = map (\n -> ('N' : (show . fromEnum . nodeId $ n), (infoLabelStr . nodeInfo $ n) ++ "%:[NODE]:" )) nods
+      edgeNames = map (\e -> ('E' : (show . fromEnum . edgeId $ e), (infoLabelStr . edgeInfo $ e) ++ "%:[EDGE]:" )) edgs
       names = nodeNames ++ edgeNames
 
   let emptySndOrderGG = grammar (emptyGraphRule (makeTypeGraph tg)) [] [] :: Grammar (RuleMorphism Info Info)
