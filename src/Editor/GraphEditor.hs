@@ -66,6 +66,7 @@ import qualified Exec.GlobalOptions        as EGO
 import qualified Exec.CriticalPairAnalysis as CPA
 import Category.TypedGraphRule (RuleMorphism)
 import Rewriting.DPO.TypedGraph (emptyGraphRule)
+import Editor.GraphEditor.UI.CriticalPairAnalysis
 
 
 
@@ -77,13 +78,15 @@ startGUI = do
 
   ------------------------------------------------------------------------------
   -- GUI definition ------------------------------------------------------------
-  -- auxiliar windows ---------------------------------------------------------------
-  helpWindow <- buildHelpWindow
-  (rvWindow, rvNameLabel, rvlCanvas, rvrCanvas, rvlesIOR, rvresIOR, rvtgIOR, rvkIOR) <- createRuleViewerWindow
 
   -- main window ---------------------------------------------------------------
   -- build main window
   (window, canvas, mainBox, treeFrame, inspectorFrame, inspectorBox, nameEntry, entryLabel, layoutWidgets, typeSelectionWidgets, fileItems, editItems, viewItems, analysisItems, helpItems) <- buildMainWindow
+
+  -- build auxiliar windows ---------------------------------------------------------------
+  helpWindow <- buildHelpWindow
+  (rvWindow, rvNameLabel, rvlCanvas, rvrCanvas, rvlesIOR, rvresIOR, rvtgIOR, rvkIOR) <- createRuleViewerWindow
+  (cpaWindow, cpaEssentialCheckBtn, cpaConfCheckBtn, cpaDependCheckBtn, cpaRunBtn) <- buildCpaWindow window
 
   -- set the menubar
   let [newm,opn,svn,sva,eggx,evgg,svg,opg] = fileItems
@@ -1113,8 +1116,15 @@ startGUI = do
         #showAll rvWindow
       else return ()
 
+
+
+
+
   -- Analysis Menu ----------------------------------
   cpa `on` #activate $ do
+    #showAll cpaWindow
+        
+  on cpaRunBtn #pressed $ do
     efstOrderGG <- prepToExport store graphStates nacInfoMapIORef
     sts <- readIORef graphStates
     let (tes,_,_) = fromJust $ M.lookup 0 sts
@@ -1122,13 +1132,19 @@ startGUI = do
     case efstOrderGG of
       Left msg -> showError window (T.pack msg)
       Right gg -> do
+        essential <- Gtk.toggleButtonGetActive cpaEssentialCheckBtn
+        confFlag <- Gtk.toggleButtonGetActive cpaConfCheckBtn
+        dependFlag <- Gtk.toggleButtonGetActive cpaDependCheckBtn
+        let analysisT = case (confFlag, dependFlag) of
+                          (True,False) -> CPA.Conflicts
+                          (False,True) -> CPA.Dependencies
+                          _-> CPA.Both
         let emptySndOrderGG = grammar (emptyGraphRule (makeTypeGraph tg)) [] [] :: Grammar (RuleMorphism Info Info)
-            opts = CPA.Options {CPA.outputFile = Nothing, CPA.sndOrder = False, CPA.essentialFlag = False, CPA.analysisType = CPA.Both}
-            globalOpts = EGO.GOpts {EGO.arbitraryMatches = EGO.MonoMatches, EGO.verbose = False, EGO.inputFile = "", EGO.useConstraints = False}
+            opts = CPA.Options Nothing False essential analysisT
+            globalOpts = EGO.GOpts EGO.MonoMatches False "" False
             dpoConf = EGO.morphismsConf globalOpts
         CPA.processFirstOrderGrammar globalOpts opts dpoConf gg emptySndOrderGG "" []
 
-        
 
 
 

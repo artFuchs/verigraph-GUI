@@ -33,7 +33,7 @@ buildMainWindow :: IO ( Gtk.Window, Gtk.DrawingArea, Gtk.Box, Gtk.Frame
                       , [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem])
 buildMainWindow = do
   builder <- new Gtk.Builder []
-  Gtk.builderAddFromFile builder "./Resources/window.ui"
+  Gtk.builderAddFromFile builder "./Resources/window.glade"
   window  <- Gtk.builderGetObject builder "window" >>= unsafeCastTo Gtk.Window . fromJust
   mainBox <- Gtk.builderGetObject builder "mainBox" >>= unsafeCastTo Gtk.Box . fromJust
   treeFrame <- Gtk.builderGetObject builder "treeFrame" >>= unsafeCastTo Gtk.Frame . fromJust
@@ -175,7 +175,7 @@ buildTreePanel = do
 buildAboutDialog :: IO ()
 buildAboutDialog = do
   builder <- new Gtk.Builder []
-  Gtk.builderAddFromFile builder "./Resources/aboutWindow.ui"
+  Gtk.builderAddFromFile builder "./Resources/aboutWindow.glade"
   dialog  <- Gtk.builderGetObject builder "aboutWin" >>= unsafeCastTo Gtk.AboutDialog. fromJust
   #showAll dialog
   Gtk.dialogRun dialog
