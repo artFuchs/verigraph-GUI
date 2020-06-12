@@ -2,9 +2,8 @@
 module Exec.CriticalPairAnalysis
   ( Options (..)
   , AnalysisType (..)
-  , options
   , execute
-  , processFirstOrderGrammar
+  , execute'
   ) where
 
 import           Control.Monad                         (when)
@@ -157,8 +156,34 @@ processFirstOrderGrammar globalOpts opts dpoConf fstOrderGrammar sndOrderGrammar
         -- TODO: error handling for XML writes
         return ()
     Nothing -> do
-      mapM_ (printConflicts (essentialFlag opts)) conflicts
-      mapM_ printDependencies dependencies
+      let confStr = case conflicts of 
+                      Nothing -> []
+                      Just conf -> printConflicts (essentialFlag opts) conf
+          dependsStr = case dependencies of
+                        Nothing -> []
+                        Just depends -> printDependencies depends
+      putStrLn $ confStr ++ dependsStr
+
+execute' :: GlobalOptions -> Options -> MorphismsConfig (TypedGraphMorphism b c) -> Grammar (TypedGraphMorphism b c) -> Grammar (RuleMorphism b c) -> String
+execute' globalOpts opts dpoConf fstOrderGrammar sndOrderGrammar = resultStr
+  where 
+    resultStr =
+      case analysisType opts of
+        Conflicts -> confStr
+        Dependencies -> dependStr
+        Both -> confStr ++ dependStr
+    confStr = printConflicts (essentialFlag opts) conflicts'
+    dependStr = printDependencies dependencies'
+
+    constrs
+      | useConstraints globalOpts = constraints fstOrderGrammar
+      | otherwise = []
+    conflicts' = pairwiseCompareIntoMatrix (findConflicts dpoConf constrs) (productions fstOrderGrammar)
+    findConflicts
+      | essentialFlag opts = \conf _ -> findEssentialCriticalPairs conf
+      | otherwise          = findCriticalPairs
+    dependencies' = pairwiseCompareIntoMatrix (findTriggeredCriticalSequences dpoConf constrs) (productions fstOrderGrammar)
+
 
 -- | Evolutionary Spans to Strings
 printEvoConflicts :: [(String, String, [EvoSpan a b])] -> [String]
@@ -172,36 +197,39 @@ printEvoConflicts = map printOneEvo
     printConf str evos = countElement str (map cpe evos)
 
 
-printConflicts :: Bool -> Matrix (String, String, [CriticalPair morph]) -> IO ()
-printConflicts isEssential conflicts' = do
-  printMatrixLengths (essential ++ "Delete-Use") (filterMatrix isDeleteUse conflicts)
-  printMatrixLengths (essential ++ "Produce-Dangling") (filterMatrix isProduceDangling conflicts)
-  printMatrixLengths (essential ++ "Produce-Forbid") (filterMatrix isProduceForbid conflicts)
-  printMatrixLengths (essential ++ "Conflicts") conflicts
+printConflicts :: Bool -> Matrix (String, String, [CriticalPair morph]) -> String
+printConflicts isEssential conflicts' = str
   where
+    str = delUseStr ++ prodDanglStr ++ prodDanglStr ++ prodConfStr ++ "\n"
+    delUseStr    = printMatrixLengths (essential ++ "Delete-Use") (filterMatrix isDeleteUse conflicts)
+    prodDanglStr = printMatrixLengths (essential ++ "Produce-Dangling") (filterMatrix isProduceDangling conflicts)
+    prodForbdStr = printMatrixLengths (essential ++ "Produce-Forbid") (filterMatrix isProduceForbid conflicts)
+    prodConfStr  = printMatrixLengths (essential ++ "Conflicts") conflicts
     conflicts = fmap (\(_,_,l) -> l) conflicts'
     essential
       | isEssential = "Essential "
       | otherwise   = ""
 
-printDependencies :: Matrix (String, String, [CriticalSequence morph]) -> IO ()
-printDependencies dependencies' = do
-  printMatrixLengths "Produce-Use" (filterMatrix isProduceUse dependencies)
-  printMatrixLengths "Remove-Dangling" (filterMatrix isRemoveDangling dependencies)
-  printMatrixLengths "Delete-Forbid" (filterMatrix isDeleteForbid dependencies)
-  printMatrixLengths "Dependencies" dependencies
-  putStrLn ""
-  where
-    dependencies = fmap (\(_,_,l) -> l) dependencies'
+printDependencies :: Matrix (String, String, [CriticalSequence morph]) -> String
+printDependencies dependencies' = str
+  where 
+    str = prodUseStr ++ rmDanglStr ++ delForbStr ++ dependsStr ++ "\n"
+    prodUseStr = printMatrixLengths "Produce-Use" (filterMatrix isProduceUse dependencies)
+    rmDanglStr = printMatrixLengths "Remove-Dangling" (filterMatrix isRemoveDangling dependencies)
+    delForbStr = printMatrixLengths "Delete-Forbid" (filterMatrix isDeleteForbid dependencies)
+    dependsStr = printMatrixLengths "Dependencies" dependencies
+    dependencies = fmap (\(_,_,l) -> l) dependencies'    
+    
 
 
 filterMatrix :: Functor f => (a -> Bool) -> f [a] -> f [a]
 filterMatrix pred = fmap (filter pred)
 
-printMatrixLengths :: String -> Matrix [a] -> IO ()
-printMatrixLengths title matrix = do
-  putStrLn (title ++ ":")
-  print (fmap length matrix)
+printMatrixLengths :: String -> Matrix [a] -> String
+printMatrixLengths title matrix = titleStr ++ lengthStr ++ "\n"
+  where
+    titleStr = title ++ ":\n"
+    lengthStr = show (fmap length matrix)
 
 pairwiseCompareIntoMatrix :: (a -> a -> b) -> [(String, a)] -> Matrix (String, String, b)
 pairwiseCompareIntoMatrix compare namedItems =

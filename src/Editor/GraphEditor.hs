@@ -86,7 +86,7 @@ startGUI = do
   -- build auxiliar windows ---------------------------------------------------------------
   helpWindow <- buildHelpWindow
   (rvWindow, rvNameLabel, rvlCanvas, rvrCanvas, rvlesIOR, rvresIOR, rvtgIOR, rvkIOR) <- createRuleViewerWindow
-  (cpaWindow, cpaEssentialCheckBtn, cpaConfCheckBtn, cpaDependCheckBtn, cpaRunBtn) <- buildCpaWindow window
+  (cpaWindow, cpaEssentialCheckBtn, cpaConfCheckBtn, cpaDependCheckBtn, cpaRunBtn, cpaResultBuffer) <- buildCpaWindow window
 
   -- set the menubar
   let [newm,opn,svn,sva,eggx,evgg,svg,opg] = fileItems
@@ -1143,7 +1143,10 @@ startGUI = do
             opts = CPA.Options Nothing False essential analysisT
             globalOpts = EGO.GOpts EGO.MonoMatches False "" False
             dpoConf = EGO.morphismsConf globalOpts
-        CPA.processFirstOrderGrammar globalOpts opts dpoConf gg emptySndOrderGG "" []
+            resStr = CPA.execute' globalOpts opts dpoConf gg emptySndOrderGG
+        set cpaResultBuffer [#text := ""]
+        Gtk.textBufferInsertAtCursor cpaResultBuffer (T.pack resStr) (-1)
+        
 
 
 

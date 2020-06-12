@@ -13,7 +13,7 @@ import Data.Maybe
 import Data.GI.Base
 import Data.GI.Base.ManagedPtr (unsafeCastTo)
 
-buildCpaWindow :: Gtk.Window -> IO (Gtk.Window, Gtk.CheckButton, Gtk.CheckButton, Gtk.CheckButton, Gtk.Button)
+buildCpaWindow :: Gtk.Window -> IO (Gtk.Window, Gtk.CheckButton, Gtk.CheckButton, Gtk.CheckButton, Gtk.Button, Gtk.TextBuffer)
 buildCpaWindow window = do
   builder <- new Gtk.Builder []
   Gtk.builderAddFromFile builder "./Resources/cpaWindow.glade"
@@ -28,4 +28,25 @@ buildCpaWindow window = do
           , #destroyWithParent := True ]
   on win #deleteEvent $ return $ Gtk.widgetHideOnDelete win
 
-  return (win, essentialCheckBtn, confCheckBtn, dependCheckBtn, execBtn)
+  resultBuffer <- new Gtk.TextBuffer []
+  set textView [#buffer := resultBuffer]
+
+  Gtk.textBufferInsertAtCursor resultBuffer "⊂_ヽ\n" (-1)
+  Gtk.textBufferInsertAtCursor resultBuffer "　 ＼＼ ＿\n" (-1)
+  Gtk.textBufferInsertAtCursor resultBuffer "　　 ＼(　•_•) F\n" (-1)
+  Gtk.textBufferInsertAtCursor resultBuffer "　　　<　⌒ヽ A\n" (-1)
+  Gtk.textBufferInsertAtCursor resultBuffer "　　 /   　 へ＼ N\n" (-1) 
+  Gtk.textBufferInsertAtCursor resultBuffer "　  (  　　/  　＼＼T\n" (-1)  
+  Gtk.textBufferInsertAtCursor resultBuffer "　　 ﾚ 　ノ　　   ヽ_つA\n" (-1)  
+  Gtk.textBufferInsertAtCursor resultBuffer "　　/　/ S\n" (-1) 
+  Gtk.textBufferInsertAtCursor resultBuffer "　 /　/ T\n" (-1) 
+  Gtk.textBufferInsertAtCursor resultBuffer "　(　(ヽI\n" (-1) 
+  Gtk.textBufferInsertAtCursor resultBuffer "　|　|、＼C.\n" (-1) 
+  Gtk.textBufferInsertAtCursor resultBuffer "　| 丿 ＼ ⌒)\n" (-1) 
+  Gtk.textBufferInsertAtCursor resultBuffer "　| |　　) /\n" (-1) 
+  Gtk.textBufferInsertAtCursor resultBuffer "ノ )　　Lﾉ__\n" (-1) 
+  Gtk.textBufferInsertAtCursor resultBuffer "(／___\n" (-1) 
+
+
+
+  return (win, essentialCheckBtn, confCheckBtn, dependCheckBtn, execBtn, resultBuffer)

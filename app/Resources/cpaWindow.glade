@@ -110,6 +110,7 @@
               <object class="GtkTextView" id="textView">
                 <property name="visible">True</property>
                 <property name="can_focus">True</property>
+                <property name="monospace">True</property>
               </object>
             </child>
           </object>
