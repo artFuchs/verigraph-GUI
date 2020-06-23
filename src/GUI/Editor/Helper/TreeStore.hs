@@ -50,7 +50,7 @@ import GUI.Editor.Helper.SaveLoad
 import GUI.Helper.GraphValidation
 import GUI.Helper.List
 
-{- |GraphStore
+{-| GraphStore
  A tuple representing what is showed in each node of the tree in the treeview
  It contains the informations:
  * name,

@@ -65,8 +65,7 @@ buildMainWindow = do
   zoom150Item <- Gtk.builderGetObject builder  "zoom150_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   zoom200Item <- Gtk.builderGetObject builder  "zoom200_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   resetViewItem <- Gtk.builderGetObject builder  "resetview_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  openRuleViewerItem <- Gtk.builderGetObject builder "ruleV_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  let viewItems = [zoomInItem,zoomOutItem,zoom50Item,zoom100Item,zoom150Item,zoom200Item,resetViewItem,openRuleViewerItem]
+  let viewItems = [zoomInItem,zoomOutItem,zoom50Item,zoom100Item,zoom150Item,zoom200Item,resetViewItem]
 
   cpaItem <- Gtk.builderGetObject builder "cpa_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   let analysisItems = [cpaItem]

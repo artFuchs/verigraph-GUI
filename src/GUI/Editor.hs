@@ -5,10 +5,7 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 module GUI.Editor(
   startEditor
-, updateTG
-, updateComboBoxText
 , prepToExport
-, storeCurrentES
 , confirmOperation
 )where
 
@@ -97,13 +94,13 @@ type TypeSelectionWidgets = ( Gtk.Box, Gtk.CheckButton, Gtk.CheckButton
 
 startEditor :: Gtk.Window -> [Gtk.MenuItem] -> [Gtk.MenuItem] -> [Gtk.MenuItem]
                -> Gtk.TreeStore
-               -> BasicEditIORefs -> IORef DiaGraph -> LayoutIORefs -> StoreIORefs -> UndoRedoIORefs -> ChangesIORefs 
-               -> IORef (Maybe String) -> IORef (Graph Info Info) ->  TypeInferIORefs -> NacIORefs
+               -> BasicEditIORefs -> StoreIORefs -> UndoRedoIORefs -> ChangesIORefs 
+               -> IORef (Maybe String) -> IORef (Graph Info Info) -> NacIORefs
                -> IO Gtk.Paned
 startEditor window fileItems editItems viewItems 
                 store
-                basicEditIORefs clipboard layoutIORefs storeIORefs undoRedoIORefs changesIORefs
-                fileName activeTypeGraph typeInferIORefs nacIORefs = do
+                basicEditIORefs storeIORefs undoRedoIORefs changesIORefs
+                fileName activeTypeGraph nacIORefs = do
 
   -- create the ui of the editor
   (mainPane, treeFrame, canvas, nameEntry, entryLabel, layoutWidgets, typeSelectionWidgets) <- buildEditor
@@ -166,21 +163,53 @@ startEditor window fileItems editItems viewItems
   -- "unpack" menuItems
   let [newm,opn,svn,sva,eggx,evgg,svg,opg] = fileItems
       [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
-      [zin,zut,z50,zdf,z150,z200,vdf,_] = viewItems
-
-  -- "unpack" IORefs
-  let (st, oldPoint, squareSelection, movingGI) = basicEditIORefs
-      (currentShape, currentStyle, currentC, currentLC) = layoutIORefs
-      (graphStates,currentPath,currentGraph,currentGraphType) = storeIORefs
-      (undoStack, redoStack) = undoRedoIORefs
-      (changedProject, changedGraph, lastSavedState) = changesIORefs
-      (possibleNodeTypes, possibleEdgeTypes, possibleSelectableEdgeTypes, currentNodeType, currentEdgeType) = typeInferIORefs
-      (nacInfoMapIORef, mergeMappingIORef) = nacIORefs
+      [zin,zut,z50,zdf,z150,z200,vdf] = viewItems
 
   #showAll mainPane
   #hide typeSelectionBox
   #hide createNBtn
   #hide removeBtn
+
+  ----------------------------------------------------------------------------------------------------------------------------
+  -- IORefs  -----------------------------------------------------------------------------------------------------------------
+  ----------------------------------------------------------------------------------------------------------------------------
+
+  -- copy/paste
+  clipboard       <- newIORef DG.empty -- clipboard - DiaGraph
+
+  -- variables used to edit visual elements of type graphs
+  currentShape    <- newIORef NCircle -- the shape that all new nodes must have
+  currentStyle    <- newIORef ENormal -- the style that all new edges must have
+  currentC        <- newIORef (1,1,1) -- the color to init new nodes
+  currentLC       <- newIORef (0,0,0) -- the color to init new edges and the line and text of new nodes
+
+  -- variabels for typeInference
+  {-  
+      Possible types that a node can have in a typed graph.
+      Each node type is identified by a string 
+       and specifies a pair with a NodeGI and the position of the entry in the comboBox 
+  -}
+  possibleNodeTypes   <- newIORef ( M.empty :: M.Map String (NodeGI, Int32))
+  {-  
+      Possible types that an edge can have in a typed graph.
+      Each edge type is identified by a string and specifies a pair with a map of EdgeGI, 
+       which keys are a pair of Strings (Source, Target), and the position in the comboBox
+  -}
+  possibleEdgeTypes   <- newIORef ( M.empty :: M.Map String (M.Map (String, String) EdgeGI, Int32))
+  -- Subset of possible Edge Types for selected edges with changed positions in the combobox
+  possibleSelectableEdgeTypes <- newIORef (M.empty :: M.Map String (M.Map (String, String) EdgeGI, Int32))
+  currentNodeType     <- newIORef ( Nothing :: Maybe String)
+  currentEdgeType     <- newIORef ( Nothing :: Maybe String)
+  
+
+  -- "unpack" IORefs
+  let (st, oldPoint, squareSelection, movingGI) = basicEditIORefs
+      (graphStates,currentPath,currentGraph,currentGraphType) = storeIORefs
+      (changedProject, changedGraph, lastSavedState) = changesIORefs
+      (undoStack, redoStack) = undoRedoIORefs
+      (nacInfoMapIORef, mergeMappingIORef) = nacIORefs
+
+  
 
   ----------------------------------------------------------------------------------------------------------------------------
   -- Auxiliar Functions for Bindings  ----------------------------------------------------------------------------------------
@@ -1586,9 +1615,64 @@ startEditor window fileItems editItems viewItems
 
 
 
+
+
+
 ---------------------------------------------------------------------------------------------------------------------------------
 --  Auxiliar Functions  ---------------------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------------------------------------
+
+-- auxiliar function to check if the project was changed
+-- it does the checking and if no, ask the user if them want to save.
+-- returns True if there's no changes, if the user don't wanted to save or if he wanted and the save operation was successfull
+-- returns False if the user wanted to save and the save operation failed or opted to cancel.
+confirmOperation :: Gtk.Window 
+                 -> Gtk.TreeStore 
+                 -> IORef Bool
+                 -> IORef EditorState
+                 -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
+                 -> IORef (Maybe String)
+                 -> UndoRedoIORefs
+                 -> StoreIORefs
+                 -> IO Bool
+confirmOperation window store changedProject st nacInfoMapIORef fileName undoRedoIORefs storeIORefs@(graphStates,_,_,_)= do 
+  changed <- readIORef changedProject
+  response <- if changed
+    then createConfirmDialog window "The project was changed, do you want to save?"
+    else return Gtk.ResponseTypeNo
+  case response of
+    Gtk.ResponseTypeCancel -> return False
+    r -> case r of
+      Gtk.ResponseTypeNo -> return True
+      Gtk.ResponseTypeYes -> do
+        storeCurrentES window st undoRedoIORefs storeIORefs nacInfoMapIORef
+        structs <- getStructsToSave store graphStates nacInfoMapIORef
+        saveFile structs saveProject fileName window True -- returns True if saved the file
+
+prepToExport :: Gtk.TreeStore
+             -> IORef (M.Map Int32 (EditorState, ChangeStack, ChangeStack))
+             -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
+             -> IO (Either String (Grammar (TGM.TypedGraphMorphism Info Info)))
+prepToExport store graphStates nacInfoMapIORef = do
+  sts <- readIORef graphStates
+
+  let (tes,_,_) = fromJust $ M.lookup 0 sts
+      (hes,_,_) = fromJust $ M.lookup 1 sts
+      tg = editorGetGraph tes
+      hg = editorGetGraph hes
+
+  rules <- getRules store graphStates nacInfoMapIORef
+  let rulesNames = map (\(_,_,name) -> name) rules
+      rulesNnacs = map (\(r,ns,_) -> (r,ns)) rules
+  
+  let efstOrderGG = makeGrammar tg hg rulesNnacs rulesNames
+  return efstOrderGG
+
+
+
+ 
+
+
 
 -- update the active typegraph if the corresponding diagraph is valid, set it as empty if not
 updateTG :: IORef EditorState 
@@ -1790,24 +1874,7 @@ genTreeId (Tree.Node x f) i = (Tree.Node i f', i')
     i' = (maximum (fmap maximum f')) + 1
 
 
-prepToExport :: Gtk.TreeStore
-             -> IORef (M.Map Int32 (EditorState, ChangeStack, ChangeStack))
-             -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
-             -> IO (Either String (Grammar (TGM.TypedGraphMorphism Info Info)))
-prepToExport store graphStates nacInfoMapIORef = do
-  sts <- readIORef graphStates
 
-  let (tes,_,_) = fromJust $ M.lookup 0 sts
-      (hes,_,_) = fromJust $ M.lookup 1 sts
-      tg = editorGetGraph tes
-      hg = editorGetGraph hes
-
-  rules <- getRules store graphStates nacInfoMapIORef
-  let rulesNames = map (\(_,_,name) -> name) rules
-      rulesNnacs = map (\(r,ns,_) -> (r,ns)) rules
-  
-  let efstOrderGG = makeGrammar tg hg rulesNnacs rulesNames
-  return efstOrderGG
 
 afterSave :: Gtk.TreeStore 
           -> Gtk.Window 
@@ -1834,29 +1901,3 @@ afterSave store window graphStates (changedProject, changedGraph, lastSavedState
             Just fn -> set window [#title := T.pack ("Verigraph-GUI - " ++ fn)]
 
 
--- auxiliar function to check if the project was changed
--- it does the checking and if no, ask the user if them want to save.
--- returns True if there's no changes, if the user don't wanted to save or if he wanted and the save operation was successfull
--- returns False if the user wanted to save and the save operation failed or opted to cancel.
-confirmOperation :: Gtk.Window 
-                 -> Gtk.TreeStore 
-                 -> IORef Bool
-                 -> IORef EditorState
-                 -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
-                 -> IORef (Maybe String)
-                 -> UndoRedoIORefs
-                 -> StoreIORefs
-                 -> IO Bool
-confirmOperation window store changedProject st nacInfoMapIORef fileName undoRedoIORefs storeIORefs@(graphStates,_,_,_)= do 
-  changed <- readIORef changedProject
-  response <- if changed
-    then createConfirmDialog window "The project was changed, do you want to save?"
-    else return Gtk.ResponseTypeNo
-  case response of
-    Gtk.ResponseTypeCancel -> return False
-    r -> case r of
-      Gtk.ResponseTypeNo -> return True
-      Gtk.ResponseTypeYes -> do
-        storeCurrentES window st undoRedoIORefs storeIORefs nacInfoMapIORef
-        structs <- getStructsToSave store graphStates nacInfoMapIORef
-        saveFile structs saveProject fileName window True -- returns True if saved the file

@@ -78,31 +78,23 @@ startGUI = do
   --------  IORefs  -----------------------------------------------------------------------------------------------------------
   -----------------------------------------------------------------------------------------------------------------------------
 
-  -- variables used for edition
-  st              <- newIORef emptyES -- actual state: all the necessary info to draw the graph
+  -- variables used for edition/visualization
+  st              <- newIORef emptyES -- current state: the necessary info to draw the graph
   oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
-  squareSelection <- newIORef Nothing -- selection box : Maybe (x,y,w,h)
+  squareSelection <- newIORef Nothing -- selection box : Maybe (x1,y1,x2,y2)
   movingGI        <- newIORef False -- if the user started moving some object - necessary to add a position to the undoStack
   let basicEditIORefs = (st, oldPoint, squareSelection, movingGI)
 
-  -- copy/paste
-  clipboard       <- newIORef DG.empty -- clipboard - DiaGraph
-
-  -- variables used to edit visual elements of type graphs
-  currentShape    <- newIORef NCircle -- the shape that all new nodes must have
-  currentStyle    <- newIORef ENormal -- the style that all new edges must have
-  currentC        <- newIORef (1,1,1) -- the color to init new nodes
-  currentLC       <- newIORef (0,0,0) -- the color to init new edges and the line and text of new nodes
-  let layoutIORefs = (currentShape, currentStyle, currentC, currentLC)
-
-  -- variables to store multiple graphs        
-  -- map of states foreach graph in the editor, containing undo and redo stacks foreach graph
+  
+  -- variables to store the multiple graphs of the grammar
+  -- map of states foreach graph of the grammar, containing undo and redo stacks foreach graph
   graphStates     <- newIORef (M.empty :: M.Map Int32 (EditorState, ChangeStack, ChangeStack) )
-  currentPath     <- newIORef [0] -- index of path to current graph being edited
-  currentGraph    <- newIORef (0 :: Int32) -- index of the current graph being edited
+  currentPath     <- newIORef [0] -- indexes of the path of the current graph in the TreeStore
+  currentGraph    <- newIORef (0 :: Int32) -- index of the current graph
   {- number specifying the type of the current graph 
-     (see possible values in the module GUI.Editor.Helper.TreeStore, lines 52 - 61) -}
-  currentGraphType <- newIORef (1 :: Int32) 
+     (see possible values in the module GUI.Editor.Helper.TreeStore, lines 52 - 61) 
+  -}
+  currentGraphType <- newIORef (1 :: Int32)
   writeIORef graphStates $ M.fromList [(0, (emptyES,[],[])), (1, (emptyES, [], [])), (2, (emptyES, [], []))]
   let storeIORefs = (graphStates,currentPath,currentGraph,currentGraphType)
 
@@ -110,7 +102,7 @@ startGUI = do
   undoStack       <- newIORef ([] :: ChangeStack )
   redoStack       <- newIORef ([] :: ChangeStack )
   let undoRedoIORefs = (undoStack, redoStack)
-
+  
   -- variables to keep track of changes
   changedProject  <- newIORef False -- set this flag as True when the graph is changed somehow
   changedGraph    <- newIORef [False] -- when modify a graph, set the flag in the 'currentGraph' to True
@@ -120,27 +112,10 @@ startGUI = do
   -- file name of the new editor project
   fileName        <- newIORef (Nothing :: Maybe String) -- name of the opened file
 
-  -- the typeGraph being used as base for other graphs
+  -- the type graph being used as base for the typed graphs
   activeTypeGraph     <- newIORef G.empty  
 
-  -- variabels for typeInference
-  {-  
-      Possible types that a node can have in a typed graph.
-      Each node type is identified by a string 
-       and specifies a pair with a NodeGI and the position of the entry in the comboBox 
-  -}
-  possibleNodeTypes   <- newIORef ( M.empty :: M.Map String (NodeGI, Int32))
-  {-  
-      Possible types that an edge can have in a typed graph.
-      Each edge type is identified by a string and specifies a pair with a map of EdgeGI, 
-       which keys are a pair of Strings (Source, Target), and the position in the comboBox
-  -}
-  possibleEdgeTypes   <- newIORef ( M.empty :: M.Map String (M.Map (String, String) EdgeGI, Int32))
-  -- Subset of possible Edge Types for selected edges with changed positions in the combobox
-  possibleSelectableEdgeTypes <- newIORef (M.empty :: M.Map String (M.Map (String, String) EdgeGI, Int32))
-  currentNodeType     <- newIORef ( Nothing :: Maybe String)
-  currentEdgeType     <- newIORef ( Nothing :: Maybe String)
-  let typeInferenceIORefs = (possibleNodeTypes, possibleEdgeTypes, possibleSelectableEdgeTypes, currentNodeType, currentEdgeType)
+  
 
   -- variables to specify NACs
   -- Diagraph from the rule - togetter with lhs it make the editor state
@@ -166,10 +141,9 @@ startGUI = do
   -- set the menubar
   let [newm,opn,svn,sva,eggx,evgg,svg,opg] = fileItems
       [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
-      [zin,zut,z50,zdf,z150,z200,vdf,orv] = viewItems
+      [zin,zut,z50,zdf,z150,z200,vdf] = viewItems
       [cpa] = analysisItems
       [hlp,abt] = helpItems
-  Gtk.widgetSetSensitive orv False
   
 
   -- init an model to display in the tree panel --------------------------------
@@ -178,8 +152,8 @@ startGUI = do
   
   -- start editor module
   editorPane <- startEditor  window fileItems editItems viewItems store
-                              basicEditIORefs clipboard layoutIORefs storeIORefs undoRedoIORefs changesIORefs
-                              fileName activeTypeGraph typeInferenceIORefs nacIORefs
+                              basicEditIORefs storeIORefs undoRedoIORefs changesIORefs
+                              fileName activeTypeGraph nacIORefs
 
   Gtk.boxPackStart mainBox editorPane True True 0
   -- show window
@@ -191,56 +165,6 @@ startGUI = do
   ----------------------------------------------------------------------------------------------------------------------------
   
   -- event bindings for the menu toolbar -------------------------------------------------------------------------------------
-  -- View Menu ---------------------------------------------------------------------------------------------------------------
-
-  -- open rule viewer
-  orv `on` #activate $ do
-    gt <- readIORef currentGraphType
-    if gt == 3
-      then do
-        g <- readIORef st >>= \es -> return $ editorGetGraph es
-        (lhs,k,rhs) <- return $ graphToRuleGraphs g
-        gi <- readIORef st >>= return . editorGetGI
-        tg <- readIORef activeTypeGraph
-
-        --change the dimensions of each node
-        context <- Gtk.widgetGetPangoContext rvlCanvas
-        nodesGiM <- updateNodesGiDims (fst gi) g context
-
-        -- update the elements positions
-        let selectedLhs = map (fromEnum . nodeId) $ nodes lhs
-            selectedRhs = map (fromEnum . nodeId) $ nodes rhs
-            nodesGiMLhs = M.filterWithKey (\k _ -> k `elem` selectedLhs) nodesGiM
-            nodesGiMRhs = M.filterWithKey (\k _ -> k `elem` selectedRhs) nodesGiM
-            getMinX gi = (fst $ position gi) - (maximum [fst $ dims gi, snd $ dims gi])
-            getMinY gi = (snd $ position gi) - (maximum [fst $ dims gi, snd $ dims gi])
-            minXL = minimum $ map getMinX $ M.elems nodesGiMLhs
-            minYL = minimum $ map getMinY $ M.elems nodesGiMLhs
-            minXR = minimum $ map getMinX $ M.elems nodesGiMRhs
-            minYR = minimum $ map getMinY $ M.elems nodesGiMRhs
-            upd (x,y) (minX, minY) = (x-minX+20, y-minY+20)
-            nodesGiML = M.map (\gi -> nodeGiSetPosition (upd (position gi) (minXL, minYL)) gi) nodesGiMLhs
-            nodesGiMR = M.map (\gi -> nodeGiSetPosition (upd (position gi) (minXR, minYR)) gi) nodesGiMRhs
-
-        -- get the name of the current rule
-        path <- readIORef currentPath >>= Gtk.treePathNewFromIndices
-        (valid, iter) <- Gtk.treeModelGetIter store path
-        name <- if valid
-                then Gtk.treeModelGetValue store iter 0 >>= (\n -> fromGValue n :: IO (Maybe String)) >>= return . T.pack . fromJust
-                else return "ruleName should be here"
-
-        writeIORef rvkIOR k
-        modifyIORef rvlesIOR (editorSetGraph lhs . editorSetGI (nodesGiML, snd gi))
-        modifyIORef rvresIOR (editorSetGraph rhs . editorSetGI (nodesGiMR, snd gi))
-        Gtk.labelSetText rvNameLabel name
-        writeIORef rvtgIOR tg
-
-        Gtk.widgetQueueDraw rvlCanvas
-        Gtk.widgetQueueDraw rvrCanvas
-
-        #showAll rvWindow
-      else return ()
-
 
   -- Analysis Menu -----------------------------------------------------------------------------------------------------------
   cpa `on` #activate $ do
