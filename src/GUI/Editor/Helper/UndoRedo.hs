@@ -7,6 +7,9 @@ module GUI.Editor.Helper.UndoRedo(
 )where
 
 import Data.IORef
+import Data.Int
+import qualified Data.Map as M
+import Data.Maybe
 
 import GUI.Data.DiaGraph
 import GUI.Data.EditorState
@@ -15,58 +18,74 @@ import GUI.Data.Nac
 type ChangeStack = [(DiaGraph,Maybe MergeMapping)]
 
 -- | Add a state to the undo stack
-stackUndo :: IORef ChangeStack
-          -> IORef ChangeStack
+stackUndo :: IORef (M.Map Int32 ChangeStack)
+          -> IORef (M.Map Int32 ChangeStack)
+          -> IORef Int32
           -> EditorState
           -> Maybe MergeMapping
           -> IO ()
-stackUndo undo redo es mergeM = do
+stackUndo undoStack redoStack indexIORef es mergeM = do
   let g = editorGetGraph es
       gi = editorGetGI es
-  modifyIORef undo (\u -> ((g,gi), mergeM):u )
-  modifyIORef redo (\_ -> [])
+  undoStackM <- readIORef undoStack
+  index <- readIORef indexIORef
+  modifyIORef undoStack $ M.insert index $ ((g,gi), mergeM):( fromMaybe [] $ M.lookup index undoStackM )
+  modifyIORef redoStack $ M.insert index []
 
 
 -- | restore the last state stored in the undo stack and add the current state to the redo stack
-applyUndo :: IORef ChangeStack
-          -> IORef ChangeStack
+applyUndo :: IORef (M.Map Int32 ChangeStack)
+          -> IORef (M.Map Int32 ChangeStack)
+          -> IORef Int32
           -> IORef EditorState
           -> IORef (Maybe MergeMapping)
           -> IO ()
-applyUndo undoStack redoStack st mergeMappingIORef = do
+applyUndo undoStack redoStack indexIORef st mergeMappingIORef = do
+  undoStackM <- readIORef undoStack
+  redoStackM <- readIORef redoStack
+  index <- readIORef indexIORef
   es <- readIORef st
-  undo <- readIORef undoStack
-  redo <- readIORef redoStack
   mergeM <- readIORef mergeMappingIORef
+
   let apply [] r es = ([], r, es, Nothing)
       apply (((g,gi),m):u) r es = (u, ((eg,egi), mergeM):r, editorSetGI gi . editorSetGraph g $ es, m)
                             where
                               eg = editorGetGraph es
                               egi = editorGetGI es
-      (nu, nr, nes, nm) = apply undo redo es
-  writeIORef undoStack nu
-  writeIORef redoStack nr
-  writeIORef st nes
-  writeIORef mergeMappingIORef nm
+
+  let undoS = fromMaybe [] $ M.lookup index undoStackM
+      redoS = fromMaybe [] $ M.lookup index redoStackM
+      (newUndoS, newRedoS, newES, newMergeMapping) = apply undoS redoS es
+  modifyIORef undoStack $ M.insert index newUndoS
+  modifyIORef redoStack $ M.insert index newRedoS
+  writeIORef st newES
+  writeIORef mergeMappingIORef newMergeMapping
 
 -- | restore the last state stored in the redo stack and add the current state to the undo stack
-applyRedo :: IORef ChangeStack
-          -> IORef ChangeStack
+applyRedo :: IORef (M.Map Int32 ChangeStack)
+          -> IORef (M.Map Int32 ChangeStack)
+          -> IORef Int32
           -> IORef EditorState
           -> IORef (Maybe MergeMapping)
           -> IO ()
-applyRedo undoStack redoStack st mergeMappingIORef = do
-  undo <- readIORef undoStack
-  redo <- readIORef redoStack
+applyRedo undoStack redoStack indexIORef st mergeMappingIORef = do
+  undoStackM <- readIORef undoStack
+  redoStackM <- readIORef redoStack
+  index <- readIORef indexIORef
   es <- readIORef st
   mergeM <- readIORef mergeMappingIORef
+
+
   let apply u [] es = (u, [], es, Nothing)
       apply u (((g,gi),m):r) es = (((eg,egi), mergeM):u , r, editorSetGI gi . editorSetGraph g $ es, m)
                             where
                               eg = editorGetGraph es
                               egi = editorGetGI es
-      (nu, nr, nes, nm) = apply undo redo es
-  writeIORef undoStack nu
-  writeIORef redoStack nr
-  writeIORef st nes
-  writeIORef mergeMappingIORef nm
+
+  let undoS = fromMaybe [] $ M.lookup index undoStackM
+      redoS = fromMaybe [] $ M.lookup index redoStackM
+      (newUndoS, newRedoS, newES, newMergeMapping) = apply undoS redoS es
+  modifyIORef undoStack $ M.insert index newUndoS
+  modifyIORef redoStack $ M.insert index newRedoS
+  writeIORef st newES
+  writeIORef mergeMappingIORef newMergeMapping

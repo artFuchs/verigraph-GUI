@@ -126,7 +126,7 @@ getTreeStoreValues store iter = do
 
 -- | gets a tree of SaveInfo out of a TreeStore
 getStructsToSave :: Gtk.TreeStore 
-                 -> IORef (M.Map Int32 (EditorState, a, a))
+                 -> IORef (M.Map Int32 EditorState)
                  -> IORef (M.Map Int32 (DiaGraph,MergeMapping))
                  -> IO (Tree.Forest SaveInfo)
 getStructsToSave store graphStates nacInfoMapIORef = do
@@ -140,11 +140,11 @@ getStructsToSave store graphStates nacInfoMapIORef = do
       let structs = map
                     (fmap (\(t, (name, nid, active)) -> case t of
                                 0 -> Topic name
-                                1 -> let (es,_,_) = fromJust $ M.lookup nid states
+                                1 -> let es = fromJust $ M.lookup nid states
                                      in TypeGraph name es
-                                2 -> let (es,_,_) = fromJust $ M.lookup nid states
+                                2 -> let es = fromJust $ M.lookup nid states
                                      in HostGraph name es
-                                3 -> let (es,_,_) = fromJust $ M.lookup nid states
+                                3 -> let es = fromJust $ M.lookup nid states
                                      in RuleGraph name es active
                                 4 -> let (nacdg,mapping) = fromJust $ M.lookup nid nacInfoMap
                                      in NacGraph name (nacdg,mapping)
@@ -154,7 +154,7 @@ getStructsToSave store graphStates nacInfoMapIORef = do
 -- | Get the Diagraph stored in the parent position relative to the given path
 getParentDiaGraph :: Gtk.TreeStore 
                   -> [Int32] 
-                  -> IORef (M.Map Int32 (EditorState, a, a)) 
+                  -> IORef (M.Map Int32 EditorState) 
                   -> IO DiaGraph
 getParentDiaGraph store pathIndices graphStates = do
   path <- Gtk.treePathNewFromIndices pathIndices
@@ -169,7 +169,7 @@ getParentDiaGraph store pathIndices graphStates = do
       state <- return $ M.lookup index states
       case state of
         Nothing -> return DG.empty
-        Just (es,_,_) -> return (lhs, (ngi,egi))
+        Just es -> return (lhs, (ngi,egi))
                     where (lhs,_,_) = graphToRuleGraphs $ editorGetGraph es
                           ngi = M.filterWithKey (\k a -> (NodeId k) `elem` (nodeIds lhs)) $ fst (editorGetGI es)
                           egi = M.filterWithKey (\k a -> (EdgeId k) `elem` (edgeIds lhs)) $ snd (editorGetGI es)
@@ -200,8 +200,8 @@ getNacList store iter nacInfoMap lhs = do
 -- Returns a list of graphs relative to rules, along with their NACs and names, from the TreeStore.
 -- The iter points to the first rule from the list
 getRuleList :: Gtk.TreeStore
-            ->  Gtk.TreeIter
-            -> M.Map Int32 (EditorState, a, a)
+            -> Gtk.TreeIter
+            -> M.Map Int32 EditorState
             -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
             -> IO [(Graph Info Info, [NAC], String)]
 getRuleList store iter gStates nacInfoMapIORef = do
@@ -211,7 +211,7 @@ getRuleList store iter gStates nacInfoMapIORef = do
   ans <- case (active, M.lookup index gStates) of
     (False, _) -> return []
     (True, Nothing) -> return []
-    (True, Just (es, _, _)) -> do
+    (True, Just es) -> do
       (hasNac,nacIter) <- Gtk.treeModelIterChildren store (Just iter)
       let rule = editorGetGraph es
       nacs <- case hasNac of
@@ -230,7 +230,7 @@ getRuleList store iter gStates nacInfoMapIORef = do
 
 -- | Returns the rules stored in a TreeStore.
 getRules :: Gtk.TreeStore
-         -> IORef (M.Map Int32 (EditorState, a, a))
+         -> IORef (M.Map Int32 EditorState)
          -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
          -> IO [(Graph Info Info, [NAC], String)]
 getRules store gStatesIORef nacInfoMapIORef = do
@@ -304,7 +304,7 @@ setChangeFlags window store changedProject changedGraph currentPath currentGraph
 
 -- Analise a graph and change the flags that inform if a graph is valid/invalid
 setValidFlag :: Gtk.TreeStore -> Gtk.TreeIter 
-             -> M.Map Int32 (EditorState, a, a) 
+             -> M.Map Int32 EditorState 
              -> Graph Info Info 
              -> IO ()
 setValidFlag store iter states tg = do
@@ -312,7 +312,7 @@ setValidFlag store iter states tg = do
   mst <- return $ M.lookup index states
   g <- case mst of
     Nothing -> return G.empty
-    Just (es, u, r) -> return $ editorGetGraph es
+    Just es -> return $ editorGetGraph es
   let valid = isGraphValid g tg
   gvValid <- toGValue valid
   Gtk.treeStoreSetValue store iter 5 gvValid
@@ -321,7 +321,7 @@ setValidFlag store iter states tg = do
 -- should be called when occur an update to the typeGraph
 setValidFlags :: Gtk.TreeStore 
                -> Graph Info Info 
-               -> M.Map Int32 (EditorState, a, a) 
+               -> M.Map Int32 EditorState
                -> IO ()
 setValidFlags store tg states = do
   Gtk.treeModelForeach store $ \model path iter -> do
@@ -382,7 +382,7 @@ updateNacs store iter lhs nacInfoMapIORef context = do
 -- if the GraphStore relative to the rule is not marked as changed, then just pass to the next rule.
 updateRuleNacs :: Gtk.TreeStore
                -> Gtk.TreeIter
-               -> IORef (M.Map Int32 (EditorState, a, a))
+               -> IORef (M.Map Int32 EditorState)
                -> IORef (M.Map Int32 NacInfo)
                -> P.Context
                -> IO ()
@@ -399,7 +399,7 @@ updateRuleNacs store iter graphStatesIORef nacInfoMapIORef context = do
           states <- readIORef graphStatesIORef
           let (error,rule) = case M.lookup ruleIndex states of
                   Nothing -> (True,G.empty)
-                  Just (es,_,_) -> (False, editorGetGraph es)
+                  Just es -> (False, editorGetGraph es)
               (lhs,_,_) = graphToRuleGraphs rule
           if error
             then return ()
@@ -411,7 +411,7 @@ updateRuleNacs store iter graphStatesIORef nacInfoMapIORef context = do
 
 -- | apply applyLhsChangesToNac to the nacs of all rules in the given TreeStore
 updateAllNacs :: Gtk.TreeStore
-              -> IORef (M.Map Int32 (EditorState, a, a))
+              -> IORef (M.Map Int32 EditorState)
               -> IORef (M.Map Int32 NacInfo)
               -> P.Context
               -> IO ()

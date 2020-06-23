@@ -87,21 +87,16 @@ startGUI = do
 
   
   -- variables to store the multiple graphs of the grammar
-  -- map of states foreach graph of the grammar, containing undo and redo stacks foreach graph
-  graphStates     <- newIORef (M.empty :: M.Map Int32 (EditorState, ChangeStack, ChangeStack) )
+  -- map of graph ids to graphs, containing all the graphs of the grammar
+  graphStates     <- newIORef (M.empty :: M.Map Int32 EditorState)
   currentPath     <- newIORef [0] -- indexes of the path of the current graph in the TreeStore
   currentGraph    <- newIORef (0 :: Int32) -- index of the current graph
   {- number specifying the type of the current graph 
      (see possible values in the module GUI.Editor.Helper.TreeStore, lines 52 - 61) 
   -}
   currentGraphType <- newIORef (1 :: Int32)
-  writeIORef graphStates $ M.fromList [(0, (emptyES,[],[])), (1, (emptyES, [], [])), (2, (emptyES, [], []))]
+  writeIORef graphStates $ M.fromList [(a,emptyES) | a <- [0 .. 2]]
   let storeIORefs = (graphStates,currentPath,currentGraph,currentGraphType)
-
-  -- variables for undo/redo
-  undoStack       <- newIORef ([] :: ChangeStack )
-  redoStack       <- newIORef ([] :: ChangeStack )
-  let undoRedoIORefs = (undoStack, redoStack)
   
   -- variables to keep track of changes
   changedProject  <- newIORef False -- set this flag as True when the graph is changed somehow
@@ -152,7 +147,7 @@ startGUI = do
   
   -- start editor module
   editorPane <- startEditor  window fileItems editItems viewItems store
-                              basicEditIORefs storeIORefs undoRedoIORefs changesIORefs
+                              basicEditIORefs storeIORefs changesIORefs
                               fileName activeTypeGraph nacIORefs
 
   Gtk.boxPackStart mainBox editorPane True True 0
@@ -173,7 +168,7 @@ startGUI = do
   on cpaRunBtn #pressed $ do
     efstOrderGG <- prepToExport store graphStates nacInfoMapIORef
     sts <- readIORef graphStates
-    let (tes,_,_) = fromJust $ M.lookup 0 sts
+    let tes = fromJust $ M.lookup 0 sts
         tg = editorGetGraph tes
     case efstOrderGG of
       Left msg -> showError window (T.pack msg)
@@ -205,7 +200,7 @@ startGUI = do
   -- event bindings for the main window --------------------------------------------------------------------------------------
   -- when click in the close button, the application must close
   on window #deleteEvent $ return $ do
-    continue <- confirmOperation window store changedProject st nacInfoMapIORef fileName undoRedoIORefs storeIORefs
+    continue <- confirmOperation window store changedProject st nacInfoMapIORef fileName storeIORefs
     if continue
       then do
         Gtk.mainQuit
