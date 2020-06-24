@@ -55,7 +55,6 @@ import GUI.Editor.Helper.TypeInfer
 import GUI.Editor.Helper.UndoRedo
 import GUI.Editor.Render.GraphDraw
 import GUI.Editor.UI.UIBuilders
-import GUI.Editor.UI.RuleViewer
 import GUI.Editor.UI.UpdateInspector
 import GUI.Data.Nac
 import GUI.Helper.List
@@ -69,6 +68,7 @@ import Category.TypedGraphRule (RuleMorphism)
 import Rewriting.DPO.TypedGraph (emptyGraphRule)
 import GUI.Analysis.CriticalPairAnalysis
 
+import GUI.HelpWindow
 
 
 -- | creates the Graphical User Interface and bind actions to events
@@ -130,7 +130,6 @@ startGUI = do
 
   -- build auxiliar windows
   helpWindow <- buildHelpWindow
-  (rvWindow, rvNameLabel, rvlCanvas, rvrCanvas, rvlesIOR, rvresIOR, rvtgIOR, rvkIOR) <- createRuleViewerWindow
   (cpaWindow, cpaEssentialCheckBtn, cpaConfCheckBtn, cpaDependCheckBtn, cpaRunBtn, cpaResultBuffer) <- buildCpaWindow window
 
   -- set the menubar
