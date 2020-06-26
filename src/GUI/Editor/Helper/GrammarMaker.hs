@@ -3,7 +3,6 @@ module GUI.Editor.Helper.GrammarMaker (
 , graphToRuleGraphs
 , makeTypeGraph
 , makeTypedGraph
-, formatNac
 , getNacPushout
 , nodeToJust
 , edgeToJust
@@ -67,14 +66,6 @@ graphToRuleGraphs g = (lhs, k, rhs)
     rhsEdges = filter (\e -> infoOperation (edgeInfo e) == Create) edgs ++ kEdges
     rhs = fromNodesAndEdges rhsNodes rhsEdges
 
-
--- | equivalent of fst . getNacPushout
-formatNac :: TypedGraph Info Info
-          -> TypedGraph Info Info
-          -> (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
-          -> TypedGraphMorphism Info Info
-formatNac nac lhs (nmap, emap) = fst $ getNacPushout nac lhs (nmap, emap)
-
 -- | given two TypedGraphs - nac and lhs
 -- and a tuple of maps of ids - (nmap, emap),
 -- calculate the pushout of nac <- k -> lhs, where
@@ -134,7 +125,7 @@ graphToRule ruleGraph nacs typeGraph = Production lhsTgm rhsTgm nmsTgm
 
     lhsTgm = TGM.fromGraphsAndLists km lm leftNodeMapping leftEdgeMapping
     rhsTgm = TGM.fromGraphsAndLists km rm rightNodeMapping rightEdgeMapping
-    nmsTgm = map (\(n,m) -> formatNac n lm m) nms
+    nmsTgm = map (\(n,m) -> fst $ getNacPushout n lm m) nms
 
     leftNodeMapping = filter (\(n1,n2) -> n1 == n2) $ mkpairs (nodeIds k) (nodeIds lhs)
     leftEdgeMapping = filter (\(n1,n2) -> n1 == n2) $ mkpairs (edgeIds k) (edgeIds lhs)

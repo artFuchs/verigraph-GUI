@@ -1,10 +1,13 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 module GUI.HelpWindow (
   buildHelpWindow
+, buildAboutDialog
 )where
 
 import qualified GI.Gtk as Gtk
 import           Data.GI.Base
+import           Data.Maybe
+import           Data.GI.Base.ManagedPtr (unsafeCastTo)
 
 buildHelpWindow :: IO Gtk.Window
 buildHelpWindow = do
@@ -73,3 +76,13 @@ buildHelpWindow = do
       return True
 
   return helpWindow
+
+buildAboutDialog :: IO ()
+buildAboutDialog = do
+  builder <- new Gtk.Builder []
+  Gtk.builderAddFromFile builder "./Resources/aboutWindow.glade"
+  dialog  <- Gtk.builderGetObject builder "aboutWin" >>= unsafeCastTo Gtk.AboutDialog. fromJust
+  #showAll dialog
+  Gtk.dialogRun dialog
+  Gtk.widgetDestroy dialog
+  return ()

@@ -157,7 +157,7 @@ createEdges es tgtNode info autoNaming estyle ecolor = editorSetGraph newGraph .
         (newGraph, newegiM, createdEdges) = foldr create (graph, egiM, []) selectedNodes
         create = (\nid (g,giM,eids) -> let
                                     eid = head $ newEdges g
-                                    info' = if infoLabel info == (Label "") && autoNaming then infoSetLabel info (show eid) else info
+                                    info' = if infoLabel info == (Label "") && autoNaming then infoSetLabel info (show $ fromEnum eid) else info
                                     ng = insertEdgeWithPayload eid nid tgtNode info' g
                                     newPos = if (tgtNode == nid) then newLoopPos nid (g,(ngiM,egiM)) else newEdgePos nid tgtNode (g,(ngiM,egiM))
                                     negi = EdgeGI {cPosition = newPos, color = ecolor, style = estyle}

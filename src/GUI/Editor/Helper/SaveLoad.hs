@@ -36,7 +36,7 @@ import XML.GGXWriter
 import GUI.Data.GraphicalInfo
 import GUI.Data.EditorState
 import GUI.Data.Info
-import GUI.Editor.UI.UIBuilders
+import GUI.Dialogs
 import GUI.Editor.Helper.GrammarMaker
 
 

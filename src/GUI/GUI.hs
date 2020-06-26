@@ -10,14 +10,15 @@ import qualified GI.Pango as P
 import Data.GI.Base
 import Data.GI.Base.GValue
 import Data.GI.Base.GType
-import Control.Monad
-import Control.Monad.IO.Class
-import Control.Monad.Zip
+import Data.GI.Base.ManagedPtr (unsafeCastTo)    
 import Graphics.Rendering.Cairo
 import Graphics.Rendering.Pango.Layout
 import Graphics.Rendering.Pango
 
 -- haskell data modules
+import Control.Monad
+import Control.Monad.IO.Class
+import Control.Monad.Zip
 import Data.IORef
 import Data.List
 import Data.Int
@@ -36,30 +37,22 @@ import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
 import qualified Data.TypedGraph.Morphism as TGM
 
--- editor modules
-import GUI.Data.GraphicalInfo
-import GUI.Data.Info hiding (empty)
+-- Verigraph-GUI modules
+import           GUI.Data.GraphicalInfo
+import           GUI.Data.Info hiding (empty)
 import qualified GUI.Data.Info as I
-import GUI.Data.DiaGraph hiding (empty)
-import GUI.Data.EditorState
+import           GUI.Data.DiaGraph hiding (empty)
+import           GUI.Dialogs
+import           GUI.Data.EditorState
 import qualified GUI.Data.DiaGraph as DG
-import GUI.Render.Render
-import GUI.Editor
-import GUI.Editor.Helper.Clipboard
-import GUI.Editor.Helper.GrammarMaker
-import GUI.Editor.Helper.GraphicalInfo
-import GUI.Editor.Helper.Nac
-import GUI.Editor.Helper.SaveLoad
-import GUI.Editor.Helper.TreeStore
-import GUI.Editor.Helper.TypeInfer
-import GUI.Editor.Helper.UndoRedo
-import GUI.Editor.Render.GraphDraw
-import GUI.Editor.UI.UIBuilders
-import GUI.Editor.UI.UpdateInspector
-import GUI.Data.Nac
-import GUI.Helper.List
-import GUI.Helper.Geometry
-import GUI.Helper.GraphValidation
+import           GUI.Data.Nac
+import           GUI.Editor
+import           GUI.Editor.Helper.GrammarMaker
+import           GUI.Editor.Helper.TreeStore
+import           GUI.Helper.List
+import           GUI.Helper.Geometry
+import           GUI.Helper.GraphValidation
+import           GUI.Render.Render
 
 -- modules needed for analysis
 import qualified Exec.GlobalOptions        as EGO
@@ -118,6 +111,9 @@ startGUI = do
   mergeMappingIORef <- newIORef (Nothing :: Maybe MergeMapping) -- current merge mapping. important to undo/redo with nacs
   let nacIORefs = (nacInfoMapIORef, mergeMappingIORef)  
 
+
+
+
   -----------------------------------------------------------------------------------------------------------------------------
   --------  GUI DEFINITION  ---------------------------------------------------------------------------------------------------
   -----------------------------------------------------------------------------------------------------------------------------
@@ -154,13 +150,14 @@ startGUI = do
   #showAll window
                     
 
+
   ----------------------------------------------------------------------------------------------------------------------------
   --------  EVENT BINDINGS  --------------------------------------------------------------------------------------------------
   ----------------------------------------------------------------------------------------------------------------------------
   
   -- event bindings for the menu toolbar -------------------------------------------------------------------------------------
 
-  -- Analysis Menu -----------------------------------------------------------------------------------------------------------
+  -- Analysis Menu 
   cpa `on` #activate $ do
     #showAll cpaWindow
         
@@ -188,7 +185,7 @@ startGUI = do
         Gtk.textBufferInsertAtCursor cpaResultBuffer (T.pack resStr) (-1)
         
 
-  -- Help Menu ---------------------------------------------------------------------------------------------------------------
+  -- Help Menu 
   -- help
   hlp `on` #activate $ do
     #showAll helpWindow
@@ -206,5 +203,67 @@ startGUI = do
         return False
       else return True
 
-  -- run the program ---------------------------------------------------------------------------------------------------------
+  -- start the Gtk main loop -------------------------------------------------------------------------------------------------
   Gtk.main
+
+
+
+
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------------
+-- GUI Definition ------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------------
+
+buildMainWindow :: IO ( Gtk.Window, Gtk.Box, [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem])
+buildMainWindow = do
+  builder <- new Gtk.Builder []
+  Gtk.builderAddFromFile builder "./Resources/window.glade"
+  window  <- Gtk.builderGetObject builder "window" >>= unsafeCastTo Gtk.Window . fromJust
+  mainBox <- Gtk.builderGetObject builder "mainBox" >>= unsafeCastTo Gtk.Box . fromJust
+  
+  -- menubar
+  menubar  <- Gtk.builderGetObject builder "menubar" >>= unsafeCastTo Gtk.MenuBar . fromJust
+
+  newItem <- Gtk.builderGetObject builder "new_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  openItem <- Gtk.builderGetObject builder "open_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  saveItem <- Gtk.builderGetObject builder "save_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  saveAsItem <- Gtk.builderGetObject builder "save_as_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  exportGGXItem <- Gtk.builderGetObject builder "export_ggx_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  exportVGGItem <- Gtk.builderGetObject builder "export_vgg_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  saveGraphItem <- Gtk.builderGetObject builder "save_graph_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  openGraphItem <- Gtk.builderGetObject builder "open_graph_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  let fileItems = [newItem,openItem,saveItem,saveAsItem,exportGGXItem,exportVGGItem,saveGraphItem,openGraphItem]
+
+  delItem <- Gtk.builderGetObject builder  "delete_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  undoItem <- Gtk.builderGetObject builder  "undo_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  redoItem <- Gtk.builderGetObject builder  "redo_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  copyItem <- Gtk.builderGetObject builder  "copy_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  pasteItem <- Gtk.builderGetObject builder  "paste_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  cutItem <- Gtk.builderGetObject builder  "cut_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  sallItem <- Gtk.builderGetObject builder  "sall_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  snodesItem <- Gtk.builderGetObject builder  "snodes_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  sedgesItem <- Gtk.builderGetObject builder  "sedges_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  mergeItem <- Gtk.builderGetObject builder  "merge_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  splitItem <- Gtk.builderGetObject builder  "split_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  let editItems = [delItem, undoItem,redoItem,copyItem,pasteItem,cutItem,sallItem,snodesItem,sedgesItem,mergeItem,splitItem]
+
+  zoomInItem <- Gtk.builderGetObject builder  "zoomin_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  zoomOutItem <- Gtk.builderGetObject builder  "zoomout_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  zoom50Item <- Gtk.builderGetObject builder  "zoom50_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  zoom100Item <- Gtk.builderGetObject builder  "zoom100_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  zoom150Item <- Gtk.builderGetObject builder  "zoom150_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  zoom200Item <- Gtk.builderGetObject builder  "zoom200_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  resetViewItem <- Gtk.builderGetObject builder  "resetview_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  let viewItems = [zoomInItem,zoomOutItem,zoom50Item,zoom100Item,zoom150Item,zoom200Item,resetViewItem]
+
+  cpaItem <- Gtk.builderGetObject builder "cpa_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  let analysisItems = [cpaItem]
+
+  helpItem <- Gtk.builderGetObject builder  "help_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  aboutItem <- Gtk.builderGetObject builder  "about_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  let helpItems = [helpItem, aboutItem]
+
+  return ( window, mainBox, fileItems, editItems, viewItems, analysisItems, helpItems)

@@ -2,14 +2,8 @@
 
 -- | This module contains the UI definition
 module GUI.Editor.UI.UIBuilders(
-  buildMainWindow
-, buildEditor
+  buildEditor
 , buildTreePanel
-, buildAboutDialog
-, showError
-, createSaveDialog
-, createLoadDialog
-, createConfirmDialog
 ) where
 
 import qualified GI.Gtk as Gtk
@@ -19,66 +13,7 @@ import Control.Monad.IO.Class
 import Data.Maybe
 import Data.GI.Base
 import qualified Data.Text as T
-import Data.GI.Base.ManagedPtr (unsafeCastTo)
-
-
-
--- load the main window containing the box and the window
-buildMainWindow :: IO ( Gtk.Window, Gtk.Box, [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem])
-buildMainWindow = do
-  builder <- new Gtk.Builder []
-  Gtk.builderAddFromFile builder "./Resources/window.glade"
-  window  <- Gtk.builderGetObject builder "window" >>= unsafeCastTo Gtk.Window . fromJust
-  mainBox <- Gtk.builderGetObject builder "mainBox" >>= unsafeCastTo Gtk.Box . fromJust
-  
-  -- menubar
-  menubar  <- Gtk.builderGetObject builder "menubar" >>= unsafeCastTo Gtk.MenuBar . fromJust
-
-  newItem <- Gtk.builderGetObject builder "new_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  openItem <- Gtk.builderGetObject builder "open_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  saveItem <- Gtk.builderGetObject builder "save_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  saveAsItem <- Gtk.builderGetObject builder "save_as_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  exportGGXItem <- Gtk.builderGetObject builder "export_ggx_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  exportVGGItem <- Gtk.builderGetObject builder "export_vgg_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  saveGraphItem <- Gtk.builderGetObject builder "save_graph_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  openGraphItem <- Gtk.builderGetObject builder "open_graph_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  let fileItems = [newItem,openItem,saveItem,saveAsItem,exportGGXItem,exportVGGItem,saveGraphItem,openGraphItem]
-
-  delItem <- Gtk.builderGetObject builder  "delete_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  undoItem <- Gtk.builderGetObject builder  "undo_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  redoItem <- Gtk.builderGetObject builder  "redo_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  copyItem <- Gtk.builderGetObject builder  "copy_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  pasteItem <- Gtk.builderGetObject builder  "paste_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  cutItem <- Gtk.builderGetObject builder  "cut_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  sallItem <- Gtk.builderGetObject builder  "sall_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  snodesItem <- Gtk.builderGetObject builder  "snodes_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  sedgesItem <- Gtk.builderGetObject builder  "sedges_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  mergeItem <- Gtk.builderGetObject builder  "merge_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  splitItem <- Gtk.builderGetObject builder  "split_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  let editItems = [delItem, undoItem,redoItem,copyItem,pasteItem,cutItem,sallItem,snodesItem,sedgesItem,mergeItem,splitItem]
-
-  zoomInItem <- Gtk.builderGetObject builder  "zoomin_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  zoomOutItem <- Gtk.builderGetObject builder  "zoomout_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  zoom50Item <- Gtk.builderGetObject builder  "zoom50_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  zoom100Item <- Gtk.builderGetObject builder  "zoom100_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  zoom150Item <- Gtk.builderGetObject builder  "zoom150_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  zoom200Item <- Gtk.builderGetObject builder  "zoom200_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  resetViewItem <- Gtk.builderGetObject builder  "resetview_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  let viewItems = [zoomInItem,zoomOutItem,zoom50Item,zoom100Item,zoom150Item,zoom200Item,resetViewItem]
-
-  cpaItem <- Gtk.builderGetObject builder "cpa_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  let analysisItems = [cpaItem]
-
-  helpItem <- Gtk.builderGetObject builder  "help_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  aboutItem <- Gtk.builderGetObject builder  "about_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  let helpItems = [helpItem, aboutItem]
-
-  return ( window, mainBox, fileItems, editItems, viewItems, analysisItems, helpItems)
-
--- load and build the editor widgets
-
-
-                      
+import Data.GI.Base.ManagedPtr (unsafeCastTo)       
                      
 buildEditor :: IO (Gtk.Paned, Gtk.Frame, Gtk.DrawingArea, Gtk.Entry, Gtk.Label
                   , ( Gtk.Box, Gtk.Box, Gtk.ColorButton, Gtk.Box, Gtk.ColorButton
@@ -183,69 +118,3 @@ buildTreePanel = do
   Gtk.boxPackStart mainBox btnNewN False False 0
 
   return (mainBox, treeview, rendererChanges, rendererProj, rendererActive, btnNewR, btnRmv, btnNewN)
-
-buildAboutDialog :: IO ()
-buildAboutDialog = do
-  builder <- new Gtk.Builder []
-  Gtk.builderAddFromFile builder "./Resources/aboutWindow.glade"
-  dialog  <- Gtk.builderGetObject builder "aboutWin" >>= unsafeCastTo Gtk.AboutDialog. fromJust
-  #showAll dialog
-  Gtk.dialogRun dialog
-  Gtk.widgetDestroy dialog
-  return ()
-
-
-
-showError :: Gtk.Window -> T.Text -> IO ()
-showError window msg = do
-  --dlgE <- messageDialogNew window [DialogDestroyWithParent] MessageError ButtonsOk msg
-  msgDialog <- new Gtk.MessageDialog [ #text := msg
-                                , #messageType := Gtk.MessageTypeError
-                                , #buttons := Gtk.ButtonsTypeOk
-                                , #transientFor := window
-                                , #destroyWithParent := True
-                                ]
-  Gtk.widgetShowAll msgDialog
-  Gtk.dialogRun msgDialog
-  Gtk.widgetDestroy msgDialog
-  return ()
-
-createSaveDialog :: Gtk.Window -> IO Gtk.FileChooserDialog
-createSaveDialog window = do
-  saveD <- new Gtk.FileChooserDialog [ #action := Gtk.FileChooserActionSave
-                                     , #createFolders := True
-                                     , #doOverwriteConfirmation := True
-                                     , #transientFor := window
-                                     , #destroyWithParent := True
-                                     ]
-  Gtk.dialogAddButton saveD "Save" (fromIntegral . fromEnum $ Gtk.ResponseTypeAccept)
-  Gtk.dialogAddButton saveD "Cancel" (fromIntegral . fromEnum $ Gtk.ResponseTypeReject)
-  return saveD
-
-createLoadDialog :: Gtk.Window -> IO Gtk.FileChooserDialog
-createLoadDialog window = do
-  loadD <- new Gtk.FileChooserDialog [ #action := Gtk.FileChooserActionOpen
-                                     , #createFolders := False
-                                     , #doOverwriteConfirmation := False
-                                     , #transientFor := window
-                                     , #destroyWithParent := True
-                                     ]
-  Gtk.dialogAddButton loadD "Open" (fromIntegral . fromEnum $ Gtk.ResponseTypeAccept)
-  Gtk.dialogAddButton loadD "Cancel" (fromIntegral . fromEnum $ Gtk.ResponseTypeReject)
-  return loadD
-
-createConfirmDialog :: Gtk.Window -> T.Text -> IO Gtk.ResponseType
-createConfirmDialog window msg = do
-  closeD <- new Gtk.MessageDialog
-            [ #text := msg
-            , #messageType := Gtk.MessageTypeWarning
-            , #buttons := Gtk.ButtonsTypeNone
-            , #transientFor := window
-            , #destroyWithParent := True
-            ]
-  Gtk.dialogAddButton closeD "Save" (fromIntegral . fromEnum $ Gtk.ResponseTypeYes)
-  Gtk.dialogAddButton closeD "Don't save" (fromIntegral . fromEnum $ Gtk.ResponseTypeNo)
-  Gtk.dialogAddButton closeD "Cancel" (fromIntegral . fromEnum $ Gtk.ResponseTypeCancel)
-  response <- Gtk.dialogRun closeD
-  Gtk.widgetDestroy closeD
-  return $ toEnum . fromIntegral $ response
