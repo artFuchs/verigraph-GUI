@@ -1,4 +1,6 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
+
+{-| Pop-up dialogs to inform errors or confirm operations such as save or open a project -}
 module GUI.Dialogs (
   showError,
   createSaveDialog,
@@ -10,6 +12,7 @@ import qualified GI.Gtk as Gtk
 import           Data.GI.Base
 import qualified Data.Text as T
 
+-- show a error dialog with a custom message
 showError :: Gtk.Window -> T.Text -> IO ()
 showError window msg = do
   --dlgE <- messageDialogNew window [DialogDestroyWithParent] MessageError ButtonsOk msg
@@ -24,6 +27,7 @@ showError window msg = do
   Gtk.widgetDestroy msgDialog
   return ()
 
+-- show a dialog to choose the save location of a file
 createSaveDialog :: Gtk.Window -> IO Gtk.FileChooserDialog
 createSaveDialog window = do
   saveD <- new Gtk.FileChooserDialog [ #action := Gtk.FileChooserActionSave
@@ -36,6 +40,7 @@ createSaveDialog window = do
   Gtk.dialogAddButton saveD "Cancel" (fromIntegral . fromEnum $ Gtk.ResponseTypeReject)
   return saveD
 
+-- show a dialog to choose a file to open
 createLoadDialog :: Gtk.Window -> IO Gtk.FileChooserDialog
 createLoadDialog window = do
   loadD <- new Gtk.FileChooserDialog [ #action := Gtk.FileChooserActionOpen
@@ -48,6 +53,7 @@ createLoadDialog window = do
   Gtk.dialogAddButton loadD "Cancel" (fromIntegral . fromEnum $ Gtk.ResponseTypeReject)
   return loadD
 
+-- show a dialog to confirm a operation in case the project was not saved
 createConfirmDialog :: Gtk.Window -> T.Text -> IO Gtk.ResponseType
 createConfirmDialog window msg = do
   closeD <- new Gtk.MessageDialog

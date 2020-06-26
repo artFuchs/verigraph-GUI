@@ -47,8 +47,8 @@ import           GUI.Data.EditorState
 import qualified GUI.Data.DiaGraph as DG
 import           GUI.Data.Nac
 import           GUI.Editor
-import           GUI.Editor.Helper.GrammarMaker
-import           GUI.Editor.Helper.TreeStore
+import           GUI.Helper.GrammarMaker
+import           GUI.Helper.TreeStore
 import           GUI.Helper.List
 import           GUI.Helper.Geometry
 import           GUI.Helper.GraphValidation
@@ -85,7 +85,7 @@ startGUI = do
   currentPath     <- newIORef [0] -- indexes of the path of the current graph in the TreeStore
   currentGraph    <- newIORef (0 :: Int32) -- index of the current graph
   {- number specifying the type of the current graph 
-     (see possible values in the module GUI.Editor.Helper.TreeStore, lines 52 - 61) 
+     (see possible values in the module GUI.Helper.TreeStore, lines 52 - 61) 
   -}
   currentGraphType <- newIORef (1 :: Int32)
   writeIORef graphStates $ M.fromList [(a,emptyES) | a <- [0 .. 2]]

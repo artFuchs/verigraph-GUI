@@ -1,3 +1,4 @@
+-- | Auxiliar functions to the edition of NACs graphs
 module GUI.Editor.Helper.Nac(
   joinNAC
 , remapElementsWithConflict
@@ -20,7 +21,7 @@ import GUI.Data.DiaGraph
 import GUI.Data.EditorState
 import GUI.Data.Info
 import GUI.Data.Nac
-import GUI.Editor.Helper.GrammarMaker
+import GUI.Helper.GrammarMaker
 import GUI.Editor.Helper.GraphicalInfo
 import GUI.Helper.List
 

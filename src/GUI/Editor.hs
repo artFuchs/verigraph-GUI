@@ -52,16 +52,16 @@ import           GUI.Data.Nac
 import           GUI.Dialogs
 import           GUI.Helper.List
 import           GUI.Helper.Geometry
+import           GUI.Helper.GrammarMaker
 import           GUI.Helper.GraphValidation
+import           GUI.Helper.TreeStore
 import           GUI.Render.Render
 
 -- Editor modules
 import GUI.Editor.Helper.Clipboard
-import GUI.Editor.Helper.GrammarMaker
 import GUI.Editor.Helper.GraphicalInfo
 import GUI.Editor.Helper.Nac
 import GUI.Editor.Helper.SaveLoad
-import GUI.Editor.Helper.TreeStore
 import GUI.Editor.Helper.TypeInfer
 import GUI.Editor.Helper.UndoRedo
 import GUI.Editor.Render.GraphDraw

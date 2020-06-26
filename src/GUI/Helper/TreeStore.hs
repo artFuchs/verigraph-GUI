@@ -1,9 +1,9 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 
--- | This module contains the definition of GraphStore
--- and auxiliar functions to manipulate the treeStore associated with the TreeView in the main window
-
-module GUI.Editor.Helper.TreeStore(
+{- | Definition of GraphStore and auxiliar functions 
+     to manipulate the TreeStore associated with the TreeView in the main window
+-}
+module GUI.Helper.TreeStore(
   GraphStore
 , initStore
 , initTreeView
@@ -43,8 +43,7 @@ import GUI.Data.DiaGraph hiding (empty)
 import qualified GUI.Data.DiaGraph as DG
 import GUI.Data.GraphicalInfo
 import GUI.Data.EditorState
-import GUI.Editor.Helper.GrammarMaker
-import GUI.Editor.Helper.GraphicalInfo
+import GUI.Helper.GrammarMaker
 import GUI.Editor.Helper.Nac
 import GUI.Editor.Helper.SaveLoad
 import GUI.Helper.GraphValidation

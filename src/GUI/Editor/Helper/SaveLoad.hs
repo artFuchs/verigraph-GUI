@@ -37,7 +37,7 @@ import GUI.Data.GraphicalInfo
 import GUI.Data.EditorState
 import GUI.Data.Info
 import GUI.Dialogs
-import GUI.Editor.Helper.GrammarMaker
+import GUI.Helper.GrammarMaker
 
 
 --------------------------------------------------------------------------------

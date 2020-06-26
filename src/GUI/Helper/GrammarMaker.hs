@@ -1,4 +1,4 @@
-module GUI.Editor.Helper.GrammarMaker (
+module GUI.Helper.GrammarMaker (
   makeGrammar
 , graphToRuleGraphs
 , makeTypeGraph
@@ -34,15 +34,19 @@ type RuleGraphs = (Graph Info Info, Graph Info Info, Graph Info Info)
 type TypeGraph a b = Graph (Maybe a) (Maybe b) -- may delete this if import span
 type NAC = (Graph Info Info, MergeMapping)
 
+-- wrap nodeInfo in Just
 nodeToJust :: Node a -> Node (Maybe a)
 nodeToJust n = Node (nodeId n) (Just $ nodeInfo n)
 
+-- wrap edgeInfo in Just
 edgeToJust :: Edge a -> Edge (Maybe a)
 edgeToJust e = Edge (edgeId e) (sourceId e) (targetId e) (Just $ edgeInfo e)
 
+-- unwrap nodeInfo wrapped in Just
 nodeFromJust :: Node (Maybe a) -> Node a
 nodeFromJust n = Node (nodeId n) (fromJust $ nodeInfo n)
 
+-- unwrap edgeInfo wrapped in Just
 edgeFromJust :: Edge (Maybe a) -> Edge a
 edgeFromJust e = Edge (edgeId e) (sourceId e) (targetId e) (fromJust $ edgeInfo e)
 
@@ -91,7 +95,7 @@ getNacPushout nac lhs (nmap, emap) = calculatePushout nacTgm lhsTgm
 
 makeTypedGraph :: Graph Info Info
                -> TypeGraph Info Info
-               -> TG.TypedGraph Info Info
+               -> TypedGraph Info Info
 makeTypedGraph g tg = fromGraphsAndLists g' tg npairs epairs
   where
     -- auxiliar structs to define the typedGraph
