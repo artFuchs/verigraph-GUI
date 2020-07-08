@@ -5,6 +5,9 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 module GUI.Editor(
   startEditor
+, basicCanvasButtonPressedCallback
+, basicCanvasMotionCallBack
+, basicCanvasButtonReleasedCallback
 , prepToExport
 , confirmOperation
 )where
@@ -249,6 +252,9 @@ startEditor window fileItems editItems viewItems
     return False
 
   -- mouse button pressed on canvas
+  -- set callback to select elements on canvas
+  on canvas #buttonPressEvent $ basicCanvasButtonPressedCallback st oldPoint squareSelection canvas
+  -- edition only callback
   on canvas #buttonPressEvent $ \eventButton -> do
     b <- get eventButton #button
     x <- get eventButton #x
@@ -257,305 +263,222 @@ startEditor window fileItems editItems viewItems
     click <- get eventButton #type
     es <- readIORef st
     gType <- readIORef currentGraphType
+    tg <- readIORef activeTypeGraph
+    
+    if gType > 1
+      then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es tg []
+      else return ()
+
     let z = editorGetZoom es
         (px,py) = editorGetPan es
         (x',y') = (x/z - px, y/z - py)
-    liftIO $ do
-      writeIORef oldPoint (x',y')
-      Gtk.widgetGrabFocus canvas
-      case (b, click == Gdk.EventType2buttonPress) of
-        --double click with left button : rename selection
-        (1, True) -> do
-          let (n,e) = editorGetSelected es
-          if null n && null e
-            then return ()
-            else liftIO $ Gtk.widgetGrabFocus nameEntry
-        -- left button: select nodes and edges
-        (1, False)  -> liftIO $ do
-          let (oldSN,oldSE) = editorGetSelected es
-              graph = editorGetGraph es
-              gi = editorGetGI es
-              sNode = case selectNodeInPosition gi (x',y') of
-                Nothing -> []
-                Just nid -> [nid]
-              sEdge = case selectEdgeInPosition graph gi (x',y') of
-                  Nothing -> []
-                  Just eid -> [eid]
-          -- add/remove elements of selection
-          tg <- readIORef activeTypeGraph
-          case (sNode, sEdge, Gdk.ModifierTypeShiftMask `elem` ms, Gdk.ModifierTypeControlMask `elem` ms) of
-            -- clicked in blank space with Shift not pressed -> clean selection, start square seleciton
-            ([], [], False, _) -> do
-              modifyIORef st (editorSetSelected ([],[]))
-              writeIORef squareSelection $ Just (x',y',0,0)
-              if gType > 1
-                  then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es tg []
-                  else return ()
-            -- selected nodes or edges without modifier key:
-            (n, e, False, _) -> do
-              let nS = if null n then False else n!!0 `elem` oldSN
-                  eS = if null e then False else e!!0 `elem` oldSE
-              if nS || eS
-              then return ()
-              else do 
-                modifyIORef st (editorSetSelected (n, e))
-                if gType > 1
-                  then do 
-                    changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es tg e
-                  else return ()
-            -- selected nodes or edges with Shift pressed -> add to selection
-            (n, e, True, False) -> do
-              let jointSN = removeDuplicates $ sNode ++ oldSN
-                  jointSE = removeDuplicates $ sEdge ++ oldSE
-              modifyIORef st (editorSetGraph graph . editorSetSelected (jointSN,jointSE))
-              if gType > 1
-                  then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es tg jointSE
-                  else return ()
-            -- selected nodes or edges with Shift + Ctrl pressed -> remove from selection
-            (n, e, True, True) -> do
-              let jointSN = if null n then oldSN else delete (n!!0) oldSN
-                  jointSE = if null e then oldSE else delete (e!!0) oldSE
-              modifyIORef st (editorSetGraph graph . editorSetSelected (jointSN,jointSE))
-              if gType > 1
-                  then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es tg jointSE
-                  else return ()
-          Gtk.widgetQueueDraw canvas
-          updateInspector currentGraphType st currentC currentLC typeInspWidgets (fillColorBox, nodeShapeFrame, edgeStyleFrame)
-                          possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMappingIORef
-                          hostInspWidgets ruleInspWidgets nacInspWidgets (nodeTypeBox, edgeTypeBox) 
-        -- right button click: create nodes and insert edges
-        (3, False) -> liftIO $ do
-          let g = editorGetGraph es
-              gi = editorGetGI es
-              dstNode = selectNodeInPosition gi (x',y')
-          context <- Gtk.widgetGetPangoContext canvas
-          -- if current graph is a nac, then add mergeM to the undoStack
-          case gType of
-            4 -> do mergeM <- readIORef mergeMappingIORef
-                    stackUndo undoStack redoStack currentGraph es mergeM
-            _ -> stackUndo undoStack redoStack currentGraph es Nothing
-          cShape <- readIORef currentShape
-          cColor <- readIORef currentC
-          cLColor <- readIORef currentLC
-          case (dstNode) of
-            -- no selected node: create node
-            Nothing -> case gType of
-                0 -> return ()
-                1 -> do
-                  createNode' st I.empty True (x',y') cShape cColor cLColor context
-                  setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-                  updateTG st activeTypeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
-                _ -> do
-                  auto <- Gtk.toggleButtonGetActive autoLabelNCheckBtn
-                  mntype <- readIORef currentNodeType
-                  (t, shape, c, lc) <- case mntype of
-                    Nothing -> return ("", cShape, cColor, cLColor)
-                    Just t -> do
-                      possibleNT <- readIORef possibleNodeTypes
-                      let possibleNT' = M.map (\(gi,i) -> gi) possibleNT
-                          mngi = M.lookup t possibleNT'
-                      case mngi of
-                        Nothing -> return ("", cShape, cColor, cLColor)
-                        Just gi -> return (t, shape gi, fillColor gi, lineColor gi)
-                  createNode' st (infoSetType I.empty t) auto (x',y') shape c lc context
-                  setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-                  setCurrentValidFlag store st activeTypeGraph currentPath
 
-                  case gType of
-                    -- if the current graph is a nac, then add the node in nacg
-                    4 -> do
-                      -- get the node and it's gi
-                      es <- readIORef st
-                      let g = editorGetGraph es
-                          gi = editorGetGI es
-                          addedNodeId = maximum (nodeIds g)
-                          addedNode = fromJust $ lookupNode addedNodeId g
-                          addedNodeGI = getNodeGI (fromEnum addedNodeId) (fst gi)
-                      -- get the nacg and add the node
-                      nacInfoMap <- readIORef nacInfoMapIORef
-                      index <- readIORef currentGraph
-                      let ((nacg,nacgi), mapping) = fromJust $ M.lookup index nacInfoMap
-                          nacg' = insertNodeWithPayload addedNodeId (nodeInfo addedNode) nacg
-                          nacNgi' = M.insert (fromEnum addedNodeId) addedNodeGI (fst nacgi)
-                      modifyIORef nacInfoMapIORef $ M.insert index ((nacg',(nacNgi', snd nacgi)), mapping)
-                    _ -> return ()
-
-
-            -- one node selected: create edges targeting this node
-            Just nid -> case gType of
+    case (b, click == Gdk.EventType2buttonPress) of
+      --double click with left button : rename selection
+      (1, True) -> do
+        let (n,e) = editorGetSelected es
+        if null n && null e
+          then return ()
+          else Gtk.widgetGrabFocus nameEntry
+      -- right button click: create nodes and insert edges
+      (3, False) -> do
+        let g = editorGetGraph es
+            gi = editorGetGI es
+            dstNode = selectNodeInPosition gi (x',y')
+        context <- Gtk.widgetGetPangoContext canvas
+        -- if current graph is a nac, then add mergeM to the undoStack
+        case gType of
+          4 -> do mergeM <- readIORef mergeMappingIORef
+                  stackUndo undoStack redoStack currentGraph es mergeM
+          _ -> stackUndo undoStack redoStack currentGraph es Nothing
+        cShape <- readIORef currentShape
+        cColor <- readIORef currentC
+        cLColor <- readIORef currentLC
+        case (dstNode) of
+          -- no selected node: create node
+          Nothing -> case gType of
               0 -> return ()
               1 -> do
-                estyle <- readIORef currentStyle
-                color <- readIORef currentLC
-                modifyIORef st (\es -> createEdges es nid I.empty True estyle color)
+                createNode' st I.empty True (x',y') cShape cColor cLColor context
                 setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                 updateTG st activeTypeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
               _ -> do
-                metype <- readIORef currentEdgeType
-                cEstyle <- readIORef currentStyle
-                cColor <- readIORef currentLC
-                auto <- Gtk.toggleButtonGetActive autoLabelECheckBtn
-                es <- readIORef st
-                tg <- readIORef activeTypeGraph
-                pet <- readIORef possibleEdgeTypes 
-                pet' <- return $ M.map fst pet
-
-                -- create edges infering their types
-                let sNids = fst $ editorGetSelected es
-                    g = editorGetGraph es
-                    srcNodes = map (\nid -> fromJust $ G.lookupNode nid g) sNids
-                    tgtNode = fromJust $ G.lookupNode nid g
-                    tgtType = infoType $ nodeInfo tgtNode
-                    edgesTs = map (\src -> (src, infereEdgeType tg src tgtNode metype)) srcNodes
-                    -- auxiliar function that checks if the type mt, exist in possibleEdgeTypes.
-                      -- returns the correspondent triple (type, style, color)
-                    checkType mt srcType = case mt of
-                                          Nothing -> ("", cEstyle, cColor)
-                                          Just t -> let megi = M.lookup t pet'
-                                                    in case megi of
-                                                          Nothing -> ("", cEstyle, cColor)
-                                                          Just sm -> case M.lookup (srcType,tgtType) sm of
-                                                                        Nothing -> ("", cEstyle, cColor)
-                                                                        Just gi -> (t, style gi, color gi)
-                    (es', createdEdges) = 
-                              foldr (\(src, mt) (es,eids) -> 
-                                        let srcId = nodeId src
-                                            (t,estyle,color) = checkType mt (infoType $ nodeInfo src)
-                                            es' = createEdge es srcId nid (infoSetType I.empty t) auto estyle color
-                                            eids' = (snd $ editorGetSelected es') ++ eids
-                                        in (es',eids'))
-                                (es,[]) edgesTs
-                
-                writeIORef st $ editorSetSelected ([],createdEdges) es' 
-
-                if gType > 1
-                  then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es' tg createdEdges
-                  else return ()
-
+                auto <- Gtk.toggleButtonGetActive autoLabelNCheckBtn
+                mntype <- readIORef currentNodeType
+                (t, shape, c, lc) <- case mntype of
+                  Nothing -> return ("", cShape, cColor, cLColor)
+                  Just t -> do
+                    possibleNT <- readIORef possibleNodeTypes
+                    let possibleNT' = M.map (\(gi,i) -> gi) possibleNT
+                        mngi = M.lookup t possibleNT'
+                    case mngi of
+                      Nothing -> return ("", cShape, cColor, cLColor)
+                      Just gi -> return (t, shape gi, fillColor gi, lineColor gi)
+                createNode' st (infoSetType I.empty t) auto (x',y') shape c lc context
                 setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                 setCurrentValidFlag store st activeTypeGraph currentPath
 
-                -- if the current graph is a nac, then add the created edges in the nacg
-                if gType /= 4
-                  then return ()
-                  else do
-                    -- get the difference between the new graph and the old one
-                    newEs <- readIORef st
-                    let g = editorGetGraph newEs
-                        gi = editorGetGI newEs
-                        oldg = editorGetGraph es
-                        oldgi = editorGetGI es
-                        (g',gi') = diagrSubtract (g,gi) (oldg,oldgi)
-                    -- get nac information
+                case gType of
+                  -- if the current graph is a nac, then add the node in nacg
+                  4 -> do
+                    -- get the node and it's gi
+                    es <- readIORef st
+                    let g = editorGetGraph es
+                        gi = editorGetGI es
+                        addedNodeId = maximum (nodeIds g)
+                        addedNode = fromJust $ lookupNode addedNodeId g
+                        addedNodeGI = getNodeGI (fromEnum addedNodeId) (fst gi)
+                    -- get the nacg and add the node
                     nacInfoMap <- readIORef nacInfoMapIORef
                     index <- readIORef currentGraph
-                    let ((nacg,nacgi), (nM, eM)) = fromJust $ M.lookup index nacInfoMap
-                    -- insert nodes in nacg if they aren't already present
-                    let nacgWithNodes = foldr (\n g -> if nodeId n `elem` (nodeIds g)
-                                                    then g
-                                                    else insertNodeWithPayload (nodeId n) (nodeInfo n) g)
-                                          nacg (nodes g')
-                    -- insert created edges in nacg
-                    let nacg' = foldr (\e g -> insertEdgeWithPayload (edgeId e) (sourceId e) (targetId e) (edgeInfo e) g)
-                                  nacgWithNodes (edges g')
-                    let nacEgi' = foldr (\(eid, egi) giM -> M.insert eid egi giM) (snd nacgi) (M.toList $ snd gi')
-                    -- modify mapping if g' have any node from lhs
-                    let nodesFromLHS = filter (\n -> infoLocked $ nodeInfo n) (nodes g')
-                        nM' = foldr (\n m -> if n `elem` (M.elems m) then m else M.insert n n m) nM (map nodeId nodesFromLHS)
-                    modifyIORef nacInfoMapIORef $ M.insert index ((nacg', (fst nacgi, nacEgi')), (nM',eM))
+                    let ((nacg,nacgi), mapping) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup index nacInfoMap
+                        nacg' = insertNodeWithPayload addedNodeId (nodeInfo addedNode) nacg
+                        nacNgi' = M.insert (fromEnum addedNodeId) addedNodeGI (fst nacgi)
+                    modifyIORef nacInfoMapIORef $ M.insert index ((nacg',(nacNgi', snd nacgi)), mapping)
+                  _ -> return ()
 
-          Gtk.widgetQueueDraw canvas
-          updateInspector currentGraphType st currentC currentLC typeInspWidgets (fillColorBox, nodeShapeFrame, edgeStyleFrame)
-                          possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMappingIORef
-                          hostInspWidgets ruleInspWidgets nacInspWidgets (nodeTypeBox, edgeTypeBox)
-        _           -> return ()
-      return True
+
+          -- one node selected: create edges targeting this node
+          Just nid -> case gType of
+            0 -> return ()
+            1 -> do
+              estyle <- readIORef currentStyle
+              color <- readIORef currentLC
+              modifyIORef st (\es -> createEdges es nid I.empty True estyle color)
+              setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+              updateTG st activeTypeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+            _ -> do
+              metype <- readIORef currentEdgeType
+              cEstyle <- readIORef currentStyle
+              cColor <- readIORef currentLC
+              auto <- Gtk.toggleButtonGetActive autoLabelECheckBtn
+              es <- readIORef st
+              tg <- readIORef activeTypeGraph
+              pet <- readIORef possibleEdgeTypes 
+              pet' <- return $ M.map fst pet
+
+              -- create edges infering their types
+              let sNids = fst $ editorGetSelected es
+                  g = editorGetGraph es
+                  srcNodes = map (\nid -> fromJust $ G.lookupNode nid g) sNids
+                  tgtNode = fromJust $ G.lookupNode nid g
+                  tgtType = infoType $ nodeInfo tgtNode
+                  edgesTs = map (\src -> (src, infereEdgeType tg src tgtNode metype)) srcNodes
+                  -- auxiliar function that checks if the type mt, exist in possibleEdgeTypes.
+                    -- returns the correspondent triple (type, style, color)
+                  checkType mt srcType = case mt of
+                                        Nothing -> ("", cEstyle, cColor)
+                                        Just t -> let megi = M.lookup t pet'
+                                                  in case megi of
+                                                        Nothing -> ("", cEstyle, cColor)
+                                                        Just sm -> case M.lookup (srcType,tgtType) sm of
+                                                                      Nothing -> ("", cEstyle, cColor)
+                                                                      Just gi -> (t, style gi, color gi)
+                  (es', createdEdges) = 
+                            foldr (\(src, mt) (es,eids) -> 
+                                      let srcId = nodeId src
+                                          (t,estyle,color) = checkType mt (infoType $ nodeInfo src)
+                                          es' = createEdge es srcId nid (infoSetType I.empty t) auto estyle color
+                                          eids' = (snd $ editorGetSelected es') ++ eids
+                                      in (es',eids'))
+                              (es,[]) edgesTs
+              
+              writeIORef st $ editorSetSelected ([],createdEdges) es' 
+
+              if gType > 1
+                then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es' tg createdEdges
+                else return ()
+
+              setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+              setCurrentValidFlag store st activeTypeGraph currentPath
+
+              -- if the current graph is a nac, then add the created edges in the nacg
+              if gType /= 4
+                then return ()
+                else do
+                  -- get the difference between the new graph and the old one
+                  newEs <- readIORef st
+                  let g = editorGetGraph newEs
+                      gi = editorGetGI newEs
+                      oldg = editorGetGraph es
+                      oldgi = editorGetGI es
+                      (g',gi') = diagrSubtract (g,gi) (oldg,oldgi)
+                  -- get nac information
+                  nacInfoMap <- readIORef nacInfoMapIORef
+                  index <- readIORef currentGraph
+                  let ((nacg,nacgi), (nM, eM)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup index nacInfoMap
+                  -- insert nodes in nacg if they aren't already present
+                  let nacgWithNodes = foldr (\n g -> if nodeId n `elem` (nodeIds g)
+                                                  then g
+                                                  else insertNodeWithPayload (nodeId n) (nodeInfo n) g)
+                                        nacg (nodes g')
+                  -- insert created edges in nacg
+                  let nacg' = foldr (\e g -> insertEdgeWithPayload (edgeId e) (sourceId e) (targetId e) (edgeInfo e) g)
+                                nacgWithNodes (edges g')
+                  let nacEgi' = foldr (\(eid, egi) giM -> M.insert eid egi giM) (snd nacgi) (M.toList $ snd gi')
+                  -- modify mapping if g' have any node from lhs
+                  let nodesFromLHS = filter (\n -> infoLocked $ nodeInfo n) (nodes g')
+                      nM' = foldr (\n m -> if n `elem` (M.elems m) then m else M.insert n n m) nM (map nodeId nodesFromLHS)
+                  modifyIORef nacInfoMapIORef $ M.insert index ((nacg', (fst nacgi, nacEgi')), (nM',eM))
+
+        Gtk.widgetQueueDraw canvas
+      _           -> return ()
+
+    updateInspector currentGraphType st currentC currentLC typeInspWidgets (fillColorBox, nodeShapeFrame, edgeStyleFrame)
+                    possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMappingIORef
+                    hostInspWidgets ruleInspWidgets nacInspWidgets (nodeTypeBox, edgeTypeBox)
+
+    return True
 
   -- mouse motion on canvas
+  -- set callback to move elements or expand the square selection area
+  on canvas #motionNotifyEvent $ basicCanvasMotionCallBack st oldPoint squareSelection canvas
+  -- add colateral actions such as modiffing the undo stack and setting the 'changeFlags'
   on canvas #motionNotifyEvent $ \eventMotion -> do
     ms <- get eventMotion #state
-    x <- get eventMotion #x
-    y <- get eventMotion #y
-    (ox,oy) <- readIORef oldPoint
     es <- readIORef st
     gtype <- readIORef currentGraphType
     let leftButton = Gdk.ModifierTypeButton1Mask `elem` ms
-        -- in case of the editor being used in a notebook or with a mouse with just two buttons, ctrl + right button can be used instead of the middle button.
         middleButton = Gdk.ModifierTypeButton2Mask `elem` ms || Gdk.ModifierTypeButton3Mask `elem` ms && Gdk.ModifierTypeControlMask `elem` ms
         (sNodes, sEdges) = editorGetSelected es
-        z = editorGetZoom es
-        (px,py) = editorGetPan es
-        (x',y') = (x/z - px, y/z - py)
     case (leftButton, middleButton, sNodes, sEdges) of
-      -- if left button is pressed and no node is selected, update square selection
-      (True, False, [], []) -> liftIO $ do
-        modifyIORef squareSelection $ liftM $ (\(a,b,c,d) -> (a,b,x'-a,y'-b))
-        sq <- readIORef squareSelection
-        Gtk.widgetQueueDraw canvas
-      -- if left button is pressed with some elements selected, then move them
-      (True, False, n, e) -> liftIO $ do
-        modifyIORef st (\es -> moveNodes es (ox,oy) (x',y'))
-        modifyIORef st (\es -> if (>0) . length . fst . editorGetSelected $ es then es else moveEdges es (ox,oy) (x',y'))
-        writeIORef oldPoint (x',y')
-        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+      (True, False, n, e) -> do
         mv <- readIORef movingGI
         if not mv
           then do
             writeIORef movingGI True
-            case gtype of
-              4 -> do
-                mergeM <- readIORef mergeMappingIORef
-                stackUndo undoStack redoStack currentGraph es mergeM
-              _ -> stackUndo undoStack redoStack currentGraph es Nothing
+            setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+            mergeM <- case gtype of
+                        4 -> readIORef mergeMappingIORef
+                        _ -> return Nothing
+            stackUndo undoStack redoStack currentGraph es mergeM
           else return ()
-        Gtk.widgetQueueDraw canvas
-      -- if middle button is pressed, then move the view
-      (False ,True, _, _) -> liftIO $ do
-        let (dx,dy) = (x'-ox,y'-oy)
-        modifyIORef st (editorSetPan (px+dx, py+dy))
-        Gtk.widgetQueueDraw canvas
       _ -> return ()
     return True
 
   -- mouse button release on canvas
+  -- set callback to select elements that are inside squareSelection
+  on canvas #buttonReleaseEvent $ basicCanvasButtonReleasedCallback st squareSelection canvas
+  -- colateral effects to selected elements
   on canvas #buttonReleaseEvent $ \eventButton -> do
     b <- get eventButton #button
     gType <- readIORef currentGraphType
+    tg <- readIORef activeTypeGraph
+    es <- readIORef st
     case b of
-      1 -> liftIO $ do
+      1 -> do
         writeIORef movingGI False
-        es <- readIORef st
-        sq <- readIORef squareSelection
-        let (n,e) = editorGetSelected es
-        case (editorGetSelected es,sq) of
-          -- if release the left button when there's a square selection,
-          -- select the elements that are inside the selection
-          (([],[]), Just (x,y,w,h)) -> do
-            let graph = editorGetGraph es
-                (ngiM, egiM) = editorGetGI es
-                sNodes = map NodeId $ M.keys $
-                                      M.filter (\ngi -> let pos = position ngi
-                                                        in pointInsideRectangle pos (x + (w/2), y + (h/2), abs w, abs h)) ngiM
-                sEdges = map edgeId $ filter (\e -> let pos = getEdgePosition graph (ngiM,egiM) e
-                                                    in pointInsideRectangle pos (x + (w/2), y + (h/2), abs w, abs h)) $ edges graph
-                newEs = editorSetSelected (sNodes, sEdges) $ es
-            writeIORef st newEs
-
-            tg <- readIORef activeTypeGraph
+        let (sNodes, sEdges) = editorGetSelected es
+        case (length sNodes > 0 || length sEdges > 0) of 
+          True -> do
             if gType > 1
-              then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox newEs tg sEdges
+              then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es tg sEdges
               else return ()
-
             updateInspector currentGraphType st currentC currentLC typeInspWidgets (fillColorBox, nodeShapeFrame, edgeStyleFrame)
                             possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMappingIORef
                             hostInspWidgets ruleInspWidgets nacInspWidgets (nodeTypeBox, edgeTypeBox)
-
-          ((n,e), Nothing) -> return ()
-          _ -> return ()
+          False -> return ()
       _ -> return ()
-    liftIO $ do
-      writeIORef squareSelection Nothing
-      Gtk.widgetQueueDraw canvas
     return True
 
   -- mouse wheel scroll on canvas
@@ -1573,6 +1496,140 @@ startEditor window fileItems editItems viewItems
 
 
 ---------------------------------------------------------------------------------------------------------------------------------
+--  Exported Callbacks  ---------------------------------------------------------------------------------------------------------
+---------------------------------------------------------------------------------------------------------------------------------
+
+{-| 
+    basic callback to handle the buttonPressed event in a canvas that shows a graph.
+    This callback will mark a element of the graph as selected
+-}
+basicCanvasButtonPressedCallback :: IORef EditorState -> IORef (Double,Double) -> IORef (Maybe (Double,Double,Double,Double))
+                            -> Gtk.DrawingArea -> Gdk.EventButton -> IO Bool
+basicCanvasButtonPressedCallback st oldPoint squareSelection canvas eventButton = do
+  b <- get eventButton #button
+  x <- get eventButton #x
+  y <- get eventButton #y
+  ms <- get eventButton #state
+  click <- get eventButton #type
+  es <- readIORef st
+  let z = editorGetZoom es
+      (px,py) = editorGetPan es
+      (x',y') = (x/z - px, y/z - py)
+  writeIORef oldPoint (x',y')
+  case (b, click == Gdk.EventType2buttonPress) of
+    -- left button: select nodes and edges
+    (1, False) -> do
+      let (oldSN,oldSE) = editorGetSelected es
+          graph = editorGetGraph es
+          gi = editorGetGI es
+          sNode = case selectNodeInPosition gi (x',y') of
+            Nothing -> []
+            Just nid -> [nid]
+          sEdge = case selectEdgeInPosition graph gi (x',y') of
+              Nothing -> []
+              Just eid -> [eid]
+      -- add/remove elements of selection
+      case (sNode, sEdge, Gdk.ModifierTypeShiftMask `elem` ms, Gdk.ModifierTypeControlMask `elem` ms) of
+        -- clicked in blank space with Shift not pressed -> clean selection, start square seleciton
+        ([], [], False, _) -> do
+          modifyIORef st (editorSetSelected ([],[]))
+          writeIORef squareSelection $ Just (x',y',0,0)
+        -- selected nodes or edges without modifier key:
+        (n, e, False, _) -> do
+          let nS = if null n then False else n!!0 `elem` oldSN
+              eS = if null e then False else e!!0 `elem` oldSE
+          if nS || eS
+          then return ()
+          else do 
+            modifyIORef st (editorSetSelected (n, e))
+        -- selected nodes or edges with Shift pressed -> add to selection
+        (n, e, True, False) -> do
+          let jointSN = removeDuplicates $ sNode ++ oldSN
+              jointSE = removeDuplicates $ sEdge ++ oldSE
+          modifyIORef st (editorSetGraph graph . editorSetSelected (jointSN,jointSE))
+        -- selected nodes or edges with Shift + Ctrl pressed -> remove from selection
+        (n, e, True, True) -> do
+          let jointSN = if null n then oldSN else delete (n!!0) oldSN
+              jointSE = if null e then oldSE else delete (e!!0) oldSE
+          modifyIORef st (editorSetGraph graph . editorSetSelected (jointSN,jointSE))
+    _ -> return () 
+  Gtk.widgetQueueDraw canvas
+  return False
+
+
+basicCanvasMotionCallBack :: IORef EditorState -> IORef (Double,Double) -> IORef (Maybe (Double,Double,Double,Double))
+                          -> Gtk.DrawingArea -> Gdk.EventMotion -> IO Bool
+basicCanvasMotionCallBack st oldPoint squareSelection canvas eventMotion = do
+  ms <- get eventMotion #state
+  x <- get eventMotion #x
+  y <- get eventMotion #y
+  (ox,oy) <- readIORef oldPoint
+  es <- readIORef st
+
+  let leftButton = Gdk.ModifierTypeButton1Mask `elem` ms
+      -- in case of the editor being used in a notebook or with a mouse with just two buttons, ctrl + right button can be used instead of the middle button.
+      middleButton = (Gdk.ModifierTypeButton2Mask `elem` ms) || (Gdk.ModifierTypeButton3Mask `elem` ms && Gdk.ModifierTypeControlMask `elem` ms)
+      (sNodes, sEdges) = editorGetSelected es
+      z = editorGetZoom es
+      (px,py) = editorGetPan es
+      (x',y') = (x/z - px, y/z - py)
+
+  case (leftButton, middleButton, sNodes, sEdges) of
+    -- if left button is pressed and no node is selected, update square selection
+    (True, False, [], []) -> do
+      modifyIORef squareSelection $ liftM $ (\(a,b,c,d) -> (a,b,x'-a,y'-b))
+      sq <- readIORef squareSelection
+      Gtk.widgetQueueDraw canvas
+    -- if left button is pressed with some elements selected, then move them
+    (True, False, n, e) -> do
+      modifyIORef st (\es -> moveNodes es (ox,oy) (x',y') )
+      modifyIORef st (\es -> if (>0) . length . fst . editorGetSelected $ es
+                              then es 
+                              else moveEdges es (ox,oy) (x',y'))
+      writeIORef oldPoint (x',y')
+      Gtk.widgetQueueDraw canvas
+    -- if middle button is pressed, then move the view
+    (False ,True, _, _) -> do
+      let (dx,dy) = (x'-ox,y'-oy)
+      modifyIORef st (editorSetPan (px+dx, py+dy))
+      Gtk.widgetQueueDraw canvas
+    _ -> return ()
+  return False
+
+basicCanvasButtonReleasedCallback :: IORef EditorState -> IORef (Maybe (Double,Double,Double,Double)) -> Gtk.DrawingArea
+                                  -> Gdk.EventButton -> IO Bool
+basicCanvasButtonReleasedCallback st squareSelection canvas eventButton = do
+  b <- get eventButton #button
+  case b of
+    1 -> do
+      es <- readIORef st
+      sq <- readIORef squareSelection
+      let (n,e) = editorGetSelected es
+      case (editorGetSelected es,sq) of
+        -- if release the left button when there's a square selection,
+        -- select the elements that are inside the selection
+        (([],[]), Just (x,y,w,h)) -> do
+          let graph = editorGetGraph es
+              (ngiM, egiM) = editorGetGI es
+              sNodes = map NodeId $ M.keys $
+                                    M.filter (\ngi -> let pos = position ngi
+                                                      in pointInsideRectangle pos (x + (w/2), y + (h/2), abs w, abs h)) ngiM
+              sEdges = map edgeId $ filter (\e -> let pos = getEdgePosition graph (ngiM,egiM) e
+                                                  in pointInsideRectangle pos (x + (w/2), y + (h/2), abs w, abs h)) $ edges graph
+              newEs = editorSetSelected (sNodes, sEdges) $ es
+          writeIORef st newEs
+        ((n,e), Nothing) -> return ()
+        _ -> return ()
+    _ -> return ()
+  writeIORef squareSelection Nothing
+  Gtk.widgetQueueDraw canvas
+  return False
+
+
+
+
+
+---------------------------------------------------------------------------------------------------------------------------------
 --  Auxiliar Functions  ---------------------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------------------------------------
 
@@ -1595,12 +1652,12 @@ confirmOperation window store changedProject st nacInfoMapIORef fileName storeIO
     else return Gtk.ResponseTypeNo
   case response of
     Gtk.ResponseTypeCancel -> return False
-    r -> case r of
-      Gtk.ResponseTypeNo -> return True
-      Gtk.ResponseTypeYes -> do
-        storeCurrentES window st storeIORefs nacInfoMapIORef
-        structs <- getStructsToSave store graphStates nacInfoMapIORef
-        saveFile structs saveProject fileName window True -- returns True if saved the file
+    Gtk.ResponseTypeNo -> return True
+    Gtk.ResponseTypeYes -> do
+      storeCurrentES window st storeIORefs nacInfoMapIORef
+      structs <- getStructsToSave store graphStates nacInfoMapIORef
+      saveFile structs saveProject fileName window True -- returns True if saved the file
+    _ -> return False
 
 prepToExport :: Gtk.TreeStore
              -> IORef (M.Map Int32 EditorState)
