@@ -119,8 +119,8 @@ updateTypeInspector st currentC currentLC (nameEntry, colorBtn, lcolorBtn, radio
       Gtk.colorChooserSetRgba lcolorBtn $ if n == 1 then edgeColor else emptyColor
       case (n,edgeStyle) of
         (1,ENormal) -> Gtk.toggleButtonSetActive (radioStyles!!0) True
-        (1,EPointed) -> Gtk.toggleButtonSetActive (radioStyles!!1) True
-        (1,ESlashed) -> Gtk.toggleButtonSetActive (radioStyles!!2) True
+        (1,ESlashed) -> Gtk.toggleButtonSetActive (radioStyles!!1) True
+        (1,EPointed) -> Gtk.toggleButtonSetActive (radioStyles!!2) True
         _ -> return ()
 
       set hBoxColor [#visible := False]
