@@ -2,12 +2,10 @@ module GUI.Editor.Helper.SaveLoad
 ( SaveInfo(..)
 , saveFile
 , saveFileAs
-, saveGraph
 , exportGGX
 , exportVGG
 , saveProject
 , loadFile
-, loadGraph
 , loadProject
 )where
 
@@ -99,19 +97,6 @@ saveFileAs x saveF fileName window changeFN = do
       writeIORef fileName (Just path)
       return True
     _ -> return False
-
-
-saveGraph :: (Graph Info Info ,GraphicalInfo) -> String -> IO Bool
-saveGraph (g,gi) path = do
-    let path' = if (tails path)!!(length path-3) == ".gr" then path else path ++ ".gr"
-        writeGraph = writeFile path' $ show ( map (\n -> (nodeId n, nodeInfo n) ) $ nodes g
-                                           , map (\e -> (edgeId e, sourceId e, targetId e, edgeInfo e)) $ edges g
-                                           , gi)
-
-    tentativa <- E.try (writeGraph)  :: IO (Either E.IOException ())
-    case tentativa of
-      Left _ -> return False
-      Right _ -> return True
 
 
 saveProject :: Tree.Forest SaveInfo -> String -> IO Bool
@@ -218,17 +203,6 @@ loadFile window loadF = do
     _             -> do
       Gtk.widgetDestroy loadD
       return Nothing
-
-
-loadGraph :: String -> Maybe (Graph Info Info,GraphicalInfo)
-loadGraph contents = result
-  where
-    result = case reads contents :: [( (NList, EList, GraphicalInfo), String)] of
-      [((rns,res,gi), "")] -> let ns = map (\(nid, info) -> Node (NodeId nid) info) rns
-                                  es = map (\(eid, src, dst, info) -> Edge (EdgeId eid) (NodeId src) (NodeId dst) info) res
-                                  g = fromNodesAndEdges ns es
-                              in Just (g,gi)
-      _ -> Nothing
 
 
 loadProject :: String -> Maybe (Tree.Forest SaveInfo)

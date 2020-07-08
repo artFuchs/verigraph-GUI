@@ -74,25 +74,18 @@ import GUI.Editor.UI.UpdateInspector
 ---------------------------------------------------------------------------------------------------------------------------------
 
 type BasicEditIORefs  = ( IORef EditorState, IORef (Double,Double), IORef (Maybe (Double,Double,Double,Double)), IORef Bool)
-type LayoutIORefs     = ( IORef NodeShape, IORef EdgeStyle, IORef (Double,Double,Double) , IORef (Double,Double,Double) )
 type StoreIORefs      = ( IORef (M.Map Int32 EditorState), IORef [Int32], IORef Int32, IORef Int32 )
-type UndoRedoIORefs   = ( IORef (M.Map Int32 ChangeStack), IORef (M.Map Int32 ChangeStack) )
 type ChangesIORefs    = ( IORef Bool, IORef [Bool], IORef (M.Map Int32 DiaGraph))
-type TypeInferIORefs  = ( IORef (M.Map String (NodeGI, Int32)), IORef (M.Map String (M.Map (String, String) EdgeGI, Int32))
-                        , IORef (M.Map String (M.Map (String, String) EdgeGI, Int32)), IORef (Maybe String), IORef (Maybe String))
 type NacIORefs        = ( IORef (M.Map Int32 (DiaGraph, MergeMapping)), IORef (Maybe MergeMapping))
-
-type LayoutWidgets = ( Gtk.Box, Gtk.Box, Gtk.ColorButton, Gtk.Box, Gtk.ColorButton
-                     , Gtk.Frame, [Gtk.RadioButton], Gtk.Frame, [Gtk.RadioButton])
-type TypeSelectionWidgets = ( Gtk.Box, Gtk.CheckButton, Gtk.CheckButton
-                            , Gtk.Box, Gtk.ComboBoxText, Gtk.Box, Gtk.ComboBoxText
-                            , Gtk.Box, Gtk.ComboBoxText
-                            , Gtk.Button, Gtk.Button)
 
 ---------------------------------------------------------------------------------------------------------------------------------
 --  Editor Construction  --------------------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------------------------------------
 
+{- | Create the editor widgets (the treeView at left, the canvas at center and the inpector panel at right) 
+    and set the callbacks for them.
+    Returns the gtkPaned parent to those widgets.
+-}
 startEditor :: Gtk.Window -> [Gtk.MenuItem] -> [Gtk.MenuItem] -> [Gtk.MenuItem]
                -> Gtk.TreeStore
                -> BasicEditIORefs -> StoreIORefs -> ChangesIORefs 
@@ -162,7 +155,7 @@ startEditor window fileItems editItems viewItems
       )
   
   -- "unpack" menuItems
-  let [newm,opn,svn,sva,eggx,evgg,svg,opg] = fileItems
+  let [newm,opn,svn,sva,eggx,evgg] = fileItems
       [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
       [zin,zut,z50,zdf,z150,z200,vdf] = viewItems
 
@@ -1328,49 +1321,6 @@ startEditor window fileItems editItems viewItems
       Right fstOrderGG -> do
         saveFileAs fstOrderGG exportVGG fileName window False
         return ()
-
-  -- open graph
-  on opg #activate $ do
-    mg <- loadFile window loadGraph
-    case mg of
-      Just ((g,gi),path) -> do
-        let splitAtToken str tkn = splitAt (1 + (fromMaybe (-1) $ findIndex (==tkn) str)) str
-            getLastPart str = let splited = (splitAtToken str '/') in if fst splited == "" then str else getLastPart (snd splited)
-            getName str = if (tails str)!!(length str - 3) == ".gr" then take (length str - 3) str else str
-        -- add the loaded diagraph to the graphStates
-        newKey <- readIORef graphStates >>= return . (+1) . maximum . M.keys
-        modifyIORef graphStates $ M.insert newKey (editorSetGI gi . editorSetGraph g $ emptyES)
-        modifyIORef undoStack $ M.insert newKey []
-        modifyIORef redoStack $ M.insert newKey []
-        -- update the treeview
-        (valid,parentIter) <- Gtk.treeModelIterNthChild store Nothing 2
-        if not valid
-          then return ()
-          else do
-            iter <- Gtk.treeStoreAppend store (Just parentIter)
-            let valid = True -- check if the graph is valid according to the typeGraph
-            storeSetGraphStore store iter (getName . getLastPart $ path, 2, newKey, 2, True, valid)
-            path <- Gtk.treeModelGetPath store iter
-            Gtk.treeViewExpandToPath treeview path
-            Gtk.treeViewSetCursor treeview path (Nothing :: Maybe Gtk.TreeViewColumn) False
-            -- update the IORefs
-            pathIndices <- Gtk.treePathGetIndices path >>= return . fromJust
-            writeIORef currentPath pathIndices
-            writeIORef currentGraph newKey
-            modifyIORef changedGraph (\xs -> xs ++ [True])
-            writeIORef changedProject True
-            indicateProjChanged window True
-            Gtk.widgetQueueDraw canvas
-      _      -> return ()
-
-  -- save graph
-  on svg #activate $ do
-    es <- readIORef st
-    let g  = editorGetGraph es
-        gi = editorGetGI es
-    saveFileAs (g,gi) saveGraph fileName window False
-    return ()
-
   
 
   -- Edit Menu ---------------------------------------------------------------------------------------------------------------

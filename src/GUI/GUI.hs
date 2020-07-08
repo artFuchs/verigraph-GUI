@@ -129,7 +129,7 @@ startGUI = do
   (cpaWindow, cpaEssentialCheckBtn, cpaConfCheckBtn, cpaDependCheckBtn, cpaRunBtn, cpaResultBuffer) <- buildCpaWindow window
 
   -- set the menubar
-  let [newm,opn,svn,sva,eggx,evgg,svg,opg] = fileItems
+  let [newm,opn,svn,sva,eggx,evgg] = fileItems
       [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
       [zin,zut,z50,zdf,z150,z200,vdf] = viewItems
       [cpa] = analysisItems
@@ -233,9 +233,7 @@ buildMainWindow = do
   saveAsItem <- Gtk.builderGetObject builder "save_as_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   exportGGXItem <- Gtk.builderGetObject builder "export_ggx_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   exportVGGItem <- Gtk.builderGetObject builder "export_vgg_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  saveGraphItem <- Gtk.builderGetObject builder "save_graph_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  openGraphItem <- Gtk.builderGetObject builder "open_graph_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  let fileItems = [newItem,openItem,saveItem,saveAsItem,exportGGXItem,exportVGGItem,saveGraphItem,openGraphItem]
+  let fileItems = [newItem,openItem,saveItem,saveAsItem,exportGGXItem,exportVGGItem]
 
   delItem <- Gtk.builderGetObject builder  "delete_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   undoItem <- Gtk.builderGetObject builder  "undo_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
