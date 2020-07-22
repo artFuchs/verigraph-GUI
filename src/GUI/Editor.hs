@@ -72,8 +72,6 @@ import GUI.Editor.UI.UIBuilders
 import GUI.Editor.UI.RuleViewer
 import GUI.Editor.UI.UpdateInspector
 
-import GUI.Helper.OverlapAvoider
-
 ---------------------------------------------------------------------------------------------------------------------------------
 --  IORefs Used in Editor  ------------------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------------------------------------
@@ -1847,10 +1845,7 @@ createNode' st info autoNaming pos nshape color lcolor context = do
   let nid = head $ newNodes (editorGetGraph es)
       info' = if infoLabelStr info == "" && autoNaming then infoSetLabel info (show $ fromEnum nid) else info
   dim <- getStringDims (infoVisible info') context Nothing
-  let nodeGI = NodeGI pos color lcolor dim nshape
-      nodeGI' = repositionNode nodeGI (editorGetGI es)
-      pos' = position nodeGI'
-  writeIORef st $ createNode es pos' dim info' nshape color lcolor    
+  writeIORef st $ createNode es pos dim info' nshape color lcolor    
 
 -- auxiliar function to prepare the treeStore to save
 -- auxiliar function, add the current editor state in the graphStates list
