@@ -71,25 +71,16 @@ startGUI = do
   --------  IORefs  -----------------------------------------------------------------------------------------------------------
   -----------------------------------------------------------------------------------------------------------------------------
 
-  -- variables used for edition/visualization
-  st              <- newIORef emptyES -- current state: the necessary info to draw the graph
-  oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
-  squareSelection <- newIORef Nothing -- selection box : Maybe (x1,y1,x2,y2)
-  movingGI        <- newIORef False -- if the user started moving some object - necessary to add a position to the undoStack
-  let basicEditIORefs = (st, oldPoint, squareSelection, movingGI)
-
-  
   -- variables to store the multiple graphs of the grammar
-  -- map of graph ids to graphs, containing all the graphs of the grammar
-  graphStates     <- newIORef (M.empty :: M.Map Int32 EditorState)
+  -- map of graph ids to graphs, containing the EditorStates of all graphs in the grammar
+  statesMap       <- newIORef (M.empty :: M.Map Int32 EditorState)
   currentPath     <- newIORef [0] -- indexes of the path of the current graph in the TreeStore
   currentGraph    <- newIORef (0 :: Int32) -- index of the current graph
   {- number specifying the type of the current graph 
-     (see possible values in the module GUI.Helper.TreeStore, lines 52 - 61) 
-  -}
+     (see possible values in the module GUI.Helper.TreeStore, lines 52 - 61) -}
   currentGraphType <- newIORef (1 :: Int32)
-  writeIORef graphStates $ M.fromList [(a,emptyES) | a <- [0 .. 2]]
-  let storeIORefs = (graphStates,currentPath,currentGraph,currentGraphType)
+  writeIORef statesMap $ M.fromList [(a,emptyES) | a <- [0 .. 2]]
+  let storeIORefs = (statesMap,currentPath,currentGraph,currentGraphType)
   
   -- variables to keep track of changes
   changedProject  <- newIORef False -- set this flag as True when the graph is changed somehow
@@ -101,15 +92,13 @@ startGUI = do
   fileName        <- newIORef (Nothing :: Maybe String) -- name of the opened file
 
   -- the type graph being used as base for the typed graphs
-  activeTypeGraph     <- newIORef G.empty  
-
-  
+  typeGraph <- newIORef G.empty
 
   -- variables to specify NACs
   -- Diagraph from the rule - togetter with lhs it make the editor state
-  nacInfoMapIORef <- newIORef (M.empty :: M.Map Int32 (DiaGraph, MergeMapping))
-  mergeMappingIORef <- newIORef (Nothing :: Maybe MergeMapping) -- current merge mapping. important to undo/redo with nacs
-  let nacIORefs = (nacInfoMapIORef, mergeMappingIORef)  
+  nacInfoMap    <- newIORef (M.empty :: M.Map Int32 (DiaGraph, MergeMapping))
+  mergeMapping  <- newIORef (Nothing :: Maybe MergeMapping) -- current merge mapping. important to undo/redo with nacs
+  let nacIORefs = (nacInfoMap, mergeMapping)  
 
 
 
@@ -141,9 +130,10 @@ startGUI = do
   initStore store
   
   -- start editor module
-  editorPane <- startEditor  window fileItems editItems viewItems store
-                              basicEditIORefs storeIORefs changesIORefs
-                              fileName activeTypeGraph nacIORefs
+  (editorPane,currentES) <- startEditor window store
+                                        fileName typeGraph
+                                        storeIORefs changesIORefs nacIORefs
+                                        fileItems editItems viewItems
 
   Gtk.boxPackStart mainBox editorPane True True 0
   -- show window
@@ -162,8 +152,8 @@ startGUI = do
     #showAll cpaWindow
         
   on cpaRunBtn #pressed $ do
-    efstOrderGG <- prepToExport store graphStates nacInfoMapIORef
-    sts <- readIORef graphStates
+    efstOrderGG <- prepToExport store statesMap nacInfoMap
+    sts <- readIORef statesMap
     let tes = fromJust $ M.lookup 0 sts
         tg = editorGetGraph tes
     case efstOrderGG of
@@ -196,7 +186,7 @@ startGUI = do
   -- event bindings for the main window --------------------------------------------------------------------------------------
   -- when click in the close button, the application must close
   on window #deleteEvent $ return $ do
-    continue <- confirmOperation window store changedProject st nacInfoMapIORef fileName storeIORefs
+    continue <- confirmOperation window store changedProject currentES nacInfoMap fileName storeIORefs
     if continue
       then do
         Gtk.mainQuit
