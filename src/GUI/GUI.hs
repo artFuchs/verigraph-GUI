@@ -111,17 +111,16 @@ startGUI = do
   Gtk.init Nothing
 
   -- build main window
-  (window, mainBox, fileItems, editItems, viewItems, analysisItems, helpItems) <- buildMainWindow
+  (window, tabs, fileItems, editItems, viewItems, helpItems) <- buildMainWindow
 
   -- build auxiliar windows
   helpWindow <- buildHelpWindow
-  (cpaWindow, cpaEssentialCheckBtn, cpaConfCheckBtn, cpaDependCheckBtn, cpaRunBtn, cpaResultBuffer) <- buildCpaWindow window
+  (cpaBox, cpaEssentialCheckBtn, cpaConfCheckBtn, cpaDependCheckBtn, cpaRunBtn, cpaResultBuffer) <- buildCpaBox
 
   -- set the menubar
   let [newm,opn,svn,sva,eggx,evgg] = fileItems
       [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
       [zin,zut,z50,zdf,z150,z200,vdf] = viewItems
-      [cpa] = analysisItems
       [hlp,abt] = helpItems
   
 
@@ -135,7 +134,16 @@ startGUI = do
                                         storeIORefs changesIORefs nacIORefs
                                         fileItems editItems viewItems
 
-  Gtk.boxPackStart mainBox editorPane True True 0
+  -- set the tabs
+  editorTabLabel <- new Gtk.Label [#label := "Editor"]
+  Gtk.notebookAppendPage tabs editorPane (Just editorTabLabel)
+  
+  execTabLabel <- new Gtk.Label [#label := "Execute"]
+  fooLabel <- new Gtk.Label [#label := "Under Construction"]
+  Gtk.notebookAppendPage tabs fooLabel (Just execTabLabel)
+
+  analysisTabLabel <- new Gtk.Label [#label := "Analysis"]
+  Gtk.notebookAppendPage tabs cpaBox (Just analysisTabLabel)
   -- show window
   #showAll window
                     
@@ -148,9 +156,6 @@ startGUI = do
   -- event bindings for the menu toolbar -------------------------------------------------------------------------------------
 
   -- Analysis Menu 
-  cpa `on` #activate $ do
-    #showAll cpaWindow
-        
   on cpaRunBtn #pressed $ do
     efstOrderGG <- prepToExport store statesMap nacInfoMap
     sts <- readIORef statesMap
@@ -207,12 +212,12 @@ startGUI = do
 -- GUI Definition ------------------------------------------------------------------------------------------------------------
 ------------------------------------------------------------------------------------------------------------------------------
 
-buildMainWindow :: IO ( Gtk.Window, Gtk.Box, [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem])
+buildMainWindow :: IO ( Gtk.Window, Gtk.Notebook, [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem])
 buildMainWindow = do
   builder <- new Gtk.Builder []
   Gtk.builderAddFromFile builder "./Resources/window.glade"
   window  <- Gtk.builderGetObject builder "window" >>= unsafeCastTo Gtk.Window . fromJust
-  mainBox <- Gtk.builderGetObject builder "mainBox" >>= unsafeCastTo Gtk.Box . fromJust
+  tabs    <- Gtk.builderGetObject builder "tabs" >>= unsafeCastTo Gtk.Notebook . fromJust
   
   -- menubar
   menubar  <- Gtk.builderGetObject builder "menubar" >>= unsafeCastTo Gtk.MenuBar . fromJust
@@ -247,11 +252,8 @@ buildMainWindow = do
   resetViewItem <- Gtk.builderGetObject builder  "resetview_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   let viewItems = [zoomInItem,zoomOutItem,zoom50Item,zoom100Item,zoom150Item,zoom200Item,resetViewItem]
 
-  cpaItem <- Gtk.builderGetObject builder "cpa_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  let analysisItems = [cpaItem]
-
   helpItem <- Gtk.builderGetObject builder  "help_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   aboutItem <- Gtk.builderGetObject builder  "about_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   let helpItems = [helpItem, aboutItem]
 
-  return ( window, mainBox, fileItems, editItems, viewItems, analysisItems, helpItems)
+  return ( window, tabs, fileItems, editItems, viewItems, helpItems)
