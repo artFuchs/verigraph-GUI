@@ -229,7 +229,7 @@
                       </object>
                     </child>
                     <child>
-                      <object class="GtkSeparatorMenuItem" id="view_sep1">
+                      <object class="GtkSeparatorMenuItem">
                         <property name="can_focus">False</property>
                       </object>
                     </child>
@@ -263,7 +263,7 @@
                       </object>
                     </child>
                     <child>
-                      <object class="GtkSeparatorMenuItem" id="view_sep2">
+                      <object class="GtkSeparatorMenuItem">
                         <property name="can_focus">False</property>
                       </object>
                     </child>

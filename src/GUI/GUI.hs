@@ -54,6 +54,9 @@ import           GUI.Helper.Geometry
 import           GUI.Helper.GraphValidation
 import           GUI.Render.Render
 
+-- modules for executor
+import GUI.Executor
+
 -- modules needed for analysis
 import qualified Exec.GlobalOptions        as EGO
 import qualified Exec.CriticalPairAnalysis as CPA
@@ -139,8 +142,8 @@ startGUI = do
   Gtk.notebookAppendPage tabs editorPane (Just editorTabLabel)
   
   execTabLabel <- new Gtk.Label [#label := "Execute"]
-  fooLabel <- new Gtk.Label [#label := "Under Construction"]
-  Gtk.notebookAppendPage tabs fooLabel (Just execTabLabel)
+  execPane <- buildExecutor
+  Gtk.notebookAppendPage tabs execPane (Just execTabLabel)
 
   analysisTabLabel <- new Gtk.Label [#label := "Analysis"]
   Gtk.notebookAppendPage tabs cpaBox (Just analysisTabLabel)
