@@ -1,4 +1,4 @@
-module GUI.Editor.Render.GraphDraw (
+module GUI.Render.GraphDraw (
   drawTypeGraph
 , drawHostGraph
 , drawRuleGraph

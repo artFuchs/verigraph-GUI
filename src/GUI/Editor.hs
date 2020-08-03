@@ -57,8 +57,8 @@ import           GUI.Helper.List
 import           GUI.Helper.Geometry
 import           GUI.Helper.GrammarMaker
 import           GUI.Helper.GraphValidation
-import           GUI.Helper.TreeStore
 import           GUI.Render.Render
+import           GUI.Render.GraphDraw
 
 -- Editor modules
 import GUI.Editor.Helper.Clipboard
@@ -67,9 +67,9 @@ import GUI.Editor.Helper.Nac
 import GUI.Editor.Helper.SaveLoad
 import GUI.Editor.Helper.TypeInfer
 import GUI.Editor.Helper.UndoRedo
-import GUI.Editor.Render.GraphDraw
 import GUI.Editor.UI.UIBuilders
 import GUI.Editor.UI.RuleViewer
+import GUI.Editor.Helper.TreeStore
 import GUI.Editor.UI.UpdateInspector
 
 ---------------------------------------------------------------------------------------------------------------------------------
@@ -258,7 +258,7 @@ startEditor window store
   -- mouse button pressed on canvas
   -- set callback to select elements on canvas
   on canvas #buttonPressEvent $ basicCanvasButtonPressedCallback currentState oldPoint squareSelection canvas
-  -- edition only callback
+  -- additional callback to edit label on double-click and create new elements when right click
   on canvas #buttonPressEvent $ \eventButton -> do
     b <- get eventButton #button
     x <- get eventButton #x

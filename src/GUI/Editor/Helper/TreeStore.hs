@@ -1,9 +1,9 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 
 {- | Definition of GraphStore and auxiliar functions 
-     to manipulate the TreeStore associated with the TreeView in the main window
+     to manipulate the TreeStore associated with the TreeView of the Editor
 -}
-module GUI.Helper.TreeStore(
+module GUI.Editor.Helper.TreeStore(
   GraphStore
 , initStore
 , initTreeView
@@ -102,8 +102,11 @@ storeSetGraphStore store iter (n,c,i,t,a,v) = do
 -- gets
 ----------------------------------------------------------
 
--- | walk in a TreeStore recovering the essential information of the GraphStore stored in each position
--- must be given the TreeStore and a initial TreeIter to start a recursive walk in the treeStore.
+{- | 
+  Walk in a TreeStore recovering the essential information of the GraphStore stored in each position.
+  Must be given the TreeStore and a initial TreeIter to start a recursive walk in the treeStore.
+  Returns a Tree.Forest containing (Type,(Name,Id,Active))
+-}
 getTreeStoreValues :: Gtk.TreeStore 
                    -> Gtk.TreeIter 
                    -> IO (Tree.Forest (Int32,(String,Int32,Bool)))

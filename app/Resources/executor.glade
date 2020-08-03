@@ -78,7 +78,7 @@
                 <property name="can_focus">False</property>
                 <property name="layout_style">start</property>
                 <child>
-                  <object class="GtkButton" id="stopExecBtn">
+                  <object class="GtkButton" id="stopBtn">
                     <property name="visible">True</property>
                     <property name="can_focus">True</property>
                     <property name="receives_default">True</property>
@@ -100,7 +100,7 @@
                   </packing>
                 </child>
                 <child>
-                  <object class="GtkButton" id="startExecBtn">
+                  <object class="GtkButton" id="startBtn">
                     <property name="visible">True</property>
                     <property name="can_focus">True</property>
                     <property name="receives_default">True</property>
@@ -121,7 +121,7 @@
                   </packing>
                 </child>
                 <child>
-                  <object class="GtkButton" id="gtkPauseBtn">
+                  <object class="GtkButton" id="pauseBtn">
                     <property name="visible">True</property>
                     <property name="can_focus">True</property>
                     <property name="receives_default">True</property>
@@ -140,7 +140,7 @@
                   </packing>
                 </child>
                 <child>
-                  <object class="GtkButton" id="stepExecBtn">
+                  <object class="GtkButton" id="stepBtn">
                     <property name="visible">True</property>
                     <property name="can_focus">True</property>
                     <property name="receives_default">True</property>
@@ -188,7 +188,7 @@
               </packing>
             </child>
             <child>
-              <object class="GtkDrawingArea" id="hostGraphCanvas">
+              <object class="GtkDrawingArea" id="mainCanvas">
                 <property name="visible">True</property>
                 <property name="can_focus">False</property>
               </object>

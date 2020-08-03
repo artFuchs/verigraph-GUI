@@ -6,34 +6,33 @@ module GUI.GUI(
 -- Gtk modules
 import qualified GI.Gtk as Gtk
 import qualified GI.Gdk as Gdk
-import qualified GI.Pango as P
-import Data.GI.Base
-import Data.GI.Base.GValue
-import Data.GI.Base.GType
-import Data.GI.Base.ManagedPtr (unsafeCastTo)    
-import Graphics.Rendering.Cairo
-import Graphics.Rendering.Pango.Layout
-import Graphics.Rendering.Pango
+import           Data.GI.Base
+import           Data.GI.Base.GValue
+import           Data.GI.Base.GType
+import           Data.GI.Base.ManagedPtr (unsafeCastTo)    
+import           Graphics.Rendering.Cairo
+import           Graphics.Rendering.Pango.Layout
+import           Graphics.Rendering.Pango
 
 -- haskell data modules
-import Control.Monad
-import Control.Monad.IO.Class
-import Control.Monad.Zip
-import Data.IORef
-import Data.List
-import Data.Int
-import Data.Char
-import Data.Maybe
-import Data.Either
+import           Control.Monad
+import           Control.Monad.IO.Class
+import           Control.Monad.Zip
+import           Data.IORef
+import           Data.List
+import           Data.Int
+import           Data.Char
+import           Data.Maybe
+import           Data.Either
 import qualified Data.Text as T
 import qualified Data.Map as M
 import qualified Data.Tree as Tree
-import Data.Monoid
+import           Data.Monoid
 
 -- verigraph modules
-import Abstract.Category
-import Abstract.Rewriting.DPO
-import Data.Graphs hiding (null, empty)
+import           Abstract.Category
+import           Abstract.Rewriting.DPO
+import           Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
 import qualified Data.TypedGraph.Morphism as TGM
 
@@ -46,16 +45,16 @@ import           GUI.Dialogs
 import           GUI.Data.EditorState
 import qualified GUI.Data.DiaGraph as DG
 import           GUI.Data.Nac
-import           GUI.Editor
+import           GUI.Editor as Edit
+import qualified GUI.Editor.Helper.TreeStore as Edit
 import           GUI.Helper.GrammarMaker
-import           GUI.Helper.TreeStore
 import           GUI.Helper.List
 import           GUI.Helper.Geometry
 import           GUI.Helper.GraphValidation
 import           GUI.Render.Render
 
 -- modules for executor
-import GUI.Executor
+import qualified GUI.Executor as Exec
 
 -- modules needed for analysis
 import qualified Exec.GlobalOptions        as EGO
@@ -127,26 +126,29 @@ startGUI = do
       [hlp,abt] = helpItems
   
 
-  -- init an model to display in the tree panel --------------------------------
+  -- init an model to display in the editor tree panel --------------------------------
   store <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt, gtypeBoolean, gtypeBoolean]
-  initStore store
-  
+  Edit.initStore store
   -- start editor module
-  (editorPane,currentES) <- startEditor window store
-                                        fileName typeGraph
-                                        storeIORefs changesIORefs nacIORefs
-                                        fileItems editItems viewItems
+  (editorPane,currentES) <- Edit.startEditor window store
+                                                fileName typeGraph
+                                                storeIORefs changesIORefs nacIORefs
+                                                fileItems editItems viewItems
+
+  -- start executor module
+  execStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt]
+  execPane <- Exec.buildExecutor execStore statesMap typeGraph
 
   -- set the tabs
   editorTabLabel <- new Gtk.Label [#label := "Editor"]
   Gtk.notebookAppendPage tabs editorPane (Just editorTabLabel)
   
   execTabLabel <- new Gtk.Label [#label := "Execute"]
-  execPane <- buildExecutor
   Gtk.notebookAppendPage tabs execPane (Just execTabLabel)
 
   analysisTabLabel <- new Gtk.Label [#label := "Analysis"]
-  Gtk.notebookAppendPage tabs cpaBox (Just analysisTabLabel)
+  Gtk.notebookAppendPage tabs cpaBox (Just analysisTabLabel)    
+
   -- show window
   #showAll window
                     
@@ -158,9 +160,17 @@ startGUI = do
   
   -- event bindings for the menu toolbar -------------------------------------------------------------------------------------
 
-  -- Analysis Menu 
+  -- Executor
+  after tabs #switchPage $ \page pageId -> do
+    case pageId of 
+      1 -> do
+        -- TODO: modify execStore to set rules
+        return ()
+      _ -> return ()
+
+  -- Analysis
   on cpaRunBtn #pressed $ do
-    efstOrderGG <- prepToExport store statesMap nacInfoMap
+    efstOrderGG <- Edit.prepToExport store statesMap nacInfoMap
     sts <- readIORef statesMap
     let tes = fromJust $ M.lookup 0 sts
         tg = editorGetGraph tes
@@ -185,16 +195,16 @@ startGUI = do
 
   -- Help Menu 
   -- help
-  hlp `on` #activate $ do
+  on hlp #activate $ do
     #showAll helpWindow
 
   -- about
-  abt `on` #activate $ buildAboutDialog
+  on abt #activate $ buildAboutDialog
 
   -- event bindings for the main window --------------------------------------------------------------------------------------
   -- when click in the close button, the application must close
   on window #deleteEvent $ return $ do
-    continue <- confirmOperation window store changedProject currentES nacInfoMap fileName storeIORefs
+    continue <- Edit.confirmOperation window store changedProject currentES nacInfoMap fileName storeIORefs
     if continue
       then do
         Gtk.mainQuit

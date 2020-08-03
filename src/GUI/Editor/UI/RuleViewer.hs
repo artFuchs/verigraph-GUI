@@ -20,8 +20,8 @@ import GUI.Data.GraphicalInfo
 import GUI.Data.Info hiding (empty)
 import GUI.Editor.UI.UIBuilders
 import GUI.Render.Render
+import GUI.Render.GraphDraw
 import GUI.Helper.Geometry
-import GUI.Editor.Render.GraphDraw
 
 
 
