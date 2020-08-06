@@ -10,6 +10,7 @@ module GUI.Editor(
 , basicCanvasButtonReleasedCallback
 , prepToExport
 , confirmOperation
+, storeCurrentES
 )where
 
 import qualified GI.Gtk as Gtk

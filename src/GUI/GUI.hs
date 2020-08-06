@@ -138,7 +138,7 @@ startGUI = do
   -- start executor module
   execStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt]
   Exec.updateTreeStore execStore ("Rule0", 2, 3, 0)
-  execPane <- Exec.buildExecutor execStore statesMap typeGraph
+  (execPane, execState, execStarted) <- Exec.buildExecutor execStore statesMap typeGraph
 
   -- set the tabs
   editorTabLabel <- new Gtk.Label [#label := "Editor"]
@@ -189,6 +189,19 @@ startGUI = do
           then Gtk.treeStoreRemove execStore ruleIter
           else return False
         return ()
+
+  on tabs #switchPage $ \page pageNum -> do
+    -- update statesMap with the information of currentES
+    Edit.storeCurrentES window currentES storeIORefs nacInfoMap
+    case pageNum of
+      1 -> do
+          started <- readIORef execStarted
+          if started
+            then return ()
+            else do
+              initState <- readIORef statesMap >>= return . fromMaybe emptyES . M.lookup 1
+              writeIORef execState initState
+      _ -> return ()
 
   -- Analysis menu
   on cpaRunBtn #pressed $ do

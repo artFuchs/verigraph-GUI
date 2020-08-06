@@ -26,7 +26,7 @@ import GUI.Render.GraphDraw
 -- this should not be used, but let if be for now
 import qualified GUI.Editor as Editor (basicCanvasButtonPressedCallback, basicCanvasMotionCallBack, basicCanvasButtonReleasedCallback)
 
-buildExecutor :: Gtk.TreeStore -> IORef (M.Map Int32 EditorState) -> IORef (G.Graph Info Info) ->  IO (Gtk.Paned)
+buildExecutor :: Gtk.TreeStore -> IORef (M.Map Int32 EditorState) -> IORef (G.Graph Info Info) ->  IO (Gtk.Paned, IORef EditorState, IORef Bool)
 buildExecutor store statesMap typeGraph = do
     builder <- new Gtk.Builder []
     Gtk.builderAddFromFile builder "./Resources/executor.glade"
@@ -52,6 +52,8 @@ buildExecutor store statesMap typeGraph = do
 
     -- IORefs -------------------------------------------------------------------------------------------------------------------
     hostState       <- newIORef emptyES -- state refering to the init graph with rules applied
+    execStarted     <- newIORef False   -- if execution has already started
+
     oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
     squareSelection <- newIORef Nothing -- selection box : Maybe (x1,y1,x2,y2)
     movingGI        <- newIORef False -- if the user started moving some object - necessary to add a position to the undoStack
@@ -76,8 +78,9 @@ buildExecutor store statesMap typeGraph = do
         statesM <- readIORef statesMap
         let initState = fromMaybe emptyES $ M.lookup 1 statesM
         writeIORef hostState initState
+        writeIORef execStarted False
     
-    return executorPane
+    return (executorPane, hostState, execStarted)
 
 {-| ExecGraphEntry
     A tuple representing what is showed in each node of the tree in the treeview
