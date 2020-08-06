@@ -7,6 +7,7 @@ module GUI.Executor (
 
 import qualified GI.Gtk as Gtk
 import qualified GI.Gdk as Gdk
+import Graphics.Rendering.Cairo (Render)
 
 import           Control.Monad.IO.Class
 import           Data.IORef
@@ -22,6 +23,7 @@ import GUI.Data.EditorState
 import GUI.Data.Info
 import GUI.Render.Render
 import GUI.Render.GraphDraw
+import GUI.Helper.GrammarMaker
 
 -- this should not be used, but let if be for now
 import qualified GUI.Editor as Editor (basicCanvasButtonPressedCallback, basicCanvasMotionCallBack, basicCanvasButtonReleasedCallback)
@@ -40,10 +42,12 @@ buildExecutor store statesMap typeGraph = do
     nacCanvas  <- Gtk.builderGetObject builder "nacCanvas" >>= unsafeCastTo Gtk.DrawingArea . fromJust
     lCanvas    <- Gtk.builderGetObject builder "lCanvas" >>= unsafeCastTo Gtk.DrawingArea . fromJust
     rCanvas    <- Gtk.builderGetObject builder "rCanvas" >>= unsafeCastTo Gtk.DrawingArea . fromJust
+    ruleCanvas    <- Gtk.builderGetObject builder "ruleCanvas" >>= unsafeCastTo Gtk.DrawingArea . fromJust
     Gtk.widgetSetEvents mainCanvas [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
     Gtk.widgetSetEvents nacCanvas [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
     Gtk.widgetSetEvents lCanvas [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
     Gtk.widgetSetEvents rCanvas [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
+    Gtk.widgetSetEvents ruleCanvas [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
 
     stopBtn <- Gtk.builderGetObject builder "stopBtn" >>= unsafeCastTo Gtk.Button . fromJust
 
@@ -52,11 +56,11 @@ buildExecutor store statesMap typeGraph = do
 
     -- IORefs -------------------------------------------------------------------------------------------------------------------
     hostState       <- newIORef emptyES -- state refering to the init graph with rules applied
-    execStarted     <- newIORef False   -- if execution has already started
+    ruleState       <- newIORef emptyES -- state refering to the graph of the selected rule
+    lState          <- newIORef emptyES -- state refering to the graph of the left side of selected rule
+    rState          <- newIORef emptyES -- state refering to the graph of the right side of selected rule
 
-    oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
-    squareSelection <- newIORef Nothing -- selection box : Maybe (x1,y1,x2,y2)
-    movingGI        <- newIORef False -- if the user started moving some object - necessary to add a position to the undoStack
+    execStarted     <- newIORef False   -- if execution has already started
 
     -- callbacks ----------------------------------------------------------------------------------------------------------------
     -- hide rule viewer panel when colse button is pressed
@@ -64,23 +68,82 @@ buildExecutor store statesMap typeGraph = do
         closePos <- get execPane #maxPosition
         Gtk.panedSetPosition execPane closePos
 
-    on mainCanvas #draw $ \context -> do
-        es <- readIORef hostState
-        tg <- readIORef typeGraph
-        sq <- readIORef squareSelection
-        renderWithContext context $ drawHostGraph es sq tg
-        return False
-    on mainCanvas #buttonPressEvent $ Editor.basicCanvasButtonPressedCallback hostState oldPoint squareSelection mainCanvas
-    on mainCanvas #motionNotifyEvent $ Editor.basicCanvasMotionCallBack hostState oldPoint squareSelection mainCanvas
-    on mainCanvas #buttonReleaseEvent $ Editor.basicCanvasButtonReleasedCallback hostState squareSelection mainCanvas
+    -- canvas
+    setCanvasCallBacks mainCanvas hostState typeGraph drawHostGraph
+    setCanvasCallBacks ruleCanvas ruleState typeGraph drawRuleGraph
+    setCanvasCallBacks lCanvas lState typeGraph drawRuleSideGraph
+    setCanvasCallBacks rCanvas rState typeGraph drawRuleSideGraph
     
+
+    -- when select a rule, change their states
+    on treeView #cursorChanged $ do
+        selection <- Gtk.treeViewGetSelection treeView
+        (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
+        if sel
+            then do
+                index <- Gtk.treeModelGetValue model iter 1 >>= fromGValue :: IO Int32
+                gType <- Gtk.treeModelGetValue model iter 2 >>= fromGValue :: IO Int32
+                case gType of
+                    3 -> do
+                        statesM <- readIORef statesMap
+                        let es = fromMaybe emptyES $ M.lookup index statesM
+                            g = editorGetGraph es
+                            (l,k,r) = graphToRuleGraphs g
+                            (ngiM,egiM) = editorGetGI es
+                            lngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds l)) ngiM
+                            legiM = M.filterWithKey (\k a -> (G.EdgeId k) `elem` (G.edgeIds l)) egiM
+                            rngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds r)) ngiM
+                            regiM = M.filterWithKey (\k a -> (G.EdgeId k) `elem` (G.edgeIds r)) egiM
+                            les = editorSetGraph l . editorSetGI (lngiM,legiM) $ es
+                            res = editorSetGraph r . editorSetGI (rngiM,regiM) $ es
+                        writeIORef ruleState es
+                        writeIORef lState les
+                        writeIORef rState res
+                        Gtk.widgetQueueDraw lCanvas
+                        Gtk.widgetQueueDraw rCanvas
+                        Gtk.widgetQueueDraw ruleCanvas
+                    4 -> return () -- TODO: set nac
+                    _ -> return () -- error: the selected graph type is not a Rule nor a NAC
+
+            else return ()
+
+
+    -- execution controls
     on stopBtn #pressed $ do
         statesM <- readIORef statesMap
         let initState = fromMaybe emptyES $ M.lookup 1 statesM
         writeIORef hostState initState
         writeIORef execStarted False
     
+
+    
+    
     return (executorPane, hostState, execStarted)
+
+setCanvasCallBacks :: Gtk.DrawingArea 
+                   -> IORef EditorState 
+                   -> IORef (G.Graph Info Info )
+                   -> (EditorState -> Maybe (Double,Double,Double,Double) -> G.Graph Info Info -> Render ()) 
+                   -> IO ()
+setCanvasCallBacks canvas state typeGraph drawMethod = do
+    oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
+    squareSelection <- newIORef Nothing   -- selection box : Maybe (x1,y1,x2,y2)
+    movingGI        <- newIORef False     -- if the user started moving some object - necessary to add a position to the undoStack
+
+    on canvas #draw $ \context -> do
+        es <- readIORef state
+        tg <- readIORef typeGraph
+        sq <- readIORef squareSelection
+        renderWithContext context $ drawMethod es sq tg
+        return False
+    on canvas #buttonPressEvent $ Editor.basicCanvasButtonPressedCallback state oldPoint squareSelection canvas
+    on canvas #motionNotifyEvent $ Editor.basicCanvasMotionCallBack state oldPoint squareSelection canvas
+    on canvas #buttonReleaseEvent $ Editor.basicCanvasButtonReleasedCallback state squareSelection canvas 
+    return ()  
+
+    
+
+
 
 {-| ExecGraphEntry
     A tuple representing what is showed in each node of the tree in the treeview

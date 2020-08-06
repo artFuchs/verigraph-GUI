@@ -69,7 +69,6 @@ import GUI.Editor.Helper.SaveLoad
 import GUI.Editor.Helper.TypeInfer
 import GUI.Editor.Helper.UndoRedo
 import GUI.Editor.UI.UIBuilders
-import GUI.Editor.UI.RuleViewer
 import GUI.Editor.Helper.TreeStore
 import GUI.Editor.UI.UpdateInspector
 
