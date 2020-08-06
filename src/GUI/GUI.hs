@@ -73,7 +73,7 @@ startGUI = do
   --------  IORefs  -----------------------------------------------------------------------------------------------------------
   -----------------------------------------------------------------------------------------------------------------------------
 
-  -- variables to store the multiple graphs of the grammar
+  -- variables to editStore the multiple graphs of the grammar
   -- map of graph ids to graphs, containing the EditorStates of all graphs in the grammar
   statesMap       <- newIORef (M.empty :: M.Map Int32 EditorState)
   currentPath     <- newIORef [0] -- indexes of the path of the current graph in the TreeStore
@@ -127,16 +127,17 @@ startGUI = do
   
 
   -- init an model to display in the editor tree panel --------------------------------
-  store <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt, gtypeBoolean, gtypeBoolean]
-  Edit.initStore store
+  editStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt, gtypeBoolean, gtypeBoolean]
+  Edit.initStore editStore
   -- start editor module
-  (editorPane,currentES) <- Edit.startEditor window store
+  (editorPane,currentES) <- Edit.startEditor window editStore
                                                 fileName typeGraph
                                                 storeIORefs changesIORefs nacIORefs
                                                 fileItems editItems viewItems
 
   -- start executor module
-  execStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt]
+  execStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt]
+  Exec.updateTreeStore execStore ("Rule0", 2, 3, 0)
   execPane <- Exec.buildExecutor execStore statesMap typeGraph
 
   -- set the tabs
@@ -158,19 +159,40 @@ startGUI = do
   --------  EVENT BINDINGS  --------------------------------------------------------------------------------------------------
   ----------------------------------------------------------------------------------------------------------------------------
   
-  -- event bindings for the menu toolbar -------------------------------------------------------------------------------------
-
-  -- Executor
-  after tabs #switchPage $ \page pageId -> do
-    case pageId of 
-      1 -> do
-        -- TODO: modify execStore to set rules
-        return ()
+  -- update execStore based on editStore
+  after editStore #rowChanged $ \path iter -> do
+    n  <- Gtk.treeModelGetValue editStore iter 0 >>= (\n -> fromGValue n :: IO (Maybe String)) >>= return . fromJust
+    id <- Gtk.treeModelGetValue editStore iter 2 >>= fromGValue :: IO Int32
+    t  <- Gtk.treeModelGetValue editStore iter 3 >>= fromGValue :: IO Int32
+    a  <- Gtk.treeModelGetValue editStore iter 4 >>= fromGValue :: IO Bool
+    case t of
+      3 -> Exec.updateTreeStore execStore (n,id,t,0)
+      4 -> do
+        (valid,parent) <- Gtk.treeModelIterParent editStore iter
+        if valid
+          then do
+            p <- Gtk.treeModelGetValue editStore parent 2 >>= fromGValue :: IO Int32
+            Exec.updateTreeStore execStore (n,id,t,p)
+          else return ()
       _ -> return ()
 
-  -- Analysis
+  -- when a rule or nac is deleted from editStore, remove the correspondent from execStore
+  after editStore #rowDeleted $ \path -> do
+    mIndices <- Gtk.treePathGetIndices path
+    let h:indices = fromMaybe [0] mIndices 
+    if null indices
+      then return ()
+      else do
+        rulePath <- Gtk.treePathNewFromIndices indices
+        (valid,ruleIter) <- Gtk.treeModelGetIter execStore rulePath
+        if valid
+          then Gtk.treeStoreRemove execStore ruleIter
+          else return False
+        return ()
+
+  -- Analysis menu
   on cpaRunBtn #pressed $ do
-    efstOrderGG <- Edit.prepToExport store statesMap nacInfoMap
+    efstOrderGG <- Edit.prepToExport editStore statesMap nacInfoMap
     sts <- readIORef statesMap
     let tes = fromJust $ M.lookup 0 sts
         tg = editorGetGraph tes
@@ -204,7 +226,7 @@ startGUI = do
   -- event bindings for the main window --------------------------------------------------------------------------------------
   -- when click in the close button, the application must close
   on window #deleteEvent $ return $ do
-    continue <- Edit.confirmOperation window store changedProject currentES nacInfoMap fileName storeIORefs
+    continue <- Edit.confirmOperation window editStore changedProject currentES nacInfoMap fileName storeIORefs
     if continue
       then do
         Gtk.mainQuit

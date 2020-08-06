@@ -111,10 +111,10 @@ buildTreePanel = do
   btnNewR <- new Gtk.Button [#label := "New Rule"]
   Gtk.boxPackStart mainBox btnNewR False False 0
 
-  btnRmv <- new Gtk.Button [#label := "Remove Rule"]
-  Gtk.boxPackStart mainBox btnRmv False False 0
-
   btnNewN <- new Gtk.Button [#label := "New NAC"]
   Gtk.boxPackStart mainBox btnNewN False False 0
+
+  btnRmv <- new Gtk.Button [#label := "Remove Rule"]
+  Gtk.boxPackStart mainBox btnRmv False False 0
 
   return (mainBox, treeview, rendererChanges, rendererProj, rendererActive, btnNewR, btnRmv, btnNewN)

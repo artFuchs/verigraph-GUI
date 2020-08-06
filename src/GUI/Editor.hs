@@ -115,6 +115,7 @@ startEditor window store
   (treeBox, treeview, changesRenderer, nameRenderer, activeRenderer, createRBtn, removeBtn, createNBtn) <- buildTreePanel
   Gtk.containerAdd treeFrame treeBox
   Gtk.treeViewSetModel treeview (Just store)
+  initTreeView treeview
 
   changesCol <- Gtk.treeViewGetColumn treeview 0
   namesCol <- Gtk.treeViewGetColumn treeview 1
@@ -152,6 +153,7 @@ startEditor window store
       renderer' <- castTo Gtk.CellRendererToggle renderer
       case (renderer', gType) of
         (Just r, 3) -> set r [#visible := True, #radio := False, #active := active, #activatable:=True]
+        (Just r, 4) -> set r [#visible := True, #radio := False, #active := active, #activatable:=True]
         (Just r, _) -> set r [#visible := False]
         _ -> return ()
       )
@@ -1043,16 +1045,28 @@ startEditor window store
     if not sel
       then return ()
       else do
+        let removeNac iter = do
+                index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
+                Gtk.treeStoreRemove store iter
+                modifyIORef graphStates $ M.delete index
+                modifyIORef nacInfoMap $ M.delete index
+        let removeNacs iter = do
+                removeNac iter
+                continue <- Gtk.treeModelIterNext store iter
+                if continue
+                  then removeNacs iter
+                  else return ()
         gtype <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
         case gtype of
           3 -> do
+            (hasNac, nacIter) <- Gtk.treeModelIterChildren store (Just iter)
+            if hasNac
+              then removeNacs nacIter
+              else return ()
             index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
             Gtk.treeStoreRemove store iter
             modifyIORef graphStates $ M.delete index
-          4 -> do
-            index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
-            Gtk.treeStoreRemove store iter
-            modifyIORef graphStates $ M.delete index
+          4 -> removeNac iter
           _ -> showError window "Selected Graph is not a NAC or a Rule."
 
   -- pressed the 'create NAC' vutton on the treeview area

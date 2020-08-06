@@ -109,11 +109,11 @@ storeSetGraphStore store iter (n,c,i,t,a,v) = do
 -}
 getTreeStoreValues :: Gtk.TreeStore 
                    -> Gtk.TreeIter 
-                   -> IO (Tree.Forest (Int32,(String,Int32,Bool)))
+                   -> IO (Tree.Forest (String,Int32,Int32,Bool))
 getTreeStoreValues store iter = do
-  valT <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
   valN <- Gtk.treeModelGetValue store iter 0 >>= (\n -> fromGValue n :: IO (Maybe String)) >>= return . fromJust
   valI <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
+  valT <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
   valA <- Gtk.treeModelGetValue store iter 4 >>= fromGValue :: IO Bool
   (valid, childIter) <- Gtk.treeModelIterChildren store (Just iter)
   subForest <- case valid of
@@ -123,8 +123,8 @@ getTreeStoreValues store iter = do
   if continue
     then do
       newVals <- getTreeStoreValues store iter
-      return $ (Tree.Node (valT, (valN, valI, valA)) subForest) : newVals
-    else return $ (Tree.Node (valT, (valN, valI, valA)) subForest) : []
+      return $ (Tree.Node (valN, valI, valT, valA) subForest) : newVals
+    else return $ (Tree.Node (valN, valI, valT, valA) subForest) : []
 
 -- | gets a tree of SaveInfo out of a TreeStore
 getStructsToSave :: Gtk.TreeStore 
@@ -140,7 +140,7 @@ getStructsToSave store graphStates nacInfoMapIORef = do
       states <- readIORef graphStates
       nacInfoMap <- readIORef nacInfoMapIORef
       let structs = map
-                    (fmap (\(t, (name, nid, active)) -> case t of
+                    (fmap (\(name, nid, t, active) -> case t of
                                 0 -> Topic name
                                 1 -> let es = fromJust $ M.lookup nid states
                                      in TypeGraph name es

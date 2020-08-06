@@ -1,8 +1,8 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 module GUI.Executor (
   buildExecutor
-, ExecGraphStore
-, storeSetGraphStore
+, ExecGraphEntry
+, updateTreeStore
 ) where
 
 import qualified GI.Gtk as Gtk
@@ -79,19 +79,76 @@ buildExecutor store statesMap typeGraph = do
     
     return executorPane
 
-{-| ExecGraphStore
+{-| ExecGraphEntry
     A tuple representing what is showed in each node of the tree in the treeview
     It contains the informations:
     * name,
-    * graph id,
-    * type (3 - rule, 4 - NAC)
+    * id,
+    * type (3 - rule, 4 - NAC),
+    * parent id (used if type is NAC).
+    * active
 -}
-type ExecGraphStore = (String, Int32, Int32)
+type ExecGraphEntry = (String, Int32, Int32, Int32)
 
 -- | set the ExecGraphStore in a position given by an iter in the TreeStore
-storeSetGraphStore :: Gtk.TreeStore -> Gtk.TreeIter -> ExecGraphStore -> IO ()
-storeSetGraphStore store iter (n,i,t) = do
-    gv0 <- toGValue (Just n)
-    gv1 <- toGValue i
-    gv2 <- toGValue t
-    #set store iter [0,1,2] [gv0,gv1,gv2]
+storeSetGraphEntry :: Gtk.TreeStore -> Gtk.TreeIter -> ExecGraphEntry -> IO ()
+storeSetGraphEntry store iter (n,i,t,p) = do
+    gvn <- toGValue (Just n)
+    gvi <- toGValue i
+    gvt <- toGValue t
+    gvp <- toGValue p
+    #set store iter [0,1,2,3] [gvn,gvi,gvt,gvp]
+
+-- search the treeStore for an entry. If the entry is found then update it, else create the entry.
+updateTreeStore :: Gtk.TreeStore -> ExecGraphEntry -> IO ()
+updateTreeStore store entry = do
+    (valid,iter) <- Gtk.treeModelGetIterFirst store
+    if valid
+        then updateTreeStore' store iter entry
+        else do
+            iter <- Gtk.treeStoreAppend store Nothing
+            storeSetGraphEntry store iter entry
+
+updateTreeStore' :: Gtk.TreeStore -> Gtk.TreeIter -> ExecGraphEntry -> IO ()
+updateTreeStore' store iter entry@(n,i,t,p) = do
+    cid <- Gtk.treeModelGetValue store iter 1 >>= fromGValue :: IO Int32
+    ct  <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
+    if cid == i
+        then storeSetGraphEntry store iter entry
+        else do
+            let updateInList parentIter = do
+                    valid <- Gtk.treeModelIterNext store iter
+                    if valid
+                        then updateTreeStore' store iter entry
+                        else do
+                            newIter <- Gtk.treeStoreAppend store parentIter
+                            storeSetGraphEntry store newIter entry
+            case t of
+                3 -> updateInList Nothing
+                4 -> do
+                    case (ct == 3,cid == p) of
+                        (True,True) -> do
+                            (valid,childIter) <- Gtk.treeModelIterChildren store (Just iter) 
+                            if valid
+                                then updateTreeStore' store childIter entry
+                                else do
+                                    childIter <- Gtk.treeStoreAppend store (Just iter)
+                                    storeSetGraphEntry store childIter entry
+                        (True,False) -> do
+                            valid <- Gtk.treeModelIterNext store iter
+                            if valid
+                                then updateTreeStore' store iter entry
+                                else return ()
+                        _ -> do 
+                            (valid,parentIter) <- Gtk.treeModelIterParent store iter
+                            if valid
+                                then updateInList (Just parentIter)
+                                else return ()
+
+
+
+            
+    
+    
+
+    
