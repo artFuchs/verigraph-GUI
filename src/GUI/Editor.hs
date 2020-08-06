@@ -1047,12 +1047,12 @@ startEditor window store
       else do
         let removeNac iter = do
                 index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
-                Gtk.treeStoreRemove store iter
+                hasMore <- Gtk.treeStoreRemove store iter
                 modifyIORef graphStates $ M.delete index
                 modifyIORef nacInfoMap $ M.delete index
+                return hasMore
         let removeNacs iter = do
-                removeNac iter
-                continue <- Gtk.treeModelIterNext store iter
+                continue <- removeNac iter
                 if continue
                   then removeNacs iter
                   else return ()
@@ -1066,7 +1066,9 @@ startEditor window store
             index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
             Gtk.treeStoreRemove store iter
             modifyIORef graphStates $ M.delete index
-          4 -> removeNac iter
+          4 -> do 
+            removeNac iter
+            return ()
           _ -> showError window "Selected Graph is not a NAC or a Rule."
 
   -- pressed the 'create NAC' vutton on the treeview area
@@ -1131,6 +1133,8 @@ startEditor window store
         notActive <- toGValue (not active)
         case gType of
           3 -> do Gtk.treeStoreSetValue store iter 4 notActive
+                  #showAll window
+          4 -> do Gtk.treeStoreSetValue store iter 4 notActive
                   #showAll window
           _ -> return ()
       else return ()
