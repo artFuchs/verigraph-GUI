@@ -19,6 +19,7 @@ import           Data.Int
 
 import qualified Data.Graphs as G
 
+import GUI.Data.DiaGraph hiding (empty)
 import GUI.Data.EditorState
 import GUI.Data.Info
 import GUI.Render.Render
@@ -55,12 +56,13 @@ buildExecutor store statesMap typeGraph = do
     Gtk.treeViewSetModel treeView (Just store)
 
     -- IORefs -------------------------------------------------------------------------------------------------------------------
-    hostState       <- newIORef emptyES -- state refering to the init graph with rules applied
-    ruleState       <- newIORef emptyES -- state refering to the graph of the selected rule
-    lState          <- newIORef emptyES -- state refering to the graph of the left side of selected rule
-    rState          <- newIORef emptyES -- state refering to the graph of the right side of selected rule
+    hostState   <- newIORef emptyES -- state refering to the init graph with rules applied
+    ruleState   <- newIORef emptyES -- state refering to the graph of the selected rule
+    lState      <- newIORef emptyES -- state refering to the graph of the left side of selected rule
+    rState      <- newIORef emptyES -- state refering to the graph of the right side of selected rule
+    kGraph      <- newIORef G.empty -- k graph needed for displaying ids in the left and right sides of rules
 
-    execStarted     <- newIORef False   -- if execution has already started
+    execStarted <- newIORef False   -- if execution has already started
 
     -- callbacks ----------------------------------------------------------------------------------------------------------------
     -- hide rule viewer panel when colse button is pressed
@@ -71,8 +73,8 @@ buildExecutor store statesMap typeGraph = do
     -- canvas
     setCanvasCallBacks mainCanvas hostState typeGraph drawHostGraph
     setCanvasCallBacks ruleCanvas ruleState typeGraph drawRuleGraph
-    setCanvasCallBacks lCanvas lState typeGraph drawRuleSideGraph
-    setCanvasCallBacks rCanvas rState typeGraph drawRuleSideGraph
+    setCanvasCallBacks lCanvas lState kGraph drawRuleSideGraph
+    setCanvasCallBacks rCanvas rState kGraph drawRuleSideGraph
     
 
     -- when select a rule, change their states
@@ -94,11 +96,16 @@ buildExecutor store statesMap typeGraph = do
                             legiM = M.filterWithKey (\k a -> (G.EdgeId k) `elem` (G.edgeIds l)) egiM
                             rngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds r)) ngiM
                             regiM = M.filterWithKey (\k a -> (G.EdgeId k) `elem` (G.edgeIds r)) egiM
-                            les = editorSetGraph l . editorSetGI (lngiM,legiM) $ es
-                            res = editorSetGraph r . editorSetGI (rngiM,regiM) $ es
-                        writeIORef ruleState es
+                            (_,lgi) = adjustDiagrPosition (l,(lngiM,legiM))
+                            (_,rgi) = adjustDiagrPosition (r,(rngiM,regiM))
+                            les = editorSetGraph l . editorSetGI lgi $ es
+                            res = editorSetGraph r . editorSetGI rgi $ es
+                            (_,gi') = adjustDiagrPosition (g,(ngiM,egiM))
+                            es' = editorSetGI gi' es
+                        writeIORef ruleState es'
                         writeIORef lState les
                         writeIORef rState res
+                        writeIORef kGraph k
                         Gtk.widgetQueueDraw lCanvas
                         Gtk.widgetQueueDraw rCanvas
                         Gtk.widgetQueueDraw ruleCanvas
@@ -125,16 +132,16 @@ setCanvasCallBacks :: Gtk.DrawingArea
                    -> IORef (G.Graph Info Info )
                    -> (EditorState -> Maybe (Double,Double,Double,Double) -> G.Graph Info Info -> Render ()) 
                    -> IO ()
-setCanvasCallBacks canvas state typeGraph drawMethod = do
+setCanvasCallBacks canvas state refGraph drawMethod = do
     oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
     squareSelection <- newIORef Nothing   -- selection box : Maybe (x1,y1,x2,y2)
     movingGI        <- newIORef False     -- if the user started moving some object - necessary to add a position to the undoStack
 
     on canvas #draw $ \context -> do
         es <- readIORef state
-        tg <- readIORef typeGraph
+        rg <- readIORef refGraph
         sq <- readIORef squareSelection
-        renderWithContext context $ drawMethod es sq tg
+        renderWithContext context $ drawMethod es sq rg
         return False
     on canvas #buttonPressEvent $ Editor.basicCanvasButtonPressedCallback state oldPoint squareSelection canvas
     on canvas #motionNotifyEvent $ Editor.basicCanvasMotionCallBack state oldPoint squareSelection canvas

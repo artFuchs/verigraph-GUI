@@ -222,7 +222,7 @@ drawRuleSideGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq k = do
                   (x2, y2) = position dst
                   ang = angle (x1,y1) (x2,y2)
                   pos = pointAt (ae+ang) de (midPoint (x1,y1) (x2,y2))
-              pL <- GRPC.createLayout (show (edgeId e))
+              pL <- GRPC.createLayout (show (fromEnum $ edgeId e))
               desc <- liftIO $ GRP.fontDescriptionFromString "Sans Bold 10"
               liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
               setSourceRGB idr idg idb
@@ -251,7 +251,7 @@ drawRuleSideGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq k = do
                         NSquare -> let a = maximum [fst . dims $ gi, snd . dims $ gi]
                                  in addPoint (position gi) ((-a/2),0)
               let pos = addPoint (position gi) (-(fst . dims $ gi), -(snd . dims $ gi))
-              pL <- GRPC.createLayout (show (nodeId n))
+              pL <- GRPC.createLayout (show (fromEnum $ nodeId n))
               desc <- liftIO $ GRP.fontDescriptionFromString "Sans Bold 10"
               liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
               setSourceRGB idr idg idb
