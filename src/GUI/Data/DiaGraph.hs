@@ -5,13 +5,18 @@ module GUI.Data.DiaGraph
 , diagrDisjointUnion
 , diagrUnion
 , diagrSubtract
+, getEdgePosition
+, adjustDiagrPosition
 )where
 
 import qualified Data.Map as M
+
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
+
 import GUI.Data.GraphicalInfo
 import GUI.Data.Info hiding (empty)
+import GUI.Helper.Geometry
 
 -- |DiaGraph
 -- A pair containing a graph and it's graphical information
@@ -68,3 +73,30 @@ diagrSubtract (g1, (ngiM1, egiM1)) (g2, (ngiM2,egiM2)) = (g3,(ngiM3,egiM3))
     egiM3 = M.filterWithKey (\k a -> (EdgeId k) `elem` edgeIds g3) egiM1
 
     isEssential nid = nid `elem` (map sourceId eds3) || nid `elem` (map targetId eds3)
+
+
+-- get edge position in cartesian coordinate system
+getEdgePosition:: DiaGraph -> Edge Info -> (Double,Double)
+getEdgePosition (g,(nodesGi, edgesGi)) e = pos
+  where
+    eid = edgeId e
+    gi = getEdgeGI (fromEnum $ eid) edgesGi
+    srcPos = position . getNodeGI (fromEnum $ sourceId e) $ nodesGi
+    dstPos = position . getNodeGI (fromEnum $ targetId e) $ nodesGi
+    (ae, de) = cPosition gi
+    pos = if sourceId e /= targetId e
+      then
+        let pmid = midPoint srcPos dstPos
+            (ang, dist) = toPolarFrom srcPos dstPos
+        in pointAt (ae+ang) de pmid
+      else
+        pointAt ae de srcPos
+
+adjustDiagrPosition :: DiaGraph -> DiaGraph
+adjustDiagrPosition (g, (ngiM, egiM)) = (g,(ngiM',egiM))
+  where
+    allPositions = concat [map position (M.elems ngiM), map (getEdgePosition (g,(ngiM, egiM))) (edges g)]
+    minX = minimum $ map fst allPositions
+    minY = minimum $ map snd allPositions
+    upd (a,b) = (20+a-minX, 20+b-minY)
+    ngiM' = M.map (\gi -> gi {position = (upd $ position gi)}) ngiM

@@ -32,13 +32,8 @@ copySelected  es = (cg,(ngiM',egiM'))
 
 -- | join a DiaGraph with the Diagraph of a given EditorState
 pasteClipBoard :: DiaGraph -> EditorState -> EditorState
-pasteClipBoard (cGraph, (cNgiM, cEgiM)) es = editorSetGI (newngiM,newegiM) . editorSetGraph newGraph . editorSetSelected ([], [])$ es
+pasteClipBoard clipDG es = editorSetGI (newngiM,newegiM) . editorSetGraph newGraph . editorSetSelected ([], [])$ es
   where
     graph = editorGetGraph es
     (ngiM, egiM) = editorGetGI es
-    allPositions = concat [map position (M.elems cNgiM), map (getEdgePosition cGraph (cNgiM, cEgiM)) (edges cGraph)]
-    minX = minimum $ map fst allPositions
-    minY = minimum $ map snd allPositions
-    upd (a,b) = (20+a-minX, 20+b-minY)
-    cNgiM' = M.map (\gi -> nodeGiSetPosition (upd $ position gi) gi) cNgiM
-    (newGraph, (newngiM,newegiM)) = diagrDisjointUnion (graph,(ngiM,egiM)) (cGraph,(cNgiM', cEgiM))
+    (newGraph, (newngiM,newegiM)) = diagrDisjointUnion (graph,(ngiM,egiM)) (adjustDiagrPosition clipDG)  

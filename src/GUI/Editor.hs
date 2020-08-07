@@ -1636,7 +1636,7 @@ basicCanvasButtonReleasedCallback currentState squareSelection canvas eventButto
               sNodes = map NodeId $ M.keys $
                                     M.filter (\ngi -> let pos = position ngi
                                                       in pointInsideRectangle pos (x + (w/2), y + (h/2), abs w, abs h)) ngiM
-              sEdges = map edgeId $ filter (\e -> let pos = getEdgePosition graph (ngiM,egiM) e
+              sEdges = map edgeId $ filter (\e -> let pos = getEdgePosition (graph,(ngiM,egiM)) e
                                                   in pointInsideRectangle pos (x + (w/2), y + (h/2), abs w, abs h)) $ edges graph
               newEs = editorSetSelected (sNodes, sEdges) $ es
           writeIORef currentState newEs

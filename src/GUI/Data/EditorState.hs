@@ -17,7 +17,6 @@ module GUI.Data.EditorState(
 , editorSetPan
 , selectNodeInPosition
 , selectEdgeInPosition
-, getEdgePosition
 , createNode
 , createEdge
 , createEdges
@@ -31,8 +30,11 @@ module GUI.Data.EditorState(
 
 import qualified Data.Map as M
 import Data.Maybe
+
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
+
+import GUI.Data.DiaGraph hiding (empty)
 import GUI.Data.GraphicalInfo
 import GUI.Helper.Geometry
 import Data.List
@@ -104,24 +106,9 @@ selectEdgeInPosition g gi (x,y) =
     Just e -> Just $ edgeId e
   where
     isSelected = (\e -> pointDistance (x,y) (edgePos e) < 5)
-    edgePos e = getEdgePosition g gi e
+    edgePos e = getEdgePosition (g,gi) e
 
--- get edge position in cartesian coordinate system
-getEdgePosition:: Graph Info Info -> GraphicalInfo -> Edge Info -> (Double,Double)
-getEdgePosition g (nodesGi, edgesGi) e = pos
-  where
-    eid = edgeId e
-    gi = getEdgeGI (fromEnum $ eid) edgesGi
-    srcPos = position . getNodeGI (fromEnum $ sourceId e) $ nodesGi
-    dstPos = position . getNodeGI (fromEnum $ targetId e) $ nodesGi
-    (ae, de) = cPosition gi
-    pos = if sourceId e /= targetId e
-      then
-        let pmid = midPoint srcPos dstPos
-            (ang, dist) = toPolarFrom srcPos dstPos
-        in pointAt (ae+ang) de pmid
-      else
-        pointAt ae de srcPos
+
 
 -- create/delete operations ----------------------------------------------------
 -- create a new node with it's default Info and GraphicalInfo
