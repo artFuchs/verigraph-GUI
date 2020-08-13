@@ -10,7 +10,7 @@ module GUI.Editor.Helper.TreeStore(
 , storeSetGraphStore
 , getTreeStoreValues
 , getStructsToSave
-, getParentDiaGraph
+, getParentLHSDiaGraph
 , getRules
 , indicateProjChanged
 , indicateGraphChanged
@@ -53,7 +53,7 @@ import GUI.Helper.List
  A tuple representing what is showed in each node of the tree in the treeview
  It contains the informations:
  * name,
- * graph changed (0 - no, 1 - yes),
+ * graph changed,
  * graph id,
  * type (0 - topic, 1 - typeGraph, 2 - hostGraph, 3 - ruleGraph, 4 - NAC) and
  * active (valid for rules only)
@@ -154,6 +154,17 @@ getStructsToSave store graphStates nacInfoMapIORef = do
       return structs
 
 -- | Get the Diagraph stored in the parent position relative to the given path
+getParentLHSDiaGraph :: Gtk.TreeStore 
+                  -> [Int32] 
+                  -> IORef (M.Map Int32 EditorState) 
+                  -> IO DiaGraph
+getParentLHSDiaGraph store pathIndices graphStates = do
+  (g,gi) <- getParentDiaGraph store pathIndices graphStates
+  let (lhs,_,_) = graphToRuleGraphs g
+      ngi = M.filterWithKey (\k a -> (NodeId k) `elem` (nodeIds lhs)) $ fst gi
+      egi = M.filterWithKey (\k a -> (EdgeId k) `elem` (edgeIds lhs)) $ snd gi
+  return (lhs,(ngi,egi))
+
 getParentDiaGraph :: Gtk.TreeStore 
                   -> [Int32] 
                   -> IORef (M.Map Int32 EditorState) 
@@ -171,10 +182,7 @@ getParentDiaGraph store pathIndices graphStates = do
       state <- return $ M.lookup index states
       case state of
         Nothing -> return DG.empty
-        Just es -> return (lhs, (ngi,egi))
-                    where (lhs,_,_) = graphToRuleGraphs $ editorGetGraph es
-                          ngi = M.filterWithKey (\k a -> (NodeId k) `elem` (nodeIds lhs)) $ fst (editorGetGI es)
-                          egi = M.filterWithKey (\k a -> (EdgeId k) `elem` (edgeIds lhs)) $ snd (editorGetGI es)
+        Just es -> return (editorGetGraph es, editorGetGI es)
     else return DG.empty
 
 -- Returns a list of NAC from a TreeStore.
@@ -265,25 +273,28 @@ indicateProjChanged window False = do
 
 -- | write in the treestore that the current graph was modified
 indicateGraphChanged :: Gtk.TreeStore -> Gtk.TreeIter -> Bool -> IO ()
-indicateGraphChanged store iter True = do
+indicateGraphChanged store iter changed = do
   gtype <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
   if gtype == 0
     then return ()
     else do
-      gvchanged <- toGValue (1::Int32)
+      gvchanged <- toGValue changed
       Gtk.treeStoreSetValue store iter 1 gvchanged
-      (valid, parentIter) <- Gtk.treeModelIterParent store iter
-      if valid
-        then Gtk.treeStoreSetValue store parentIter 1 gvchanged
-        else return ()
-
-indicateGraphChanged store iter False = do
-  gvchanged <- toGValue (0::Int32)
-  Gtk.treeStoreSetValue store iter 1 gvchanged
-  (valid, parentIter) <- Gtk.treeModelIterParent store iter
-  if valid
-    then Gtk.treeStoreSetValue store parentIter 1 gvchanged
-    else return ()
+      (parentValid, parentIter) <- Gtk.treeModelIterParent store iter
+      case (parentValid,changed) of
+        (True,True) -> Gtk.treeStoreSetValue store parentIter 1 gvchanged
+        (True,False) -> do
+            let brothersChanged iter = do
+                    brotherChanged <- Gtk.treeModelGetValue store iter 1 >>= fromGValue :: IO Bool
+                    continue <- Gtk.treeModelIterNext store iter
+                    case (brotherChanged, continue) of
+                        (True,_) -> return True
+                        (False,True) -> brothersChanged iter
+                        (False,False) -> return False
+            parentChangeVal <- brothersChanged iter
+            gvparentchanged <- toGValue parentChangeVal
+            Gtk.treeStoreSetValue store parentIter 1 gvparentchanged
+        (False,_) -> return ()
 
 -- | change the flags that inform if the graphs and project were changed and indicate the changes
 setChangeFlags :: Gtk.Window -> Gtk.TreeStore 
