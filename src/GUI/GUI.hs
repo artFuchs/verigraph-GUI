@@ -138,7 +138,7 @@ startGUI = do
   -- start executor module
   execStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt]
   Exec.updateTreeStore execStore ("Rule0", 2, 3, 0)
-  (execPane, execState, execStarted) <- Exec.buildExecutor execStore statesMap typeGraph
+  (execPane, execState, execStarted) <- Exec.buildExecutor execStore statesMap typeGraph nacInfoMap
 
   -- set the tabs
   editorTabLabel <- new Gtk.Label [#label := "Editor"]
@@ -165,30 +165,24 @@ startGUI = do
     id <- Gtk.treeModelGetValue editStore iter 2 >>= fromGValue :: IO Int32
     t  <- Gtk.treeModelGetValue editStore iter 3 >>= fromGValue :: IO Int32
     a  <- Gtk.treeModelGetValue editStore iter 4 >>= fromGValue :: IO Bool
-    case t of
-      3 -> Exec.updateTreeStore execStore (n,id,t,0)
-      4 -> do
+    v  <- Gtk.treeModelGetValue editStore iter 5 >>= fromGValue :: IO Bool
+    case (v,t) of
+      (True,3) -> Exec.updateTreeStore execStore (n,id,t,0)
+      (True,4) -> do
         (valid,parent) <- Gtk.treeModelIterParent editStore iter
         if valid
           then do
             p <- Gtk.treeModelGetValue editStore parent 2 >>= fromGValue :: IO Int32
             Exec.updateTreeStore execStore (n,id,t,p)
           else return ()
+      (False,3) -> Exec.removeFromTreeStore execStore id
+      (False,4) -> Exec.removeFromTreeStore execStore id
       _ -> return ()
 
   -- when a rule or nac is deleted from editStore, remove the correspondent from execStore
   after editStore #rowDeleted $ \path -> do
-    mIndices <- Gtk.treePathGetIndices path
-    let h:indices = fromMaybe [0] mIndices 
-    if null indices
-      then return ()
-      else do
-        rulePath <- Gtk.treePathNewFromIndices indices
-        (valid,ruleIter) <- Gtk.treeModelGetIter execStore rulePath
-        if valid
-          then Gtk.treeStoreRemove execStore ruleIter
-          else return False
-        return ()
+    statesM <- readIORef statesMap
+    Exec.removeTrashFromTreeStore execStore statesM
 
   on tabs #switchPage $ \page pageNum -> do
     -- update statesMap with the information of currentES

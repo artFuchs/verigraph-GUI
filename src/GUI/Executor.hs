@@ -3,6 +3,8 @@ module GUI.Executor (
   buildExecutor
 , ExecGraphEntry
 , updateTreeStore
+, removeFromTreeStore
+, removeTrashFromTreeStore
 ) where
 
 import qualified GI.Gtk as Gtk
@@ -19,18 +21,24 @@ import           Data.Int
 
 import qualified Data.Graphs as G
 
-import GUI.Data.DiaGraph hiding (empty)
-import GUI.Data.EditorState
-import GUI.Data.Info
-import GUI.Render.Render
-import GUI.Render.GraphDraw
-import GUI.Helper.GrammarMaker
+import           GUI.Data.DiaGraph hiding (empty)
+import qualified GUI.Data.DiaGraph as DG
+import           GUI.Data.EditorState
+import           GUI.Data.Info
+import           GUI.Data.Nac
+import           GUI.Render.Render
+import           GUI.Render.GraphDraw
+import           GUI.Helper.GrammarMaker
 
 -- this should not be used, but let if be for now
 import qualified GUI.Editor as Editor (basicCanvasButtonPressedCallback, basicCanvasMotionCallBack, basicCanvasButtonReleasedCallback)
 
-buildExecutor :: Gtk.TreeStore -> IORef (M.Map Int32 EditorState) -> IORef (G.Graph Info Info) ->  IO (Gtk.Paned, IORef EditorState, IORef Bool)
-buildExecutor store statesMap typeGraph = do
+buildExecutor :: Gtk.TreeStore 
+              -> IORef (M.Map Int32 EditorState) 
+              -> IORef (G.Graph Info Info) 
+              -> IORef (M.Map Int32 NacInfo)
+              -> IO (Gtk.Paned, IORef EditorState, IORef Bool)
+buildExecutor store statesMap typeGraph nacInfoMap = do
     builder <- new Gtk.Builder []
     Gtk.builderAddFromFile builder "./Resources/executor.glade"
 
@@ -50,6 +58,8 @@ buildExecutor store statesMap typeGraph = do
     Gtk.widgetSetEvents rCanvas [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
     Gtk.widgetSetEvents ruleCanvas [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
 
+    nacCBox <- Gtk.builderGetObject builder "nacCBox" >>= unsafeCastTo Gtk.ComboBoxText . fromJust
+
     stopBtn <- Gtk.builderGetObject builder "stopBtn" >>= unsafeCastTo Gtk.Button . fromJust
 
     treeView <- Gtk.builderGetObject builder "treeView" >>= unsafeCastTo Gtk.TreeView . fromJust
@@ -61,8 +71,14 @@ buildExecutor store statesMap typeGraph = do
     lState      <- newIORef emptyES -- state refering to the graph of the left side of selected rule
     rState      <- newIORef emptyES -- state refering to the graph of the right side of selected rule
     kGraph      <- newIORef G.empty -- k graph needed for displaying ids in the left and right sides of rules
+    nacState    <- newIORef emptyES -- state refering to the graph of nac
+    
+    currentNACIndex    <- newIORef (-1 :: Int32) -- index of current selected NAC
+    currentRuleIndex   <- newIORef (-1 :: Int32) -- index of currentRule
 
-    execStarted <- newIORef False   -- if execution has already started
+
+    execStarted  <- newIORef False   -- if execution has already started
+        
 
     -- callbacks ----------------------------------------------------------------------------------------------------------------
     -- hide rule viewer panel when colse button is pressed
@@ -71,11 +87,21 @@ buildExecutor store statesMap typeGraph = do
         Gtk.panedSetPosition execPane closePos
 
     -- canvas
-    setCanvasCallBacks mainCanvas hostState typeGraph drawHostGraph
-    setCanvasCallBacks ruleCanvas ruleState typeGraph drawRuleGraph
-    setCanvasCallBacks lCanvas lState kGraph drawRuleSideGraph
-    setCanvasCallBacks rCanvas rState kGraph drawRuleSideGraph
-    
+    setCanvasCallBacks mainCanvas hostState typeGraph (Just drawHostGraph)
+    setCanvasCallBacks ruleCanvas ruleState typeGraph (Just drawRuleGraph)
+    setCanvasCallBacks lCanvas lState kGraph (Just drawRuleSideGraph)
+    setCanvasCallBacks rCanvas rState kGraph (Just drawRuleSideGraph)
+    setCanvasCallBacks rCanvas rState kGraph (Just drawRuleSideGraph)
+    (_,nacSqrSel)<- setCanvasCallBacks nacCanvas nacState typeGraph Nothing
+    on nacCanvas #draw $ \context -> do
+        es <- readIORef nacState
+        tg <- readIORef typeGraph
+        sq <- readIORef nacSqrSel
+        index <- readIORef currentNACIndex
+        (_,mm) <- readIORef nacInfoMap >>= return . fromMaybe (DG.empty, (M.empty,M.empty)) . M.lookup index
+        renderWithContext context $ drawNACGraph es sq tg mm
+        return False
+
 
     -- when select a rule, change their states
     on treeView #cursorChanged $ do
@@ -85,32 +111,69 @@ buildExecutor store statesMap typeGraph = do
             then do
                 index <- Gtk.treeModelGetValue model iter 1 >>= fromGValue :: IO Int32
                 gType <- Gtk.treeModelGetValue model iter 2 >>= fromGValue :: IO Int32
-                case gType of
-                    3 -> do
-                        statesM <- readIORef statesMap
-                        let es = fromMaybe emptyES $ M.lookup index statesM
-                            g = editorGetGraph es
-                            (l,k,r) = graphToRuleGraphs g
-                            (ngiM,egiM) = editorGetGI es
-                            lngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds l)) ngiM
-                            legiM = M.filterWithKey (\k a -> (G.EdgeId k) `elem` (G.edgeIds l)) egiM
-                            rngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds r)) ngiM
-                            regiM = M.filterWithKey (\k a -> (G.EdgeId k) `elem` (G.edgeIds r)) egiM
-                            (_,lgi) = adjustDiagrPosition (l,(lngiM,legiM))
-                            (_,rgi) = adjustDiagrPosition (r,(rngiM,regiM))
-                            les = editorSetGraph l . editorSetGI lgi $ es
-                            res = editorSetGraph r . editorSetGI rgi $ es
-                            (_,gi') = adjustDiagrPosition (g,(ngiM,egiM))
-                            es' = editorSetGI gi' es
-                        writeIORef ruleState es'
-                        writeIORef lState les
-                        writeIORef rState res
-                        writeIORef kGraph k
-                        Gtk.widgetQueueDraw lCanvas
-                        Gtk.widgetQueueDraw rCanvas
-                        Gtk.widgetQueueDraw ruleCanvas
-                    4 -> return () -- TODO: set nac
-                    _ -> return () -- error: the selected graph type is not a Rule nor a NAC
+                statesM <- readIORef statesMap
+                (maybeRuleIndex, maybeNACIndex) <- case gType of
+                        3 -> do
+                            (valid,childIter) <- Gtk.treeModelIterChildren model (Just iter)
+                            nacIndex <- if valid
+                                            then do
+                                                childIndex <- Gtk.treeModelGetValue model childIter 1 >>= fromGValue :: IO Int32
+                                                return $ Just childIndex
+                                            else return Nothing
+                            return (Just index,nacIndex)
+                        4 -> do
+                            (valid,parentIter) <- Gtk.treeModelIterParent model iter 
+                            ruleIndex <- if valid
+                                            then do
+                                                parentIndex <- Gtk.treeModelGetValue model parentIter 1 >>= fromGValue :: IO Int32
+                                                return $ Just parentIndex
+                                            else return Nothing
+                            return (ruleIndex, Just index)
+                        _ -> return (Nothing,Nothing)
+                case maybeRuleIndex of
+                    Nothing -> do 
+                        -- TODO: show error
+                        writeIORef ruleState $ emptyES
+                        writeIORef lState $ emptyES
+                        writeIORef rState $ emptyES
+                    Just rIndex -> do
+                        currRIndex <- readIORef currentRuleIndex
+                        if (currRIndex == rIndex)
+                            then return ()
+                            else do
+                                let es = fromMaybe emptyES $ M.lookup rIndex statesM
+                                    g = editorGetGraph es
+                                    (l,k,r) = graphToRuleGraphs g
+                                    (ngiM,egiM) = editorGetGI es
+                                    lngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds l)) ngiM
+                                    legiM = M.filterWithKey (\k a -> (G.EdgeId k) `elem` (G.edgeIds l)) egiM
+                                    rngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds r)) ngiM
+                                    regiM = M.filterWithKey (\k a -> (G.EdgeId k) `elem` (G.edgeIds r)) egiM
+                                    (_,lgi) = adjustDiagrPosition (l,(lngiM,legiM))
+                                    (_,rgi) = adjustDiagrPosition (r,(rngiM,regiM))
+                                    (_,gi') = adjustDiagrPosition (g,(ngiM,egiM))
+                                    les = editorSetGraph l . editorSetGI lgi $ es
+                                    res = editorSetGraph r . editorSetGI rgi $ es
+                                    es' = editorSetGI gi' es
+                                writeIORef ruleState es'
+                                writeIORef lState les
+                                writeIORef rState res
+                                writeIORef kGraph k
+                        case maybeNACIndex of
+                            Nothing -> writeIORef nacState $ emptyES
+                            Just nIndex -> do
+                                let es = fromMaybe emptyES $ M.lookup nIndex statesM
+                                    g  = editorGetGraph es
+                                    gi = editorGetGI es
+                                    (_,gi') = adjustDiagrPosition (g,gi)
+                                    es' = editorSetGI gi' es
+                                writeIORef nacState es'
+                                writeIORef currentNACIndex nIndex
+                Gtk.widgetQueueDraw lCanvas
+                Gtk.widgetQueueDraw rCanvas
+                Gtk.widgetQueueDraw ruleCanvas
+                Gtk.widgetQueueDraw nacCanvas
+
 
             else return ()
 
@@ -123,30 +186,34 @@ buildExecutor store statesMap typeGraph = do
         writeIORef execStarted False
     
 
-    
+    --
     
     return (executorPane, hostState, execStarted)
 
+type SquareSelection = Maybe (Double,Double,Double,Double)
 setCanvasCallBacks :: Gtk.DrawingArea 
                    -> IORef EditorState 
                    -> IORef (G.Graph Info Info )
-                   -> (EditorState -> Maybe (Double,Double,Double,Double) -> G.Graph Info Info -> Render ()) 
-                   -> IO ()
+                   -> Maybe (EditorState -> SquareSelection -> G.Graph Info Info -> Render ()) 
+                   -> IO (IORef (Double,Double), IORef SquareSelection)
 setCanvasCallBacks canvas state refGraph drawMethod = do
     oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
     squareSelection <- newIORef Nothing   -- selection box : Maybe (x1,y1,x2,y2)
-    movingGI        <- newIORef False     -- if the user started moving some object - necessary to add a position to the undoStack
 
-    on canvas #draw $ \context -> do
-        es <- readIORef state
-        rg <- readIORef refGraph
-        sq <- readIORef squareSelection
-        renderWithContext context $ drawMethod es sq rg
-        return False
+    case drawMethod of
+        Just draw -> do 
+            on canvas #draw $ \context -> do
+                es <- readIORef state
+                rg <- readIORef refGraph
+                sq <- readIORef squareSelection
+                renderWithContext context $ draw es sq rg
+                return False
+            return ()
+        Nothing -> return ()
     on canvas #buttonPressEvent $ Editor.basicCanvasButtonPressedCallback state oldPoint squareSelection canvas
     on canvas #motionNotifyEvent $ Editor.basicCanvasMotionCallBack state oldPoint squareSelection canvas
     on canvas #buttonReleaseEvent $ Editor.basicCanvasButtonReleasedCallback state squareSelection canvas 
-    return ()  
+    return (oldPoint,squareSelection) 
 
     
 
@@ -219,8 +286,55 @@ updateTreeStore' store iter entry@(n,i,t,p) = do
                                 else return ()
 
 
+removeFromTreeStore :: Gtk.TreeStore -> Int32 -> IO ()
+removeFromTreeStore store index = do
+    (valid, iter) <- Gtk.treeModelGetIterFirst store
+    if valid
+        then removeFromTreeStore' store iter index
+        else return ()
 
-            
+removeFromTreeStore' :: Gtk.TreeStore -> Gtk.TreeIter -> Int32 -> IO ()
+removeFromTreeStore' store iter index = do
+    cindex <- Gtk.treeModelGetValue store iter 1 >>= fromGValue :: IO Int32
+    if cindex == index
+        then do 
+            Gtk.treeStoreRemove store iter
+            return ()
+        else do 
+            continue <- Gtk.treeModelIterNext store iter
+            if continue 
+                then removeFromTreeStore' store iter index
+                else return ()
+
+
+
+-- remove entries that contains invalid keys for the Map that it refers to
+removeTrashFromTreeStore :: Gtk.TreeStore -> M.Map Int32 EditorState -> IO ()
+removeTrashFromTreeStore store statesMap = do
+    (valid, iter) <- Gtk.treeModelGetIterFirst store
+    if valid
+        then removeTrashFromTreeStore' store iter statesMap
+        else return ()
+
+removeTrashFromTreeStore' :: Gtk.TreeStore -> Gtk.TreeIter -> M.Map Int32 EditorState -> IO ()
+removeTrashFromTreeStore' store iter statesMap = do
+    index <- Gtk.treeModelGetValue store iter 1 >>= fromGValue :: IO Int32
+    state <- return $ M.lookup index statesMap
+    continue <- case state of
+        Just st -> do 
+            (hasChildren,childIter) <- Gtk.treeModelIterChildren store (Just iter)
+            if hasChildren
+                then removeTrashFromTreeStore' store childIter statesMap 
+                else return ()
+            Gtk.treeModelIterNext store iter                    
+        Nothing -> Gtk.treeStoreRemove store iter
+    if continue
+        then removeTrashFromTreeStore' store iter statesMap
+        else return ()
+    
+    
+
+
     
     
 
