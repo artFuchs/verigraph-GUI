@@ -32,6 +32,7 @@ import           GUI.Helper.GrammarMaker
 
 -- this should not be used, but let if be for now
 import qualified GUI.Editor as Editor (basicCanvasButtonPressedCallback, basicCanvasMotionCallBack, basicCanvasButtonReleasedCallback)
+import qualified GUI.Editor.Helper.Nac as Nac
 
 buildExecutor :: Gtk.TreeStore 
               -> IORef (M.Map Int32 EditorState) 
@@ -136,18 +137,20 @@ buildExecutor store statesMap typeGraph nacInfoMap = do
                         writeIORef ruleState $ emptyES
                         writeIORef lState $ emptyES
                         writeIORef rState $ emptyES
+                        writeIORef nacState $ emptyES
                     Just rIndex -> do
+                        let es = fromMaybe emptyES $ M.lookup rIndex statesM
+                            g = editorGetGraph es
+                            (l,k,r) = graphToRuleGraphs g
+                            (ngiM,egiM) = editorGetGI es
+                            lngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds l)) ngiM
+                            legiM = M.filterWithKey (\k a -> (G.EdgeId k) `elem` (G.edgeIds l)) egiM
+                            lgi = (lngiM,legiM)
                         currRIndex <- readIORef currentRuleIndex
                         if (currRIndex == rIndex)
                             then return ()
                             else do
-                                let es = fromMaybe emptyES $ M.lookup rIndex statesM
-                                    g = editorGetGraph es
-                                    (l,k,r) = graphToRuleGraphs g
-                                    (ngiM,egiM) = editorGetGI es
-                                    lngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds l)) ngiM
-                                    legiM = M.filterWithKey (\k a -> (G.EdgeId k) `elem` (G.edgeIds l)) egiM
-                                    rngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds r)) ngiM
+                                let rngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds r)) ngiM
                                     regiM = M.filterWithKey (\k a -> (G.EdgeId k) `elem` (G.edgeIds r)) egiM
                                     (_,lgi) = adjustDiagrPosition (l,(lngiM,legiM))
                                     (_,rgi) = adjustDiagrPosition (r,(rngiM,regiM))
@@ -162,12 +165,17 @@ buildExecutor store statesMap typeGraph nacInfoMap = do
                         case maybeNACIndex of
                             Nothing -> writeIORef nacState $ emptyES
                             Just nIndex -> do
-                                let es = fromMaybe emptyES $ M.lookup nIndex statesM
-                                    g  = editorGetGraph es
-                                    gi = editorGetGI es
-                                    (_,gi') = adjustDiagrPosition (g,gi)
-                                    es' = editorSetGI gi' es
-                                writeIORef nacState es'
+                                mNacInfo <- readIORef nacInfoMap >>= return . M.lookup nIndex
+                                (n,ngi) <- case mNacInfo of
+                                    Nothing -> return (l,lgi)
+                                    Just nacInfo -> do
+                                        context <- Gtk.widgetGetPangoContext nacCanvas
+                                        tg <- readIORef typeGraph
+                                        nacInfo' <- Nac.applyLhsChangesToNac l nacInfo (Just context)
+                                        return $ Nac.mountNACGraph (l,lgi) tg nacInfo'
+                                let (_,ngi') = adjustDiagrPosition (n,ngi)
+                                    nes = editorSetGI ngi' . editorSetGraph n $ emptyES
+                                writeIORef nacState nes
                                 writeIORef currentNACIndex nIndex
                 Gtk.widgetQueueDraw lCanvas
                 Gtk.widgetQueueDraw rCanvas

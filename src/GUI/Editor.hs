@@ -876,10 +876,10 @@ startEditor window store
               Just es -> do
                 tg <- readIORef typeGraph
                 -- load lhs diagraph
-                (lhsg,lhsgi) <- getParentLHSDiaGraph store path graphStates
-                let ruleLGNodesLock = foldr (\n g -> G.updateNodePayload n g (\info -> infoSetOperation (infoSetLocked info True) Preserve)) lhsg (nodeIds lhsg)
-                    ruleLG = foldr (\e g -> G.updateEdgePayload e g (\info -> infoSetLocked info True)) ruleLGNodesLock (edgeIds lhsg)
-                    lhsIsValid = isGraphValid ruleLG tg
+                (l,lgi) <- getParentLHSDiaGraph store path graphStates
+                let ruleLGNodesLock = foldr (\n g -> G.updateNodePayload n g (\info -> infoSetOperation (infoSetLocked info True) Preserve)) l (nodeIds l)
+                    lhs = foldr (\e g -> G.updateEdgePayload e g (\info -> infoSetLocked info True)) ruleLGNodesLock (edgeIds l)
+                    lhsIsValid = isGraphValid lhs tg
                 
                 case lhsIsValid of
                   False -> do
@@ -892,8 +892,17 @@ startEditor window store
                   True -> do
                     -- load nac' diagraph
                     context <- Gtk.widgetGetPangoContext canvas
-                    (nG,gi) <- mountNACGraph (ruleLG,lhsgi) tg nacInfoMap mergeMapping index context
-                    writeIORef currentState $ editorSetGI gi . editorSetGraph nG $ es
+                    lhsNgi <- updateNodesGiDims (fst lgi) lhs context
+                    let lhsgi = (lhsNgi, snd lgi)
+                    nacInfoM <- readIORef nacInfoMap
+                    (nG,nGI) <- case M.lookup index nacInfoM of
+                      Nothing -> return (lhs,lhsgi)
+                      Just (nacdg,mergeM) -> do
+                        (nacdg',mergeM') <- applyLhsChangesToNac lhs (nacdg,mergeM) (Just context)
+                        writeIORef mergeMapping $ Just mergeM'
+                        modifyIORef nacInfoMap $ M.insert index (nacdg', mergeM')
+                        return $ mountNACGraph (lhs,lhsgi) tg (nacdg', mergeM')
+                    writeIORef currentState $ editorSetGI nGI . editorSetGraph nG $ es
                     writeIORef currentGraph index
               Nothing -> return ()
 
@@ -1911,43 +1920,6 @@ afterSave store window graphStates (changedProject, changedGraph, lastSavedState
             Nothing -> set window [#title := "Verigraph-GUI"]
             Just fn -> set window [#title := T.pack ("Verigraph-GUI - " ++ fn)]
 
-mountNACGraph :: DiaGraph
-              -> Graph Info Info
-              -> IORef (M.Map Int32 NacInfo)
-              -> IORef (Maybe MergeMapping)
-              -> Int32
-              -> P.Context
-              -> IO DiaGraph
-mountNACGraph (lhs,lhsgi) tg nacInfoMap mergeMapping index context = do
-  lhsNgi' <- updateNodesGiDims (fst lhsgi) lhs context
-  let lhsgi' = (lhsNgi', snd lhsgi)
-  nacInfoM <- readIORef nacInfoMap
-  case M.lookup index nacInfoM of
-    Nothing -> return (lhs,lhsgi')
-    Just (nacdg,mergeM) -> do
-      (nacdg',mergeM') <- applyLhsChangesToNac lhs (nacdg,mergeM) (Just context)
-      writeIORef mergeMapping $ Just mergeM'
-      modifyIORef nacInfoMap $ M.insert index (nacdg', mergeM')
-      case (G.null $ fst nacdg') of
-        True -> return (lhs, lhsgi') -- if there's no nac' diagraph, then the nac is just the lhs
-        False -> do
-          -- if there's a nac' diagraph, check if the graph is correct
-          let nacValid = isGraphValid (fst nacdg') tg
-          case nacValid of
-            True -> joinNAC (nacdg',mergeM') (lhs, lhsgi') tg 
-            False -> do
-              -- remove all the elements with type error
-              let validG = correctTypeGraph (fst nacdg') tg
-                  validNids = foldr (\n ns -> if nodeInfo n then (nodeId n):ns else ns) [] (nodes validG)
-                  validEids = foldr (\e es -> if edgeInfo e then (edgeId e):es else es) [] (edges validG)
-                  newNodes = filter (\n -> nodeId n `elem` validNids) (nodes $ fst nacdg')
-                  newEdges = filter (\e -> edgeId e `elem` validEids) (edges $ fst nacdg')
-                  newNG = fromNodesAndEdges newNodes newEdges
-                  newNNGI = M.filterWithKey (\k a -> NodeId k `elem` validNids) (fst . snd $ nacdg')
-                  newNEGI = M.filterWithKey (\k a -> EdgeId k `elem` validEids) (snd . snd $ nacdg')
-                  newNacdg = (newNG,(newNNGI, newNEGI))
-              -- join nac
-              joinNAC (newNacdg, mergeM') (lhs, lhsgi') tg
 
 
 

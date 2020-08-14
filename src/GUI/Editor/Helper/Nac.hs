@@ -5,6 +5,7 @@ module GUI.Editor.Helper.Nac(
 , mergeNACElements
 , splitNACElements
 , applyLhsChangesToNac
+, mountNACGraph
 )where
 
 import qualified GI.Pango as P
@@ -12,6 +13,7 @@ import Data.Maybe
 import qualified Data.Map as M
 
 import Data.Graphs hiding (null)
+import qualified Data.Graphs as G
 import qualified Data.Graphs.Morphism as Morph
 import qualified Data.Relation as R
 import qualified Data.TypedGraph as TG
@@ -21,19 +23,20 @@ import GUI.Data.DiaGraph
 import GUI.Data.EditorState
 import GUI.Data.Info
 import GUI.Data.Nac
-import GUI.Helper.GrammarMaker
 import GUI.Editor.Helper.GraphicalInfo
+import GUI.Helper.GrammarMaker
 import GUI.Helper.List
+import GUI.Helper.GraphValidation
 
--- for debugging
 import Control.Monad
 import Control.Monad.IO.Class
 import GUI.Data.GraphicalInfo
 
 
+
 -- | Join the part of the nac and the lhs of the rule, showing the complete nac.
-joinNAC :: NacInfo -> DiaGraph -> Graph Info Info -> IO DiaGraph
-joinNAC (nacdg, (nM,eM)) lhsdg@(ruleLG,ruleLGI) tg = return (nG, nGI')
+joinNAC :: NacInfo -> DiaGraph -> Graph Info Info -> DiaGraph
+joinNAC (nacdg, (nM,eM)) lhsdg@(ruleLG,ruleLGI) tg = (nG, nGI')
   where
     -- change ids of additional elements of nacs so that those elements don't
     -- enter in conflict with elements from lhs
@@ -181,7 +184,7 @@ mergeNACElements es ((nacg,nacgi), (nM, eM)) tg context =
       let nacInfo = ((nacg',(nacNgi', snd nacgi')), (nM''', eM''))
 
       -- remount nacGraph, joining the elements
-      (g',gi') <- joinNAC nacInfo (lhsg, lhsgi) tg
+      let (g',gi') = joinNAC nacInfo (lhsg, lhsgi) tg
 
       let newES = editorSetGraph g' . editorSetGI gi' . editorSetSelected ([maxNID], [maxEID]) $ es
 
@@ -228,7 +231,7 @@ splitNACElements es ((nacg,nacgi),(nM,eM)) (lhsg,lhsgi) tg context = do
   let nacgi'' = (nacNgi', snd nacgi')
       nacdg' = (nacg',nacgi'')
   -- glue NAC part into the LHS
-  (g',gi') <- joinNAC (nacdg',(nM',eM'')) (lhsg', lhsgi) tg
+  let (g',gi') = joinNAC (nacdg',(nM',eM'')) (lhsg', lhsgi) tg
 
   let newNids = M.keys $ M.filter (\a -> a `elem` snids) nM'
       newEids = M.keys $ M.filter (\a -> a `elem` seids) eM''
@@ -427,3 +430,30 @@ updateNacLabels lhs ((nacg, nacgi), (nM,eM)) = ((nacg'',nacgi),(nM,eM))
                                                       (changeInfoLabel id' (infoLabelStr $ edgeInfo e)))
                   nacg'
                   edgesWithMapping
+
+
+mountNACGraph :: DiaGraph
+              -> Graph Info Info
+              -> NacInfo
+              -> DiaGraph
+mountNACGraph (lhs,lhsgi) tg (nacdg,mergeM) = do
+      case (G.null $ fst nacdg) of
+        True -> (lhs, lhsgi) -- if there's no nac' diagraph, then the nac is just the lhs
+        False -> do
+          -- if there's a nac' diagraph, check if the graph is correct
+          let nacValid = isGraphValid (fst nacdg) tg
+          case nacValid of
+            True -> joinNAC (nacdg,mergeM) (lhs, lhsgi) tg 
+            False -> do
+              -- remove all the elements with type error
+              let validG = correctTypeGraph (fst nacdg) tg
+                  validNids = foldr (\n ns -> if nodeInfo n then (nodeId n):ns else ns) [] (nodes validG)
+                  validEids = foldr (\e es -> if edgeInfo e then (edgeId e):es else es) [] (edges validG)
+                  newNodes = filter (\n -> nodeId n `elem` validNids) (nodes $ fst nacdg)
+                  newEdges = filter (\e -> edgeId e `elem` validEids) (edges $ fst nacdg)
+                  newNG = fromNodesAndEdges newNodes newEdges
+                  newNNGI = M.filterWithKey (\k a -> NodeId k `elem` validNids) (fst . snd $ nacdg)
+                  newNEGI = M.filterWithKey (\k a -> EdgeId k `elem` validEids) (snd . snd $ nacdg)
+                  newNacdg = (newNG,(newNNGI, newNEGI))
+              -- join nac
+              joinNAC (newNacdg, mergeM) (lhs, lhsgi) tg
