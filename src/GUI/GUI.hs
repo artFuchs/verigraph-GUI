@@ -57,10 +57,6 @@ import           GUI.Render.Render
 import qualified GUI.Executor as Exec
 
 -- modules needed for analysis
-import qualified Exec.GlobalOptions        as EGO
-import qualified Exec.CriticalPairAnalysis as CPA
-import Category.TypedGraphRule (RuleMorphism)
-import Rewriting.DPO.TypedGraph (emptyGraphRule)
 import GUI.Analysis.CriticalPairAnalysis
 
 import GUI.HelpWindow
@@ -117,7 +113,6 @@ startGUI = do
 
   -- build auxiliar windows
   helpWindow <- buildHelpWindow
-  (cpaBox, cpaEssentialCheckBtn, cpaConfCheckBtn, cpaDependCheckBtn, cpaRunBtn, cpaResultBuffer) <- buildCpaBox
 
   -- set the menubar
   let [newm,opn,svn,sva,eggx,evgg] = fileItems
@@ -139,6 +134,9 @@ startGUI = do
   execStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt]
   Exec.updateTreeStore execStore ("Rule0", 2, 3, 0)
   (execPane, execState, execStarted) <- Exec.buildExecutor execStore statesMap typeGraph nacInfoMap
+
+  -- start analysis module
+  cpaBox <- buildCpaBox window editStore statesMap nacInfoMap
 
   -- set the tabs
   editorTabLabel <- new Gtk.Label [#label := "Editor"]
@@ -195,32 +193,7 @@ startGUI = do
             else do
               initState <- readIORef statesMap >>= return . fromMaybe emptyES . M.lookup 1
               writeIORef execState initState
-      _ -> return ()
-
-  -- Analysis menu
-  on cpaRunBtn #pressed $ do
-    efstOrderGG <- Edit.prepToExport editStore statesMap nacInfoMap
-    sts <- readIORef statesMap
-    let tes = fromJust $ M.lookup 0 sts
-        tg = editorGetGraph tes
-    case efstOrderGG of
-      Left msg -> showError window (T.pack msg)
-      Right gg -> do
-        essential <- Gtk.toggleButtonGetActive cpaEssentialCheckBtn
-        confFlag <- Gtk.toggleButtonGetActive cpaConfCheckBtn
-        dependFlag <- Gtk.toggleButtonGetActive cpaDependCheckBtn
-        let analysisT = case (confFlag, dependFlag) of
-                          (True,False) -> CPA.Conflicts
-                          (False,True) -> CPA.Dependencies
-                          _-> CPA.Both
-        let emptySndOrderGG = grammar (emptyGraphRule (makeTypeGraph tg)) [] [] :: Grammar (RuleMorphism Info Info)
-            opts = CPA.Options Nothing False essential analysisT
-            globalOpts = EGO.GOpts EGO.MonoMatches False "" False
-            dpoConf = EGO.morphismsConf globalOpts
-            resStr = CPA.execute' globalOpts opts dpoConf gg emptySndOrderGG
-        set cpaResultBuffer [#text := ""]
-        Gtk.textBufferInsertAtCursor cpaResultBuffer (T.pack resStr) (-1)
-        
+      _ -> return ()      
 
   -- Help Menu 
   -- help

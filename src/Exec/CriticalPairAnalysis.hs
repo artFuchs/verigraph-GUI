@@ -3,7 +3,8 @@ module Exec.CriticalPairAnalysis
   ( Options (..)
   , AnalysisType (..)
   , execute
-  , execute'
+  , executeInGUI
+  , saveCPXResults
   ) where
 
 import           Control.Monad                         (when)
@@ -164,17 +165,26 @@ processFirstOrderGrammar globalOpts opts dpoConf fstOrderGrammar sndOrderGrammar
                         Just depends -> printDependencies depends
       putStrLn $ confStr ++ dependsStr
 
-execute' :: GlobalOptions -> Options -> MorphismsConfig (TypedGraphMorphism b c) -> Grammar (TypedGraphMorphism b c) -> Grammar (RuleMorphism b c) -> String
-execute' globalOpts opts dpoConf fstOrderGrammar sndOrderGrammar = resultStr
+executeInGUI :: GlobalOptions 
+             -> Options 
+             -> MorphismsConfig (TypedGraphMorphism b c) 
+             -> Grammar (TypedGraphMorphism b c) 
+             -> (String, Maybe (Matrix (String, String, [CriticalPair (TypedGraphMorphism b c)])), Maybe (Matrix (String, String, [CriticalSequence (TypedGraphMorphism b c)])))
+executeInGUI globalOpts opts dpoConf fstOrderGrammar = (resultStr,conflicts,dependencies)
   where 
-    resultStr =
-      case analysisType opts of
-        Conflicts -> confStr
-        Dependencies -> dependStr
-        Both -> confStr ++ dependStr
-    confStr = printConflicts (essentialFlag opts) conflicts'
-    dependStr = printDependencies dependencies'
-
+    resultStr = confStr ++ dependsStr
+    confStr = case conflicts of 
+                Nothing -> []
+                Just conf -> printConflicts (essentialFlag opts) conf
+    dependsStr = case dependencies of
+                  Nothing -> []
+                  Just depends -> printDependencies depends
+    
+    (conflicts,dependencies) = case analysisType opts of
+        Conflicts -> (Just conflicts', Nothing)
+        Dependencies -> (Nothing, Just dependencies')
+        Both -> (Just conflicts', Just dependencies')
+            
     constrs
       | useConstraints globalOpts = constraints fstOrderGrammar
       | otherwise = []
@@ -183,6 +193,16 @@ execute' globalOpts opts dpoConf fstOrderGrammar sndOrderGrammar = resultStr
       | essentialFlag opts = \conf _ -> findEssentialCriticalPairs conf
       | otherwise          = findCriticalPairs
     dependencies' = pairwiseCompareIntoMatrix (findTriggeredCriticalSequences dpoConf constrs) (productions fstOrderGrammar)
+
+
+saveCPXResults :: Grammar (TypedGraphMorphism b c) -> Grammar (RuleMorphism b c) -> Maybe (Matrix (String, String, [CriticalPair (TypedGraphMorphism b c)])) -> Maybe (Matrix (String, String, [CriticalSequence (TypedGraphMorphism b c)])) -> String -> [(String, String)] -> String -> IO ()
+saveCPXResults fstOrderGrammar sndOrderGrammar conflicts dependencies ggName names file = do
+  _ <- writeXML (GW.writeCpx (fstOrderGrammar, sndOrderGrammar) conflicts' dependencies' ggName names) file
+  return ()
+  where
+    conflicts' = maybe [] Matrix.toList conflicts
+    dependencies' = maybe [] Matrix.toList dependencies
+
 
 
 -- | Evolutionary Spans to Strings
@@ -219,8 +239,6 @@ printDependencies dependencies' = str
     delForbStr = printMatrixLengths "Delete-Forbid" (filterMatrix isDeleteForbid dependencies)
     dependsStr = printMatrixLengths "Dependencies" dependencies
     dependencies = fmap (\(_,_,l) -> l) dependencies'    
-    
-
 
 filterMatrix :: Functor f => (a -> Bool) -> f [a] -> f [a]
 filterMatrix pred = fmap (filter pred)
