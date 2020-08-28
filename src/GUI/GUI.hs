@@ -110,6 +110,7 @@ startGUI = do
 
   -- build main window
   (window, tabs, fileItems, editItems, viewItems, helpItems) <- buildMainWindow
+  #showAll window
 
   -- build auxiliar windows
   helpWindow <- buildHelpWindow
@@ -119,7 +120,6 @@ startGUI = do
       [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
       [zin,zut,z50,zdf,z150,z200,vdf] = viewItems
       [hlp,abt] = helpItems
-  
 
   -- init an model to display in the editor tree panel --------------------------------
   editStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt, gtypeBoolean, gtypeBoolean]
@@ -147,9 +147,6 @@ startGUI = do
 
   analysisTabLabel <- new Gtk.Label [#label := "Analysis"]
   Gtk.notebookAppendPage tabs cpaBox (Just analysisTabLabel)    
-
-  -- show window
-  #showAll window
                     
 
 
