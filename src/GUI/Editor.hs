@@ -1147,8 +1147,6 @@ startEditor window store
         set window [#title := "Verigraph-GUI"]
         Gtk.widgetQueueDraw canvas
       else return ()
-
-   --open project
   
   -- open project
   on opn #activate $ do
@@ -1159,6 +1157,7 @@ startEditor window store
         case mg of
           Nothing -> return ()
           Just (forest,fn) -> do
+                writeIORef graphStates M.empty
                 Gtk.treeStoreClear store
                 let toGSandStates n i = case n of
                               Topic name -> ((name,0,0,0,False), (0,(i,emptyES)))

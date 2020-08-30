@@ -133,7 +133,7 @@ startGUI = do
   -- start executor module
   execStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt]
   Exec.updateTreeStore execStore ("Rule0", 2, 3, 0)
-  (execPane, execState, execStarted) <- Exec.buildExecutor execStore statesMap typeGraph nacInfoMap
+  (execPane, execState, execStarted, execNacListMap) <- Exec.buildExecutor execStore statesMap typeGraph nacInfoMap
 
   -- start analysis module
   cpaBox <- buildCpaBox window editStore statesMap nacInfoMap
@@ -154,7 +154,8 @@ startGUI = do
   --------  EVENT BINDINGS  --------------------------------------------------------------------------------------------------
   ----------------------------------------------------------------------------------------------------------------------------
   
-  -- update execStore based on editStore
+  -- update execStore (TreeStore of Executor module) based on editStore (TreeStore of Editor module) -------------------------
+  -- when a editStore row changes, update the execStore
   after editStore #rowChanged $ \path iter -> do
     n  <- Gtk.treeModelGetValue editStore iter 0 >>= (\n -> fromGValue n :: IO (Maybe String)) >>= return . fromJust
     id <- Gtk.treeModelGetValue editStore iter 2 >>= fromGValue :: IO Int32
@@ -168,17 +169,29 @@ startGUI = do
         if valid
           then do
             p <- Gtk.treeModelGetValue editStore parent 2 >>= fromGValue :: IO Int32
-            Exec.updateTreeStore execStore (n,id,t,p)
+            nacListMap <- readIORef execNacListMap
+            let nacList = fromMaybe [] $ M.lookup p nacListMap
+                nacMap = M.insert n id $ M.fromList nacList
+            modifyIORef execNacListMap $ M.insert p (M.toList nacMap)
           else return ()
       (False,3) -> Exec.removeFromTreeStore execStore id
-      (False,4) -> Exec.removeFromTreeStore execStore id
+      (False,4) -> do
+        (valid,parent) <- Gtk.treeModelIterParent editStore iter
+        if valid
+          then do
+            p <- Gtk.treeModelGetValue editStore parent 2 >>= fromGValue :: IO Int32
+            nacListMap <- readIORef execNacListMap
+            let nacList = fromMaybe [] $ M.lookup p nacListMap
+                nacMap = M.delete n $ M.fromList nacList
+            modifyIORef execNacListMap $ M.insert p (M.toList nacMap)
+          else return ()
       _ -> return ()
 
   -- when a rule or nac is deleted from editStore, remove the correspondent from execStore
   after editStore #rowDeleted $ \path -> do
     statesM <- readIORef statesMap
     Exec.removeTrashFromTreeStore execStore statesM
-
+    
   on tabs #switchPage $ \page pageNum -> do
     -- update statesMap with the information of currentES
     Edit.storeCurrentES window currentES storeIORefs nacInfoMap
@@ -190,7 +203,8 @@ startGUI = do
             else do
               initState <- readIORef statesMap >>= return . fromMaybe emptyES . M.lookup 1
               writeIORef execState initState
-      _ -> return ()      
+      _ -> return ()     
+  ----------------------------------------------------------------------------------------------------------------------------
 
   -- Help Menu 
   -- help
