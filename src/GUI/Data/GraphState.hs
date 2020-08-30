@@ -1,20 +1,15 @@
--- this module contains the definition of the Editor State, a structure
+-- this module contains the definition of a GraphState, a structure
 -- containing all the informations needed to draw a graph in the canvas
--- it also contain functions to modify the editor state
+-- it also contain functions to modify a GraphState
 
-module GUI.Data.EditorState(
-  EditorState
-, emptyES
-, editorGetGraph
-, editorSetGraph
-, editorGetGI
-, editorSetGI
-, editorGetSelected
-, editorSetSelected
-, editorGetZoom
-, editorSetZoom
-, editorGetPan
-, editorSetPan
+module GUI.Data.GraphState(
+  GraphState (..)
+, emptyState
+, stateSetGraph
+, stateSetGI
+, stateSetSelected
+, stateSetZoom
+, stateSetPan
 , selectNodeInPosition
 , selectEdgeInPosition
 , createNode
@@ -44,42 +39,32 @@ import qualified GUI.Data.Info as I
 -- | Graph Editor State
 -- A tuple containing all the informations needed to draw the graph in the canvas
 -- (graph, GraphicalInfo, elected nodes and edges, zoom, pan)
-type EditorState = (Graph Info Info, GraphicalInfo, ([NodeId],[EdgeId]) , Double, (Double,Double))
+data GraphState = State { stateGetGraph :: Graph Info Info
+                        , stateGetGI :: GraphicalInfo
+                        , stateGetSelected :: ([NodeId],[EdgeId])
+                        , stateGetZoom :: Double
+                        , stateGetPan :: (Double,Double)} 
+                 deriving (Show,Read)
 
--- constructor
-emptyES :: EditorState
-emptyES = (G.empty, (M.empty, M.empty), ([], []), 1.0, (0.0,0.0))
+-- empty constructor
+emptyState :: GraphState
+emptyState = State G.empty (M.empty, M.empty) ([], []) 1.0 (0.0,0.0)
 
--- getters and setters
-editorGetGraph :: EditorState -> Graph Info Info
-editorGetGraph (g,_,_,_,_) = g
+-- setters for graphState
+stateSetGraph :: Graph Info Info -> GraphState -> GraphState
+stateSetGraph g state = state {stateGetGraph = g}
 
-editorSetGraph :: Graph Info Info -> EditorState -> EditorState
-editorSetGraph g (_,gi,s,z,p) = (g,gi,s,z,p)
+stateSetGI :: GraphicalInfo -> GraphState -> GraphState
+stateSetGI gi state = state {stateGetGI = gi}
 
-editorGetGI :: EditorState -> GraphicalInfo
-editorGetGI (_,gi,_,_,_) = gi
+stateSetSelected :: ([NodeId], [EdgeId]) -> GraphState -> GraphState
+stateSetSelected s state = state {stateGetSelected = s}
 
-editorSetGI :: GraphicalInfo -> EditorState -> EditorState
-editorSetGI gi (g,_,s,z,p) = (g,gi,s,z,p)
+stateSetZoom :: Double -> GraphState -> GraphState
+stateSetZoom z state = state {stateGetZoom = z}
 
-editorGetSelected :: EditorState -> ([NodeId], [EdgeId])
-editorGetSelected (_,_,s,_,_) = s
-
-editorSetSelected :: ([NodeId], [EdgeId]) -> EditorState -> EditorState
-editorSetSelected s (g,gi,_,z,p) = (g,gi,s,z,p)
-
-editorGetZoom :: EditorState -> Double
-editorGetZoom (_,_,_,z,_) = z
-
-editorSetZoom :: Double -> EditorState -> EditorState
-editorSetZoom z (g,gi,s,_,p) = (g,gi,s,z,p)
-
-editorGetPan :: EditorState -> (Double,Double)
-editorGetPan (_,_,_,_,p) = p
-
-editorSetPan :: (Double,Double) -> EditorState -> EditorState
-editorSetPan p (g,gi,s,z,_) = (g,gi,s,z,p)
+stateSetPan :: (Double,Double) -> GraphState -> GraphState
+stateSetPan p state = state {stateGetPan = p}
 
 
 -- node/edge intersection functions
@@ -112,22 +97,22 @@ selectEdgeInPosition g gi (x,y) =
 
 -- create/delete operations ----------------------------------------------------
 -- create a new node with it's default Info and GraphicalInfo
-createNode :: EditorState -> GIPos -> GIDim -> Info -> NodeShape -> GIColor -> GIColor -> EditorState
-createNode es pos dim info nshape color lcolor = editorSetGraph newGraph . editorSetGI newGI . editorSetSelected ([nid], []) $ es
+createNode :: GraphState -> GIPos -> GIDim -> Info -> NodeShape -> GIColor -> GIColor -> GraphState
+createNode es pos dim info nshape color lcolor = stateSetGraph newGraph . stateSetGI newGI . stateSetSelected ([nid], []) $ es
   where
-    graph = editorGetGraph es
+    graph = stateGetGraph es
     nid = head $ newNodes graph
     newGraph = insertNodeWithPayload nid info graph
     newNgi = NodeGI {position = pos, fillColor = color, lineColor = lcolor, dims = dim, shape = nshape}
-    newGI = (M.insert (fromEnum nid) newNgi $ fst (editorGetGI es) , snd (editorGetGI es))
+    newGI = (M.insert (fromEnum nid) newNgi $ fst (stateGetGI es) , snd (stateGetGI es))
 
 
 -- create a single edge between a src node and a target node
-createEdge :: EditorState -> NodeId -> NodeId -> Info -> Bool -> EdgeStyle -> (Double,Double,Double) -> EditorState
-createEdge es srcNode tgtNode info autoNaming estyle ecolor = editorSetGraph newGraph . editorSetGI (ngiM, newEgiM) . editorSetSelected ([],[eid]) $ es
+createEdge :: GraphState -> NodeId -> NodeId -> Info -> Bool -> EdgeStyle -> (Double,Double,Double) -> GraphState
+createEdge es srcNode tgtNode info autoNaming estyle ecolor = stateSetGraph newGraph . stateSetGI (ngiM, newEgiM) . stateSetSelected ([],[eid]) $ es
   where 
-    graph = editorGetGraph es
-    (ngiM,egiM) = editorGetGI es
+    graph = stateGetGraph es
+    (ngiM,egiM) = stateGetGI es
     eid = head $ newEdges graph
     info' = if infoLabel info == (Label "") && autoNaming then infoSetLabel info (show $ fromEnum eid) else info
     newGraph = insertEdgeWithPayload eid srcNode tgtNode info' graph
@@ -136,11 +121,11 @@ createEdge es srcNode tgtNode info autoNaming estyle ecolor = editorSetGraph new
     newEgiM = M.insert (fromEnum eid) negi egiM
 
 -- create edges between the selected nodes and a target node
-createEdges:: EditorState -> NodeId -> Info -> Bool -> EdgeStyle -> (Double,Double,Double) -> EditorState
-createEdges es tgtNode info autoNaming estyle ecolor = editorSetGraph newGraph . editorSetGI (ngiM, newegiM) . editorSetSelected ([],createdEdges) $ es
-  where selectedNodes = fst $ editorGetSelected es
-        graph = editorGetGraph es
-        (ngiM,egiM) = editorGetGI es
+createEdges:: GraphState -> NodeId -> Info -> Bool -> EdgeStyle -> (Double,Double,Double) -> GraphState
+createEdges es tgtNode info autoNaming estyle ecolor = stateSetGraph newGraph . stateSetGI (ngiM, newegiM) . stateSetSelected ([],createdEdges) $ es
+  where selectedNodes = fst $ stateGetSelected es
+        graph = stateGetGraph es
+        (ngiM,egiM) = stateGetGI es
         (newGraph, newegiM, createdEdges) = foldr create (graph, egiM, []) selectedNodes
         create = (\nid (g,giM,eids) -> let
                                     eid = head $ newEdges g
@@ -151,15 +136,15 @@ createEdges es tgtNode info autoNaming estyle ecolor = editorSetGraph newGraph .
                                   in (ng, M.insert (fromEnum eid) negi giM, eid:eids))
 
 -- delete the selection
-deleteSelected:: EditorState -> EditorState
-deleteSelected es = editorSetSelected ([],[]) . editorSetGI (newngiM, newegiM) . editorSetGraph newGraph $ es
-  where graph = editorGetGraph es
-        (nids,eids) = editorGetSelected es
+deleteSelected:: GraphState -> GraphState
+deleteSelected es = stateSetSelected ([],[]) . stateSetGI (newngiM, newegiM) . stateSetGraph newGraph $ es
+  where graph = stateGetGraph es
+        (nids,eids) = stateGetSelected es
         foundNodes = map (\nid -> fromMaybe (Node (NodeId 0) I.empty) $ lookupNode nid graph) nids
         foundEdges = map (\eid -> fromMaybe (Edge (EdgeId 0) (NodeId 0) (NodeId 0) I.empty) $ lookupEdge eid graph) eids
         nids' = map nodeId $ filter (\n -> not $ infoLocked $ nodeInfo n) foundNodes
         eids' = map edgeId $ filter (\e -> not $ infoLocked $ edgeInfo e) foundEdges
-        (ngiM, egiM) = editorGetGI es
+        (ngiM, egiM) = stateGetGI es
         newngiM = foldl (\giM n -> M.delete n giM) ngiM (map fromEnum nids')
         newegiM = foldl (\giM n -> M.delete n giM) egiM (map fromEnum eids')
         graph' = foldl (\g e -> removeEdge e g) graph eids'
@@ -199,12 +184,12 @@ newLoopPos nid (g, giM)= (-pi/2,50+30*k)
      _ -> 0
 
 -- | Mode selected nodes
-moveNodes:: EditorState -> (Double,Double) -> (Double,Double) -> EditorState
-moveNodes es (xold,yold) (xnew,ynew) = editorSetGI (movedNGIs,egiM)  es
+moveNodes:: GraphState -> (Double,Double) -> (Double,Double) -> GraphState
+moveNodes es (xold,yold) (xnew,ynew) = stateSetGI (movedNGIs,egiM)  es
   where
-      (sNodes, sEdges) = editorGetSelected es
-      graph = editorGetGraph es
-      (ngiM,egiM) = editorGetGI es
+      (sNodes, sEdges) = stateGetSelected es
+      graph = stateGetGraph es
+      (ngiM,egiM) = stateGetGI es
       (deltaX, deltaY) = (xnew-xold, ynew-yold)
       -- move the nodes
       moveN = \giMap (NodeId nid) -> let gi = getNodeGI nid giMap
@@ -213,12 +198,12 @@ moveNodes es (xold,yold) (xnew,ynew) = editorSetGI (movedNGIs,egiM)  es
       movedNGIs = foldl moveN ngiM sNodes
 
 -- | Move selected edges
-moveEdges:: EditorState -> (Double,Double) -> (Double,Double) -> EditorState
-moveEdges es (xold,yold) (xnew,ynew) = editorSetGI (ngi,newegi) es
-  where graph = editorGetGraph es
-        (sNodes,sEdges) = editorGetSelected es
+moveEdges:: GraphState -> (Double,Double) -> (Double,Double) -> GraphState
+moveEdges es (xold,yold) (xnew,ynew) = stateSetGI (ngi,newegi) es
+  where graph = stateGetGraph es
+        (sNodes,sEdges) = stateGetSelected es
         delta = (xnew-xold,ynew-yold)
-        (ngi,egi) = editorGetGI es
+        (ngi,egi) = stateGetGI es
         moveE = (\egiM eid -> case lookupEdge eid graph of
           Just edge -> if sourceId edge /= targetId edge
             then
@@ -244,17 +229,17 @@ moveEdges es (xold,yold) (xnew,ynew) = editorSetGI (ngi,newegi) es
         newegi = foldl moveE egi sEdges
 
 -- | Change the selected nodes shape
-changeNodeShape :: EditorState -> NodeShape -> EditorState
-changeNodeShape es s = editorSetGI (newNgiM, egiM) es
+changeNodeShape :: GraphState -> NodeShape -> GraphState
+changeNodeShape es s = stateSetGI (newNgiM, egiM) es
   where
-      nids = fst $ editorGetSelected es
-      (ngiM, egiM) = editorGetGI es
+      nids = fst $ stateGetSelected es
+      (ngiM, egiM) = stateGetGI es
       newNgiM = M.mapWithKey (\k gi -> if NodeId k `elem` nids then nodeGiSetShape s gi else gi) ngiM
 
 -- | Change the selected edges style
-changeEdgeStyle :: EditorState -> EdgeStyle -> EditorState
-changeEdgeStyle es s = editorSetGI (ngiM, newEgiM) es
+changeEdgeStyle :: GraphState -> EdgeStyle -> GraphState
+changeEdgeStyle es s = stateSetGI (ngiM, newEgiM) es
   where
-    eids = snd $ editorGetSelected es
-    (ngiM, egiM) = editorGetGI es
+    eids = snd $ stateGetSelected es
+    (ngiM, egiM) = stateGetGI es
     newEgiM = M.mapWithKey (\k gi -> if EdgeId k `elem` eids then edgeGiSetStyle s gi else gi) egiM

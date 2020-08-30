@@ -9,7 +9,7 @@ import Data.Maybe
 
 import Data.Graphs
 
-import GUI.Data.EditorState
+import GUI.Data.GraphState
 import GUI.Data.Info
 import GUI.Data.GraphicalInfo
 
@@ -43,12 +43,12 @@ infereEdgeType tg src tgt preferedType = inferedType
       (t:ts,Just pt) -> if pt `elem` (t:ts) then preferedType else Just t
 
 -- | Infere edges types based on the selected nodes in the editorState
-infereEdgesTypesAfterNodeChange :: EditorState -> Graph Info Info -> M.Map String (M.Map (String,String) EdgeGI) -> EditorState
-infereEdgesTypesAfterNodeChange es tg typesE = editorSetGraph newGraph . editorSetGI newGIM  $ es
+infereEdgesTypesAfterNodeChange :: GraphState -> Graph Info Info -> M.Map String (M.Map (String,String) EdgeGI) -> GraphState
+infereEdgesTypesAfterNodeChange es tg typesE = stateSetGraph newGraph . stateSetGI newGIM  $ es
   where 
-    g = editorGetGraph es
-    (sNIds,sEIds) = editorGetSelected es
-    giM = editorGetGI es
+    g = stateGetGraph es
+    (sNIds,sEIds) = stateGetSelected es
+    giM = stateGetGI es
     nodesInContext = map (\nid -> fromJust $ lookupNodeInContext nid g) sNIds
     incidentEdgesInContext = concat $ map (incidentEdges . snd) nodesInContext
     edgesWithEndings = foldr (\((src,srcC),e,(tgt,tgtC)) l -> 
@@ -78,4 +78,4 @@ infereEdgesTypesAfterNodeChange es tg typesE = editorSetGraph newGraph . editorS
             where egi = getEdgeGI (fromEnum eid) giM
 
     newEGI = foldr changeEGI (snd giM) edgesIdsAndTypes
-    newGIM = ((fst $ editorGetGI es),newEGI)
+    newGIM = ((fst $ stateGetGI es),newEGI)

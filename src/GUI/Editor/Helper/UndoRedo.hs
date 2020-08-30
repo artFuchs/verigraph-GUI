@@ -12,7 +12,7 @@ import qualified Data.Map as M
 import Data.Maybe
 
 import GUI.Data.DiaGraph
-import GUI.Data.EditorState
+import GUI.Data.GraphState
 import GUI.Data.Nac
 
 type ChangeStack = [(DiaGraph,Maybe MergeMapping)]
@@ -21,12 +21,12 @@ type ChangeStack = [(DiaGraph,Maybe MergeMapping)]
 stackUndo :: IORef (M.Map Int32 ChangeStack)
           -> IORef (M.Map Int32 ChangeStack)
           -> IORef Int32
-          -> EditorState
+          -> GraphState
           -> Maybe MergeMapping
           -> IO ()
 stackUndo undoStack redoStack indexIORef es mergeM = do
-  let g = editorGetGraph es
-      gi = editorGetGI es
+  let g = stateGetGraph es
+      gi = stateGetGI es
   undoStackM <- readIORef undoStack
   index <- readIORef indexIORef
   modifyIORef undoStack $ M.insert index $ ((g,gi), mergeM):( fromMaybe [] $ M.lookup index undoStackM )
@@ -37,7 +37,7 @@ stackUndo undoStack redoStack indexIORef es mergeM = do
 applyUndo :: IORef (M.Map Int32 ChangeStack)
           -> IORef (M.Map Int32 ChangeStack)
           -> IORef Int32
-          -> IORef EditorState
+          -> IORef GraphState
           -> IORef (Maybe MergeMapping)
           -> IO ()
 applyUndo undoStack redoStack indexIORef st mergeMappingIORef = do
@@ -48,10 +48,10 @@ applyUndo undoStack redoStack indexIORef st mergeMappingIORef = do
   mergeM <- readIORef mergeMappingIORef
 
   let apply [] r es = ([], r, es, Nothing)
-      apply (((g,gi),m):u) r es = (u, ((eg,egi), mergeM):r, editorSetGI gi . editorSetGraph g $ es, m)
+      apply (((g,gi),m):u) r es = (u, ((eg,egi), mergeM):r, stateSetGI gi . stateSetGraph g $ es, m)
                             where
-                              eg = editorGetGraph es
-                              egi = editorGetGI es
+                              eg = stateGetGraph es
+                              egi = stateGetGI es
 
   let undoS = fromMaybe [] $ M.lookup index undoStackM
       redoS = fromMaybe [] $ M.lookup index redoStackM
@@ -65,7 +65,7 @@ applyUndo undoStack redoStack indexIORef st mergeMappingIORef = do
 applyRedo :: IORef (M.Map Int32 ChangeStack)
           -> IORef (M.Map Int32 ChangeStack)
           -> IORef Int32
-          -> IORef EditorState
+          -> IORef GraphState
           -> IORef (Maybe MergeMapping)
           -> IO ()
 applyRedo undoStack redoStack indexIORef st mergeMappingIORef = do
@@ -77,10 +77,10 @@ applyRedo undoStack redoStack indexIORef st mergeMappingIORef = do
 
 
   let apply u [] es = (u, [], es, Nothing)
-      apply u (((g,gi),m):r) es = (((eg,egi), mergeM):u , r, editorSetGI gi . editorSetGraph g $ es, m)
+      apply u (((g,gi),m):r) es = (((eg,egi), mergeM):u , r, stateSetGI gi . stateSetGraph g $ es, m)
                             where
-                              eg = editorGetGraph es
-                              egi = editorGetGI es
+                              eg = stateGetGraph es
+                              egi = stateGetGI es
 
   let undoS = fromMaybe [] $ M.lookup index undoStackM
       redoS = fromMaybe [] $ M.lookup index redoStackM

@@ -13,7 +13,7 @@ import Graphics.Rendering.Cairo
 import Data.Graphs
 
 import GUI.Data.Info
-import GUI.Data.EditorState
+import GUI.Data.GraphState
 import GUI.Data.GraphicalInfo
 import GUI.Data.Nac
 import GUI.Render.Render
@@ -32,8 +32,14 @@ bothColor = (0.47,0.13,0.87)
 -- draw a typegraph in the canvas
 -- if there are nodes or edges with same names, then highlight them as errors
 -- if any element is selected, highlight it as selected
-drawTypeGraph :: EditorState -> Maybe (Double,Double,Double,Double)-> Render ()
-drawTypeGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
+drawTypeGraph :: GraphState -> Maybe (Double,Double,Double,Double)-> Render ()
+drawTypeGraph state sq = do
+  let g = stateGetGraph state
+      (nGI,eGI) = stateGetGI state
+      (sNodes,sEdges) = stateGetSelected state
+      z = stateGetZoom state
+      (px,py) = stateGetPan state
+
   scale z z
   translate px py
 
@@ -82,8 +88,14 @@ drawTypeGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq = do
 -- draw a typed graph
 -- if there are nodes or edges not correctly typed, highlight them as errors
 -- if any element is selected, highlight it as selected
-drawHostGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph Info Info -> Render ()
-drawHostGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
+drawHostGraph :: GraphState -> Maybe (Double,Double,Double,Double) -> Graph Info Info -> Render ()
+drawHostGraph state sq tg = do
+  let g = stateGetGraph state
+      (nGI,eGI) = stateGetGI state
+      (sNodes,sEdges) = stateGetSelected state
+      z = stateGetZoom state
+      (px,py) = stateGetPan state
+
   scale z z
   translate px py
 
@@ -130,8 +142,14 @@ drawHostGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
 
 -- draw a rulegraph
 -- similar to drawhostGraph, but draws bold texts to indicate operations
-drawRuleGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph Info Info -> Render ()
-drawRuleGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
+drawRuleGraph :: GraphState -> Maybe (Double,Double,Double,Double) -> Graph Info Info -> Render ()
+drawRuleGraph state sq tg = do
+  let g = stateGetGraph state
+      (nGI,eGI) = stateGetGI state
+      (sNodes,sEdges) = stateGetSelected state
+      z = stateGetZoom state
+      (px,py) = stateGetPan state
+  
   scale z z
   translate px py
 
@@ -195,8 +213,14 @@ drawRuleGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg = do
 
 -- draw a single side of a rule
 -- 
-drawRuleSideGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph Info Info -> Render ()
-drawRuleSideGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq k = do
+drawRuleSideGraph :: GraphState -> Maybe (Double,Double,Double,Double) -> Graph Info Info -> Render ()
+drawRuleSideGraph state sq k = do
+  let g = stateGetGraph state
+      (nGI,eGI) = stateGetGI state
+      (sNodes,sEdges) = stateGetSelected state
+      z = stateGetZoom state
+      (px,py) = stateGetPan state
+
   scale z z
   translate px py
 
@@ -266,8 +290,14 @@ drawRuleSideGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq k = do
 -- draw a nac
 -- it highlights elements of the lhs part of the rule with yellow shadows
 -- and highlights merged elements of the lhs part of the rule with green shadows
-drawNACGraph :: EditorState -> Maybe (Double,Double,Double,Double) -> Graph Info Info -> MergeMapping -> Render ()
-drawNACGraph (g, (nGI,eGI), (sNodes, sEdges), z, (px,py)) sq tg (nM,eM) = do
+drawNACGraph :: GraphState -> Maybe (Double,Double,Double,Double) -> Graph Info Info -> MergeMapping -> Render ()
+drawNACGraph state sq tg (nM,eM) = do
+  let g = stateGetGraph state
+      (nGI,eGI) = stateGetGI state
+      (sNodes,sEdges) = stateGetSelected state
+      z = stateGetZoom state
+      (px,py) = stateGetPan state
+  
   scale z z
   translate px py
 

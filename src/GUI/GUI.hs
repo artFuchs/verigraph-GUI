@@ -42,7 +42,7 @@ import           GUI.Data.Info hiding (empty)
 import qualified GUI.Data.Info as I
 import           GUI.Data.DiaGraph hiding (empty)
 import           GUI.Dialogs
-import           GUI.Data.EditorState
+import           GUI.Data.GraphState
 import qualified GUI.Data.DiaGraph as DG
 import           GUI.Data.Nac
 import           GUI.Editor as Edit
@@ -70,14 +70,14 @@ startGUI = do
   -----------------------------------------------------------------------------------------------------------------------------
 
   -- variables to editStore the multiple graphs of the grammar
-  -- map of graph ids to graphs, containing the EditorStates of all graphs in the grammar
-  statesMap       <- newIORef (M.empty :: M.Map Int32 EditorState)
+  -- map of graph ids to graphs, containing the GraphStates of all graphs in the grammar
+  statesMap       <- newIORef (M.empty :: M.Map Int32 GraphState)
   currentPath     <- newIORef [0] -- indexes of the path of the current graph in the TreeStore
   currentGraph    <- newIORef (0 :: Int32) -- index of the current graph
   {- number specifying the type of the current graph 
      (see possible values in the module GUI.Helper.TreeStore, lines 52 - 61) -}
   currentGraphType <- newIORef (1 :: Int32)
-  writeIORef statesMap $ M.fromList [(a,emptyES) | a <- [0 .. 2]]
+  writeIORef statesMap $ M.fromList [(a,emptyState) | a <- [0 .. 2]]
   let storeIORefs = (statesMap,currentPath,currentGraph,currentGraphType)
   
   -- variables to keep track of changes
@@ -125,7 +125,7 @@ startGUI = do
   editStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt, gtypeBoolean, gtypeBoolean]
   Edit.initStore editStore
   -- start editor module
-  (editorPane,currentES) <- Edit.startEditor window editStore
+  (editorPane,editorState) <- Edit.startEditor window editStore
                                                 fileName typeGraph
                                                 storeIORefs changesIORefs nacIORefs
                                                 fileItems editItems viewItems
@@ -193,15 +193,15 @@ startGUI = do
     Exec.removeTrashFromTreeStore execStore statesM
     
   on tabs #switchPage $ \page pageNum -> do
-    -- update statesMap with the information of currentES
-    Edit.storeCurrentES window currentES storeIORefs nacInfoMap
+    -- update statesMap with the information of editorState
+    Edit.storeCurrentES window editorState storeIORefs nacInfoMap
     case pageNum of
       1 -> do
           started <- readIORef execStarted
           if started
             then return ()
             else do
-              initState <- readIORef statesMap >>= return . fromMaybe emptyES . M.lookup 1
+              initState <- readIORef statesMap >>= return . fromMaybe emptyState . M.lookup 1
               writeIORef execState initState
       _ -> return ()     
   ----------------------------------------------------------------------------------------------------------------------------
@@ -217,7 +217,7 @@ startGUI = do
   -- event bindings for the main window --------------------------------------------------------------------------------------
   -- when click in the close button, the application must close
   on window #deleteEvent $ return $ do
-    continue <- Edit.confirmOperation window editStore changedProject currentES nacInfoMap fileName storeIORefs
+    continue <- Edit.confirmOperation window editStore changedProject editorState nacInfoMap fileName storeIORefs
     if continue
       then do
         Gtk.mainQuit

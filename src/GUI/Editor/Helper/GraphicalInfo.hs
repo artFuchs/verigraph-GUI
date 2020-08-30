@@ -22,7 +22,7 @@ import qualified Data.Map as M
 import Data.Graphs
 
 import GUI.Data.GraphicalInfo
-import GUI.Data.EditorState
+import GUI.Data.GraphState
 import GUI.Data.Info
 
 -- | given a text, compute the size of it's bounding box
@@ -55,7 +55,7 @@ updateNodesGiDims ngiM g context = do
   return $ M.fromList listOfNGIs
 
 -- rename the selected itens, modifying the sizes of nodes according to the text
-renameSelected:: EditorState -> String -> P.Context -> IO EditorState
+renameSelected:: GraphState -> String -> P.Context -> IO GraphState
 renameSelected es content context = do
   -- auxiliar function rename
   let newInfo = str2Info content
@@ -70,13 +70,13 @@ renameSelected es content context = do
                             t = case infoType newInfo of
                                 "" -> infoType oldInfo
                                 it -> it
-  let graph = editorGetGraph es
-      (nids,eids) = editorGetSelected es
+  let graph = stateGetGraph es
+      (nids,eids) = stateGetSelected es
       -- apply rename in the graph elements to get newGraph
       graph' = foldl (\g nid -> updateNodePayload nid g rename) graph nids
       newGraph  = foldl (\g eid -> updateEdgePayload eid g rename) graph' eids
   -- change the GraphicalInfo of the renamed elements
-  let (ngiM,egiM) = editorGetGI es
+  let (ngiM,egiM) = stateGetGI es
   dims <- forM (filter (\n -> nodeId n `elem` nids) (nodes newGraph))
                (\n -> do
                      let info = nodeInfo n
@@ -89,5 +89,5 @@ renameSelected es content context = do
                                         Just dim -> nodeGiSetDims dim gi
                                         Nothing -> gi)
                              ngiM
-      newEs   = editorSetGI (newNgiM,egiM) . editorSetGraph newGraph $ es
+      newEs   = stateSetGI (newNgiM,egiM) . stateSetGraph newGraph $ es
   return newEs

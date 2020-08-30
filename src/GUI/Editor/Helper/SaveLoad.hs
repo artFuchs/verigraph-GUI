@@ -32,7 +32,7 @@ import Category.TypedGraphRule (RuleMorphism)
 import XML.GGXWriter
 
 import GUI.Data.GraphicalInfo
-import GUI.Data.EditorState
+import GUI.Data.GraphState
 import GUI.Data.Info
 import GUI.Dialogs
 import GUI.Helper.GrammarMaker
@@ -44,7 +44,7 @@ import GUI.Helper.GrammarMaker
 type NList = [(Int,Info)]
 type EList = [(Int,Int,Int,Info)]
 type NACInfo = ((Graph Info Info,GraphicalInfo), (M.Map NodeId NodeId, M.Map EdgeId EdgeId))
-data SaveInfo = Topic String | TypeGraph String EditorState | HostGraph String EditorState | RuleGraph String EditorState Bool | NacGraph String NACInfo deriving (Show)
+data SaveInfo = Topic String | TypeGraph String GraphState | HostGraph String GraphState | RuleGraph String GraphState Bool | NacGraph String NACInfo deriving (Show)
 data UncompressedSaveInfo = T String
                           | TG String NList EList GraphicalInfo
                           | HG String NList EList GraphicalInfo
@@ -103,15 +103,15 @@ saveProject :: Tree.Forest SaveInfo -> String -> IO Bool
 saveProject saveInfo path = do
   let nodeContents g = map (\(Node nid info) -> (fromEnum nid, info)) (nodes g)
       edgeContents g = map (\(Edge eid srcid tgtid info) -> (fromEnum eid, fromEnum srcid, fromEnum tgtid, info)) (edges g)
-      nodeContents' es = nodeContents (editorGetGraph es)
-      edgeContents' es = edgeContents (editorGetGraph es)
+      nodeContents' es = nodeContents (stateGetGraph es)
+      edgeContents' es = edgeContents (stateGetGraph es)
       toIntPairs m = map (\(a,b) -> (fromEnum a, fromEnum b)) $ M.toList m
       contents =  map
                   (fmap (\node -> case node of
                                       Topic name -> T name
-                                      TypeGraph name es -> TG name (nodeContents' es) (edgeContents' es) (editorGetGI es)
-                                      HostGraph name es -> HG name (nodeContents' es) (edgeContents' es) (editorGetGI es)
-                                      RuleGraph name es a -> RG name (nodeContents' es) (edgeContents' es) (editorGetGI es) a
+                                      TypeGraph name es -> TG name (nodeContents' es) (edgeContents' es) (stateGetGI es)
+                                      HostGraph name es -> HG name (nodeContents' es) (edgeContents' es) (stateGetGI es)
+                                      RuleGraph name es a -> RG name (nodeContents' es) (edgeContents' es) (stateGetGI es) a
                                       NacGraph name ((g,gi),(nm,em)) -> NG name (nodeContents g) (edgeContents g) (toIntPairs nm) (toIntPairs em) gi))
                   saveInfo
       writeProject = writeFile path $ show contents
@@ -220,13 +220,13 @@ loadProject content = loadedTree
                   (\node -> case node of
                               T name -> Topic name
                               TG name nlist elist gi -> let g = fromNodesAndEdges (genNodes nlist) (genEdges elist)
-                                                            es = editorSetGI gi . editorSetGraph g $ emptyES
+                                                            es = stateSetGI gi . stateSetGraph g $ emptyState
                                                         in TypeGraph name es
                               HG name nlist elist gi -> let g = fromNodesAndEdges (genNodes nlist) (genEdges elist)
-                                                            es = editorSetGI gi . editorSetGraph g $ emptyES
+                                                            es = stateSetGI gi . stateSetGraph g $ emptyState
                                                         in HostGraph name es
                               RG name nlist elist gi a -> let g = fromNodesAndEdges (genNodes nlist) (genEdges elist)
-                                                              es = editorSetGI gi . editorSetGraph g $ emptyES
+                                                              es = stateSetGI gi . stateSetGraph g $ emptyState
                                                           in RuleGraph name es a
                               NG name nlist elist nmap emap gi -> let g = fromNodesAndEdges (genNodes nlist) (genEdges elist)
                                                                       nm' = genNodeMap nmap

@@ -30,7 +30,7 @@ import qualified Exec.GlobalOptions        as EGO
 import qualified Exec.CriticalPairAnalysis as CPA
 
 import           GUI.Data.DiaGraph
-import           GUI.Data.EditorState
+import           GUI.Data.GraphState
 import           GUI.Data.Info
 import           GUI.Data.Nac
 import           GUI.Dialogs
@@ -42,7 +42,7 @@ import qualified System.FilePath as FilePath
 
 buildCpaBox :: Gtk.Window
             -> Gtk.TreeStore 
-            -> IORef (M.Map Int32 EditorState)
+            -> IORef (M.Map Int32 GraphState)
             -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
             -> IO (Gtk.Box)
 buildCpaBox window editStore statesMap nacInfoMap = do
@@ -73,7 +73,7 @@ buildCpaBox window editStore statesMap nacInfoMap = do
     efstOrderGG <- Edit.prepToExport editStore statesMap nacInfoMap
     sts <- readIORef statesMap
     let tes = fromJust $ M.lookup 0 sts
-        tg = editorGetGraph tes
+        tg = stateGetGraph tes
     case efstOrderGG of
       Left msg -> showError window (T.pack msg)
       Right gg -> do
@@ -105,7 +105,7 @@ buildCpaBox window editStore statesMap nacInfoMap = do
       (Just gg, path) -> do 
         sts <- readIORef statesMap
         let tes = fromJust $ M.lookup 0 sts
-            tg = editorGetGraph tes
+            tg = stateGetGraph tes
             nods = G.nodes tg
             edgs = G.edges tg
             nodeNames = map (\n -> ('N' : (show . fromEnum . G.nodeId $ n), (infoLabelStr . G.nodeInfo $ n) ++ "%:[NODE]:" )) nods

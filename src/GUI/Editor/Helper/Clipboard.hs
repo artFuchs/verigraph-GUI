@@ -8,18 +8,18 @@ import qualified Data.Map as M
 import Data.Graphs
 
 import GUI.Data.DiaGraph
-import GUI.Data.EditorState
+import GUI.Data.GraphState
 import GUI.Data.Info
 import GUI.Data.GraphicalInfo
 
 
--- | generate a DiaGraph with the selected elements from a given EditorState
-copySelected :: EditorState -> DiaGraph
+-- | generate a DiaGraph with the selected elements from a given GraphState
+copySelected :: GraphState -> DiaGraph
 copySelected  es = (cg,(ngiM',egiM'))
   where
-    (nids,eids) = editorGetSelected es
-    g = editorGetGraph es
-    (ngiM, egiM) = editorGetGI es
+    (nids,eids) = stateGetSelected es
+    g = stateGetGraph es
+    (ngiM, egiM) = stateGetGI es
     cnodes = foldr (\n ns -> if nodeId n `elem` nids
                               then (Node (nodeId n) (infoSetLocked (nodeInfo n) False)):ns
                               else ns) [] (nodes g)
@@ -30,10 +30,10 @@ copySelected  es = (cg,(ngiM',egiM'))
     ngiM' = M.filterWithKey (\k _ -> NodeId k `elem` nids) ngiM
     egiM' = M.filterWithKey (\k _ -> EdgeId k `elem` eids) egiM
 
--- | join a DiaGraph with the Diagraph of a given EditorState
-pasteClipBoard :: DiaGraph -> EditorState -> EditorState
-pasteClipBoard clipDG es = editorSetGI (newngiM,newegiM) . editorSetGraph newGraph . editorSetSelected ([], [])$ es
+-- | join a DiaGraph with the Diagraph of a given GraphState
+pasteClipBoard :: DiaGraph -> GraphState -> GraphState
+pasteClipBoard clipDG es = stateSetGI (newngiM,newegiM) . stateSetGraph newGraph . stateSetSelected ([], [])$ es
   where
-    graph = editorGetGraph es
-    (ngiM, egiM) = editorGetGI es
+    graph = stateGetGraph es
+    (ngiM, egiM) = stateGetGI es
     (newGraph, (newngiM,newegiM)) = diagrDisjointUnion (graph,(ngiM,egiM)) (adjustDiagrPosition clipDG)  

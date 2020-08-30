@@ -20,7 +20,7 @@ import qualified Data.TypedGraph as TG
 import qualified Data.TypedGraph.Morphism as TGM
 
 import GUI.Data.DiaGraph
-import GUI.Data.EditorState
+import GUI.Data.GraphState
 import GUI.Data.Info
 import GUI.Data.Nac
 import GUI.Editor.Helper.GraphicalInfo
@@ -136,11 +136,11 @@ replaceLoops g gi (nM,eM) = nGI
     nGI = (fst gi, nacEgi)
 
 -- | Merge elements of the NAC
-mergeNACElements :: EditorState -> NacInfo -> Graph Info Info -> P.Context -> IO (Maybe (NacInfo,EditorState))
+mergeNACElements :: GraphState -> NacInfo -> Graph Info Info -> P.Context -> IO (Maybe (NacInfo,GraphState))
 mergeNACElements es ((nacg,nacgi), (nM, eM)) tg context = 
-  let (snids, seids) = editorGetSelected es
-      g = editorGetGraph es
-      gi = editorGetGI es
+  let (snids, seids) = stateGetSelected es
+      g = stateGetGraph es
+      gi = stateGetGI es
       --check if selected elements are valid to merge
       nodesFromLHS = filter (\n -> nodeId n `elem` snids && infoLocked (nodeInfo n)) (nodes g)
       edgesFromLHS = filter (\e -> edgeId e `elem` seids && infoLocked (edgeInfo e)) (edges g)
@@ -176,7 +176,7 @@ mergeNACElements es ((nacg,nacgi), (nM, eM)) tg context =
           nM''' = foldr (\n m -> if n `notElem` (M.elems m) then M.insert n n m else m) nM'' nodesNeeded
           -- add the necessary elements to the nacg
       let nacg' = extractNacGraph g (nM''', eM'')
-          nacgi' = extractNacGI nacg' (editorGetGI es) (nM''', eM'')
+          nacgi' = extractNacGI nacg' (stateGetGI es) (nM''', eM'')
 
       -- modify dimensions of nodes that where merged to match the labels
       nacNgi' <- updateNodesGiDims (fst nacgi') nacg' context
@@ -186,19 +186,19 @@ mergeNACElements es ((nacg,nacgi), (nM, eM)) tg context =
       -- remount nacGraph, joining the elements
       let (g',gi') = joinNAC nacInfo (lhsg, lhsgi) tg
 
-      let newES = editorSetGraph g' . editorSetGI gi' . editorSetSelected ([maxNID], [maxEID]) $ es
+      let newES = stateSetGraph g' . stateSetGI gi' . stateSetSelected ([maxNID], [maxEID]) $ es
 
       return $ Just (nacInfo,newES)
   
 
 -- | split elements of the NAC
-splitNACElements :: EditorState -> NacInfo -> DiaGraph -> Graph Info Info -> P.Context -> IO (NacInfo, EditorState)
+splitNACElements :: GraphState -> NacInfo -> DiaGraph -> Graph Info Info -> P.Context -> IO (NacInfo, GraphState)
 splitNACElements es ((nacg,nacgi),(nM,eM)) (lhsg,lhsgi) tg context = do
   -- modificar lhs de forma a tornar elementos
   let lhsgWithLockedNodes = foldr (\n g -> updateNodePayload n g (\info -> infoSetLocked info True)) lhsg (nodeIds lhsg)
       lhsg' = foldr (\e g -> updateEdgePayload e g (\info -> infoSetLocked info True)) lhsgWithLockedNodes (edgeIds lhsg)
-  let (snids, seids) = editorGetSelected es
-      g = editorGetGraph es
+  let (snids, seids) = stateGetSelected es
+      g = stateGetGraph es
   -- remove nacg edges that are selected from mapping
   let eM' = M.filterWithKey (\k a -> a `notElem` seids) eM
       -- remove nacg nodes that are selected and don't have incident edges from the mapping
@@ -235,7 +235,7 @@ splitNACElements es ((nacg,nacgi),(nM,eM)) (lhsg,lhsgi) tg context = do
 
   let newNids = M.keys $ M.filter (\a -> a `elem` snids) nM'
       newEids = M.keys $ M.filter (\a -> a `elem` seids) eM''
-      newEs = editorSetSelected (newNids, newEids) . editorSetGraph g' . editorSetGI gi' $ es
+      newEs = stateSetSelected (newNids, newEids) . stateSetGraph g' . stateSetGI gi' $ es
   return ((nacdg',(nM',eM'')),newEs)
 
 

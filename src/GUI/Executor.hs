@@ -25,7 +25,7 @@ import qualified Data.Graphs as G
 
 import           GUI.Data.DiaGraph hiding (empty)
 import qualified GUI.Data.DiaGraph as DG
-import           GUI.Data.EditorState
+import           GUI.Data.GraphState
 import           GUI.Data.Info
 import           GUI.Data.Nac
 import           GUI.Render.Render
@@ -37,10 +37,10 @@ import qualified GUI.Editor as Editor (basicCanvasButtonPressedCallback, basicCa
 import qualified GUI.Editor.Helper.Nac as Nac
 
 buildExecutor :: Gtk.TreeStore 
-              -> IORef (M.Map Int32 EditorState) 
+              -> IORef (M.Map Int32 GraphState) 
               -> IORef (G.Graph Info Info) 
               -> IORef (M.Map Int32 NacInfo)
-              -> IO (Gtk.Paned, IORef EditorState, IORef Bool, IORef (M.Map Int32 [(String, Int32)]))
+              -> IO (Gtk.Paned, IORef GraphState, IORef Bool, IORef (M.Map Int32 [(String, Int32)]))
 buildExecutor store statesMap typeGraph nacInfoMap = do
     builder <- new Gtk.Builder []
     Gtk.builderAddFromFile builder "./Resources/executor.glade"
@@ -72,12 +72,12 @@ buildExecutor store statesMap typeGraph nacInfoMap = do
     Gtk.treeViewSetCursor treeView firstRulePath Gtk.noTreeViewColumn False
 
     -- IORefs -------------------------------------------------------------------------------------------------------------------
-    hostState   <- newIORef emptyES -- state refering to the init graph with rules applied
-    ruleState   <- newIORef emptyES -- state refering to the graph of the selected rule
-    lState      <- newIORef emptyES -- state refering to the graph of the left side of selected rule
-    rState      <- newIORef emptyES -- state refering to the graph of the right side of selected rule
+    hostState   <- newIORef emptyState -- state refering to the init graph with rules applied
+    ruleState   <- newIORef emptyState -- state refering to the graph of the selected rule
+    lState      <- newIORef emptyState -- state refering to the graph of the left side of selected rule
+    rState      <- newIORef emptyState -- state refering to the graph of the right side of selected rule
     kGraph      <- newIORef G.empty -- k graph needed for displaying ids in the left and right sides of rules
-    nacState    <- newIORef emptyES -- state refering to the graph of nac
+    nacState    <- newIORef emptyState -- state refering to the graph of nac
     
     currentNACIndex    <- newIORef (-1 :: Int32) -- index of current selected NAC
     currentRuleIndex   <- newIORef (-1 :: Int32) -- index of currentRule
@@ -119,10 +119,10 @@ buildExecutor store statesMap typeGraph nacInfoMap = do
                 gType <- Gtk.treeModelGetValue model iter 2 >>= fromGValue :: IO Int32
                 statesM <- readIORef statesMap
                 --load rule
-                let es = fromMaybe emptyES $ M.lookup index statesM
-                    g = editorGetGraph es
+                let es = fromMaybe emptyState $ M.lookup index statesM
+                    g = stateGetGraph es
                     (l,k,r) = graphToRuleGraphs g
-                    (ngiM,egiM) = editorGetGI es
+                    (ngiM,egiM) = stateGetGI es
                     lngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds l)) ngiM
                     legiM = M.filterWithKey (\k a -> (G.EdgeId k) `elem` (G.edgeIds l)) egiM
                     lgi = (lngiM,legiM)
@@ -135,9 +135,9 @@ buildExecutor store statesMap typeGraph nacInfoMap = do
                             (_,lgi) = adjustDiagrPosition (l,(lngiM,legiM))
                             (_,rgi) = adjustDiagrPosition (r,(rngiM,regiM))
                             (_,gi') = adjustDiagrPosition (g,(ngiM,egiM))
-                            les = editorSetGraph l . editorSetGI lgi $ es
-                            res = editorSetGraph r . editorSetGI rgi $ es
-                            es' = editorSetGI gi' es
+                            les = stateSetGraph l . stateSetGI lgi $ es
+                            res = stateSetGraph r . stateSetGI rgi $ es
+                            es' = stateSetGI gi' es
                         writeIORef ruleState es'
                         writeIORef lState les
                         writeIORef rState res
@@ -150,7 +150,7 @@ buildExecutor store statesMap typeGraph nacInfoMap = do
                 forM_ (fromMaybe [] nacList) $ \(str,index) -> Gtk.comboBoxTextAppendText nacCBox (T.pack str)
 
                 case Just (M.toList . M.fromList) <*> nacList of
-                    Nothing -> writeIORef nacState $ emptyES
+                    Nothing -> writeIORef nacState $ emptyState
                     Just ((name,nIndex):_) -> do
                         mNacInfo <- readIORef nacInfoMap >>= return . M.lookup nIndex
                         (n,ngi) <- case mNacInfo of
@@ -161,7 +161,7 @@ buildExecutor store statesMap typeGraph nacInfoMap = do
                                 nacInfo' <- Nac.applyLhsChangesToNac l nacInfo (Just context)
                                 return $ Nac.mountNACGraph (l,lgi) tg nacInfo'
                         let (_,ngi') = adjustDiagrPosition (n,ngi)
-                            nes = editorSetGI ngi' . editorSetGraph n $ emptyES
+                            nes = stateSetGI ngi' . stateSetGraph n $ emptyState
                         writeIORef nacState nes
                         writeIORef currentNACIndex nIndex
                         Gtk.comboBoxSetActive nacCBox 0
@@ -178,7 +178,7 @@ buildExecutor store statesMap typeGraph nacInfoMap = do
     -- execution controls
     on stopBtn #pressed $ do
         statesM <- readIORef statesMap
-        let initState = fromMaybe emptyES $ M.lookup 1 statesM
+        let initState = fromMaybe emptyState $ M.lookup 1 statesM
         writeIORef hostState initState
         writeIORef execStarted False
     
@@ -189,9 +189,9 @@ buildExecutor store statesMap typeGraph nacInfoMap = do
 
 type SquareSelection = Maybe (Double,Double,Double,Double)
 setCanvasCallBacks :: Gtk.DrawingArea 
-                   -> IORef EditorState 
+                   -> IORef GraphState 
                    -> IORef (G.Graph Info Info )
-                   -> Maybe (EditorState -> SquareSelection -> G.Graph Info Info -> Render ()) 
+                   -> Maybe (GraphState -> SquareSelection -> G.Graph Info Info -> Render ()) 
                    -> IO (IORef (Double,Double), IORef SquareSelection)
 setCanvasCallBacks canvas state refGraph drawMethod = do
     oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
@@ -306,14 +306,14 @@ removeFromTreeStore' store iter index = do
 
 
 -- remove entries that contains invalid keys for the Map that it refers to
-removeTrashFromTreeStore :: Gtk.TreeStore -> M.Map Int32 EditorState -> IO ()
+removeTrashFromTreeStore :: Gtk.TreeStore -> M.Map Int32 GraphState -> IO ()
 removeTrashFromTreeStore store statesMap = do
     (valid, iter) <- Gtk.treeModelGetIterFirst store
     if valid
         then removeTrashFromTreeStore' store iter statesMap
         else return ()
 
-removeTrashFromTreeStore' :: Gtk.TreeStore -> Gtk.TreeIter -> M.Map Int32 EditorState -> IO ()
+removeTrashFromTreeStore' :: Gtk.TreeStore -> Gtk.TreeIter -> M.Map Int32 GraphState -> IO ()
 removeTrashFromTreeStore' store iter statesMap = do
     index <- Gtk.treeModelGetValue store iter 1 >>= fromGValue :: IO Int32
     state <- return $ M.lookup index statesMap

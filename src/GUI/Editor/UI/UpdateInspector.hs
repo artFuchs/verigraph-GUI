@@ -20,13 +20,13 @@ import qualified Data.Text as T
 
 import Data.Graphs hiding (null)
 
-import GUI.Data.EditorState
+import GUI.Data.GraphState
 import GUI.Data.GraphicalInfo
 import GUI.Data.Info
 import GUI.Data.Nac
 
 updateInspector :: IORef Int32
-                -> IORef EditorState 
+                -> IORef GraphState 
                 -> IORef (Double,Double,Double) 
                 -> IORef (Double,Double,Double)
                 -> (Gtk.Entry, Gtk.ColorButton, Gtk.ColorButton, [Gtk.RadioButton], [Gtk.RadioButton]) 
@@ -64,16 +64,16 @@ updateInspector gType
     _ -> return ()
 
 -- update the inspector --------------------------------------------------------
-updateTypeInspector :: IORef EditorState -> IORef (Double,Double,Double) -> IORef (Double,Double,Double) ->
+updateTypeInspector :: IORef GraphState -> IORef (Double,Double,Double) -> IORef (Double,Double,Double) ->
                       (Gtk.Entry, Gtk.ColorButton, Gtk.ColorButton, [Gtk.RadioButton], [Gtk.RadioButton]) ->
                       (Gtk.Box, Gtk.Frame, Gtk.Frame)-> IO ()
 updateTypeInspector st currentC currentLC (nameEntry, colorBtn, lcolorBtn, radioShapes, radioStyles) (hBoxColor, frameShape, frameStyle) = do
   emptyColor <- new Gdk.RGBA [#red := 0.5, #blue := 0.5, #green := 0.5, #alpha := 1.0]
   est <- readIORef st
-  let g = editorGetGraph est
-      ns = filter (\n -> elem (nodeId n) $ fst $ editorGetSelected est) $ nodes g
-      es = filter (\e -> elem (edgeId e) $ snd $ editorGetSelected est) $ edges g
-      (ngiM,egiM) = editorGetGI est
+  let g = stateGetGraph est
+      ns = filter (\n -> elem (nodeId n) $ fst $ stateGetSelected est) $ nodes g
+      es = filter (\e -> elem (edgeId e) $ snd $ stateGetSelected est) $ edges g
+      (ngiM,egiM) = stateGetGI est
       unifyNames (x:xs) = if all (==x) xs then x else "----"
   case (length ns, length es) of
     (0,0) -> do
@@ -135,13 +135,13 @@ updateTypeInspector st currentC currentLC (nameEntry, colorBtn, lcolorBtn, radio
       set frameShape [#visible := True]
       set frameStyle [#visible := True]
 
-updateHostInspector :: EditorState -> M.Map String Int32 -> M.Map String Int32 -> String -> String 
+updateHostInspector :: GraphState -> M.Map String Int32 -> M.Map String Int32 -> String -> String 
                     -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText) -> (Gtk.Box, Gtk.Box) -> IO()
 updateHostInspector est pNT pET cNT cET (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox) = do
-  let g = editorGetGraph est
-      ns = filter (\n -> elem (nodeId n) $ fst $ editorGetSelected est) $ nodes g
-      es = filter (\e -> elem (edgeId e) $ snd $ editorGetSelected est) $ edges g
-      (ngiM,egiM) = editorGetGI est
+  let g = stateGetGraph est
+      ns = filter (\n -> elem (nodeId n) $ fst $ stateGetSelected est) $ nodes g
+      es = filter (\e -> elem (edgeId e) $ snd $ stateGetSelected est) $ edges g
+      (ngiM,egiM) = stateGetGI est
       unifyNames [] = ""
       unifyNames (x:xs) = if all (==x) xs then x else ""
       
@@ -168,13 +168,13 @@ updateHostInspector est pNT pET cNT cET (entry, nodeTCBox, edgeTCBox) (nodeTBox,
       set edgeTBox [#visible := True]
       set nodeTBox [#visible := True]
 
-updateRuleInspector :: EditorState -> M.Map String Int32 -> M.Map String Int32 -> String -> String 
+updateRuleInspector :: GraphState -> M.Map String Int32 -> M.Map String Int32 -> String -> String 
                     -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.ComboBoxText) -> (Gtk.Box, Gtk.Box) -> IO()
 updateRuleInspector est possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox, operationCBox) (nodeTBox, edgeTBox) = do
   updateHostInspector est possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox)
-  let g = editorGetGraph est
-      ns = filter (\n -> elem (nodeId n) $ fst $ editorGetSelected est) $ nodes g
-      es = filter (\e -> elem (edgeId e) $ snd $ editorGetSelected est) $ edges g
+  let g = stateGetGraph est
+      ns = filter (\n -> elem (nodeId n) $ fst $ stateGetSelected est) $ nodes g
+      es = filter (\e -> elem (edgeId e) $ snd $ stateGetSelected est) $ edges g
       unifyNames [] = ""
       unifyNames (x:xs) = if all (==x) xs then x else "------"
       operation = unifyNames $ concat [map (infoOperationStr . edgeInfo) es, map (infoOperationStr . nodeInfo) ns]
@@ -185,15 +185,15 @@ updateRuleInspector est possibleNT possibleET currentNodeType currentEdgeType (e
         _ -> -1
   Gtk.comboBoxSetActive operationCBox opI
 
-updateNacInspector :: EditorState -> M.Map String Int32 -> M.Map String Int32 -> String -> String -> Maybe MergeMapping
+updateNacInspector :: GraphState -> M.Map String Int32 -> M.Map String Int32 -> String -> String -> Maybe MergeMapping
                   -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.Button, Gtk.Button) -> (Gtk.Box, Gtk.Box) -> IO()
 updateNacInspector est possibleNT possibleET currentNodeType currentEdgeType mergeMapping (entry, nodeTCBox, edgeTCBox, joinBtn, splitBtn) (nodeTBox, edgeTBox) = do
   updateHostInspector est possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox)
   let (nM,eM) = case mergeMapping of
                       Nothing -> (M.empty, M.empty)
                       Just m -> m
-  let g = editorGetGraph est
-      (snodes,sedges) = editorGetSelected est
+  let g = stateGetGraph est
+      (snodes,sedges) = stateGetSelected est
       nodesFromLHS = filter (\n -> nodeId n `elem` snodes && (infoLocked $ nodeInfo n)) $ nodes g
       edgesFromLHS = filter (\e -> edgeId e `elem` sedges && (infoLocked $ edgeInfo e)) $ edges g
       mergeableNodes = filter (\n -> (infoType $ nodeInfo n) == (infoType $ nodeInfo $ head nodesFromLHS)) nodesFromLHS
