@@ -32,16 +32,17 @@ import           GUI.Render.Render
 import           GUI.Render.GraphDraw
 import           GUI.Helper.GrammarMaker
 
--- this should not be used, but let if be for now
-import qualified GUI.Editor as Editor (basicCanvasButtonPressedCallback, basicCanvasMotionCallBack, basicCanvasButtonReleasedCallback)
+-- shouldn't use functions from editor module. Must refactore later
+import qualified GUI.Editor as Editor
 import qualified GUI.Editor.Helper.Nac as Nac
 
 buildExecutor :: Gtk.TreeStore 
               -> IORef (M.Map Int32 GraphState) 
               -> IORef (G.Graph Info Info) 
               -> IORef (M.Map Int32 NacInfo)
-              -> IO (Gtk.Paned, IORef GraphState, IORef Bool, IORef (M.Map Int32 [(String, Int32)]))
-buildExecutor store statesMap typeGraph nacInfoMap = do
+              -> IORef (Maybe Gtk.DrawingArea) -> IORef (Maybe (IORef GraphState))
+              -> IO (Gtk.Paned, Gtk.DrawingArea, IORef GraphState, IORef Bool, IORef (M.Map Int32 [(String, Int32)]))
+buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIORef = do
     builder <- new Gtk.Builder []
     Gtk.builderAddFromFile builder "./Resources/executor.glade"
 
@@ -86,7 +87,6 @@ buildExecutor store statesMap typeGraph nacInfoMap = do
 
     nacListMap <- newIORef (M.empty :: M.Map Int32 [(String,Int32)])
 
-
     -- callbacks ----------------------------------------------------------------------------------------------------------------
     -- hide rule viewer panel when colse button is pressed
     on hideRVBtn #pressed $ do
@@ -94,12 +94,12 @@ buildExecutor store statesMap typeGraph nacInfoMap = do
         Gtk.panedSetPosition execPane closePos
 
     -- canvas
-    setCanvasCallBacks mainCanvas hostState typeGraph (Just drawHostGraph)
-    setCanvasCallBacks ruleCanvas ruleState typeGraph (Just drawRuleGraph)
-    setCanvasCallBacks lCanvas lState kGraph (Just drawRuleSideGraph)
-    setCanvasCallBacks rCanvas rState kGraph (Just drawRuleSideGraph)
-    setCanvasCallBacks rCanvas rState kGraph (Just drawRuleSideGraph)
-    (_,nacSqrSel)<- setCanvasCallBacks nacCanvas nacState typeGraph Nothing
+    setCanvasCallBacks mainCanvas hostState typeGraph (Just drawHostGraph) focusedCanvas focusedStateIORef
+    setCanvasCallBacks ruleCanvas ruleState typeGraph (Just drawRuleGraph) focusedCanvas focusedStateIORef
+    setCanvasCallBacks lCanvas lState kGraph (Just drawRuleSideGraph) focusedCanvas focusedStateIORef
+    setCanvasCallBacks rCanvas rState kGraph (Just drawRuleSideGraph) focusedCanvas focusedStateIORef
+    setCanvasCallBacks rCanvas rState kGraph (Just drawRuleSideGraph) focusedCanvas focusedStateIORef
+    (_,nacSqrSel)<- setCanvasCallBacks nacCanvas nacState typeGraph Nothing focusedCanvas focusedStateIORef
     on nacCanvas #draw $ \context -> do
         es <- readIORef nacState
         tg <- readIORef typeGraph
@@ -182,21 +182,19 @@ buildExecutor store statesMap typeGraph nacInfoMap = do
         writeIORef hostState initState
         writeIORef execStarted False
     
-
-    --
-    
-    return (executorPane, hostState, execStarted, nacListMap)
+    #show executorPane
+    return (executorPane, mainCanvas, hostState, execStarted, nacListMap)
 
 type SquareSelection = Maybe (Double,Double,Double,Double)
 setCanvasCallBacks :: Gtk.DrawingArea 
                    -> IORef GraphState 
                    -> IORef (G.Graph Info Info )
-                   -> Maybe (GraphState -> SquareSelection -> G.Graph Info Info -> Render ()) 
+                   -> Maybe (GraphState -> SquareSelection -> G.Graph Info Info -> Render ())
+                   -> IORef (Maybe Gtk.DrawingArea) -> IORef (Maybe (IORef GraphState))
                    -> IO (IORef (Double,Double), IORef SquareSelection)
-setCanvasCallBacks canvas state refGraph drawMethod = do
+setCanvasCallBacks canvas state refGraph drawMethod focusedCanvas focusedStateIORef = do
     oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
     squareSelection <- newIORef Nothing   -- selection box : Maybe (x1,y1,x2,y2)
-
     case drawMethod of
         Just draw -> do 
             on canvas #draw $ \context -> do
@@ -209,7 +207,12 @@ setCanvasCallBacks canvas state refGraph drawMethod = do
         Nothing -> return ()
     on canvas #buttonPressEvent $ Editor.basicCanvasButtonPressedCallback state oldPoint squareSelection canvas
     on canvas #motionNotifyEvent $ Editor.basicCanvasMotionCallBack state oldPoint squareSelection canvas
-    on canvas #buttonReleaseEvent $ Editor.basicCanvasButtonReleasedCallback state squareSelection canvas 
+    on canvas #buttonReleaseEvent $ Editor.basicCanvasButtonReleasedCallback state squareSelection canvas
+    on canvas #scrollEvent $ Editor.basicCanvasScrollCallback state canvas
+    on canvas #focusInEvent $ \event -> do
+        writeIORef focusedCanvas $ Just canvas
+        writeIORef focusedStateIORef $ Just state
+        return False
     return (oldPoint,squareSelection) 
 
     

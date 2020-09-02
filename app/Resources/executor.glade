@@ -188,7 +188,7 @@
             <child>
               <object class="GtkDrawingArea" id="mainCanvas">
                 <property name="visible">True</property>
-                <property name="can_focus">False</property>
+                <property name="can_focus">True</property>
               </object>
               <packing>
                 <property name="expand">True</property>
@@ -277,7 +277,7 @@
                     <child>
                       <object class="GtkDrawingArea" id="nacCanvas">
                         <property name="visible">True</property>
-                        <property name="can_focus">False</property>
+                        <property name="can_focus">True</property>
                       </object>
                       <packing>
                         <property name="expand">True</property>
@@ -321,7 +321,7 @@
                               <object class="GtkDrawingArea" id="lCanvas">
                                 <property name="width_request">200</property>
                                 <property name="visible">True</property>
-                                <property name="can_focus">False</property>
+                                <property name="can_focus">True</property>
                               </object>
                               <packing>
                                 <property name="expand">True</property>
@@ -356,7 +356,7 @@
                               <object class="GtkDrawingArea" id="rCanvas">
                                 <property name="width_request">200</property>
                                 <property name="visible">True</property>
-                                <property name="can_focus">False</property>
+                                <property name="can_focus">True</property>
                               </object>
                               <packing>
                                 <property name="expand">True</property>
@@ -396,7 +396,7 @@
                         <child>
                           <object class="GtkDrawingArea" id="ruleCanvas">
                             <property name="visible">True</property>
-                            <property name="can_focus">False</property>
+                            <property name="can_focus">True</property>
                           </object>
                           <packing>
                             <property name="expand">True</property>

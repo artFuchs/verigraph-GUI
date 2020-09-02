@@ -98,8 +98,9 @@ startGUI = do
   mergeMapping  <- newIORef (Nothing :: Maybe MergeMapping) -- current merge mapping. important to undo/redo with nacs
   let nacIORefs = (nacInfoMap, mergeMapping)  
 
-
-
+  -- canvas and state which the menu items actions should apply to
+  focusedCanvas <- newIORef (Nothing :: Maybe Gtk.DrawingArea)
+  focusedStateIORef  <- newIORef (Nothing :: Maybe (IORef GraphState))
 
   -----------------------------------------------------------------------------------------------------------------------------
   --------  GUI DEFINITION  ---------------------------------------------------------------------------------------------------
@@ -125,15 +126,16 @@ startGUI = do
   editStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt, gtypeBoolean, gtypeBoolean]
   Edit.initStore editStore
   -- start editor module
-  (editorPane,editorState) <- Edit.startEditor window editStore
+  (editorPane, editorCanvas, editorState) <- Edit.startEditor window editStore
                                                 fileName typeGraph
                                                 storeIORefs changesIORefs nacIORefs
                                                 fileItems editItems viewItems
+                                                focusedCanvas focusedStateIORef
 
   -- start executor module
   execStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt]
   Exec.updateTreeStore execStore ("Rule0", 2, 3, 0)
-  (execPane, execState, execStarted, execNacListMap) <- Exec.buildExecutor execStore statesMap typeGraph nacInfoMap
+  (execPane, execCanvas, execState, execStarted, execNacListMap) <- Exec.buildExecutor execStore statesMap typeGraph nacInfoMap focusedCanvas focusedStateIORef
 
   -- start analysis module
   cpaBox <- buildCpaBox window editStore statesMap nacInfoMap
@@ -196,17 +198,97 @@ startGUI = do
     -- update statesMap with the information of editorState
     Edit.storeCurrentES window editorState storeIORefs nacInfoMap
     case pageNum of
+      0 -> do
+          writeIORef focusedCanvas $ Just editorCanvas
+          writeIORef focusedStateIORef $ Just editorState
       1 -> do
+          Gtk.widgetGrabFocus execCanvas
+          writeIORef focusedCanvas $ Just execCanvas
+          writeIORef focusedStateIORef $ Just execState
           started <- readIORef execStarted
           if started
             then return ()
             else do
               initState <- readIORef statesMap >>= return . fromMaybe emptyState . M.lookup 1
               writeIORef execState initState
+      2 -> do
+          writeIORef focusedCanvas $ Nothing
+          writeIORef focusedStateIORef $ Nothing
       _ -> return ()     
   ----------------------------------------------------------------------------------------------------------------------------
+  -- View Menu ---------------------------------------------------------------------------------------------------------------
 
-  -- Help Menu 
+  -- zoom in
+  zin `on` #activate $ do
+    focusCanvas <- readIORef focusedCanvas
+    focusStateIORef  <- readIORef focusedStateIORef
+    case (focusCanvas, focusStateIORef) of
+      (_,Nothing) -> return ()
+      (Just canvas, Just fState) -> do
+        modifyIORef fState (\st -> stateSetZoom (stateGetZoom st * 1.1) st)
+        Gtk.widgetQueueDraw canvas
+
+  -- zoom out
+  zut `on` #activate $ do
+    focusCanvas <- readIORef focusedCanvas
+    focusStateIORef  <- readIORef focusedStateIORef
+    case (focusCanvas, focusStateIORef) of
+      (_,Nothing) -> return ()
+      (Just canvas, Just fState) -> do        
+        modifyIORef fState (\st -> let z = stateGetZoom st * 0.9 in if z >= 0.5 then stateSetZoom z st else st)
+        Gtk.widgetQueueDraw canvas
+
+  -- 50% zoom
+  z50 `on` #activate $ do
+    focusCanvas <- readIORef focusedCanvas
+    focusStateIORef  <- readIORef focusedStateIORef
+    case (focusCanvas, focusStateIORef) of
+      (_,Nothing) -> return ()
+      (Just canvas, Just fState) -> do        
+        modifyIORef fState (\es -> stateSetZoom 0.5 es )
+        Gtk.widgetQueueDraw canvas
+
+  -- reset zoom to defaults (100%)
+  zdf `on` #activate $ do
+    focusCanvas <- readIORef focusedCanvas
+    focusStateIORef  <- readIORef focusedStateIORef
+    case (focusCanvas, focusStateIORef) of
+      (_,Nothing) -> return ()
+      (Just canvas, Just fState) -> do        
+        modifyIORef fState (\es -> stateSetZoom 1.0 es )
+        Gtk.widgetQueueDraw canvas
+
+  -- 150% zoom
+  z150 `on` #activate $ do
+    focusCanvas <- readIORef focusedCanvas
+    focusStateIORef  <- readIORef focusedStateIORef
+    case (focusCanvas, focusStateIORef) of
+      (_,Nothing) -> return ()
+      (Just canvas, Just fState) -> do        
+        modifyIORef fState (\es -> stateSetZoom 1.5 es )
+        Gtk.widgetQueueDraw canvas
+
+  -- 200% zoom
+  z200 `on` #activate $ do
+    focusCanvas <- readIORef focusedCanvas
+    focusStateIORef  <- readIORef focusedStateIORef
+    case (focusCanvas, focusStateIORef) of
+      (_,Nothing) -> return ()
+      (Just canvas, Just fState) -> do        
+        modifyIORef fState (\es -> stateSetZoom 2.0 es )
+        Gtk.widgetQueueDraw canvas
+
+  -- reset view to defaults (reset zoom and pan)
+  vdf `on` #activate $ do
+    focusCanvas <- readIORef focusedCanvas
+    focusStateIORef  <- readIORef focusedStateIORef
+    case (focusCanvas, focusStateIORef) of
+      (_,Nothing) -> return ()
+      (Just canvas, Just fState) -> do        
+        modifyIORef fState (\es -> stateSetZoom 1 $ stateSetPan (0,0) es )
+        Gtk.widgetQueueDraw canvas
+
+  -- Help Menu ---------------------------------------------------------------------------------------------------------------
   -- help
   on hlp #activate $ do
     #showAll helpWindow
@@ -223,6 +305,8 @@ startGUI = do
         Gtk.mainQuit
         return False
       else return True
+
+  
 
   -- start the Gtk main loop -------------------------------------------------------------------------------------------------
   Gtk.main

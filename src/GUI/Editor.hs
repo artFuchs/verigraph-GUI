@@ -8,6 +8,7 @@ module GUI.Editor(
 , basicCanvasButtonPressedCallback
 , basicCanvasMotionCallBack
 , basicCanvasButtonReleasedCallback
+, basicCanvasScrollCallback
 , prepToExport
 , confirmOperation
 , storeCurrentES
@@ -92,11 +93,13 @@ startEditor :: Gtk.Window -> Gtk.TreeStore
                -> IORef (Maybe String) -> IORef (Graph Info Info) 
                -> StoreIORefs -> ChangesIORefs -> NacIORefs
                -> [Gtk.MenuItem] -> [Gtk.MenuItem] -> [Gtk.MenuItem]
-               -> IO (Gtk.Paned, IORef GraphState)
+               -> IORef (Maybe Gtk.DrawingArea) -> IORef (Maybe (IORef GraphState))
+               -> IO (Gtk.Paned, Gtk.DrawingArea, IORef GraphState)
 startEditor window store
             fileName typeGraph 
             storeIORefs changesIORefs nacIORefs 
-            fileItems editItems viewItems = do
+            fileItems editItems viewItems 
+            focusedCanvas focusedStateIORef = do
 
   -- create the ui of the editor
   (mainPane, treeFrame, canvas, nameEntry, entryLabel, layoutWidgets, typeSelectionWidgets) <- buildEditor
@@ -215,7 +218,11 @@ startEditor window store
       (changedProject, changedGraph, lastSavedState) = changesIORefs
       (nacInfoMap, mergeMapping) = nacIORefs
 
-  
+  -- set IORefs to make the zoom controls work on the canvas
+  writeIORef focusedCanvas $ Just canvas
+  writeIORef focusedStateIORef $ Just currentState
+
+
 
   ----------------------------------------------------------------------------------------------------------------------------
   -- Auxiliar Functions for Bindings  ----------------------------------------------------------------------------------------
@@ -488,17 +495,7 @@ startEditor window store
     return True
 
   -- mouse wheel scroll on canvas
-  on canvas #scrollEvent $ \eventScroll -> do
-    d <- get eventScroll #direction
-    ms <- get eventScroll #state
-    case (Gdk.ModifierTypeControlMask `elem` ms, d) of
-      -- when control is pressed,
-      -- if the direction is up, then zoom in
-      (True, Gdk.ScrollDirectionUp)  -> liftIO $ Gtk.menuItemActivate zin
-      -- if the direction is down, then zoom out
-      (True, Gdk.ScrollDirectionDown) -> liftIO $ Gtk.menuItemActivate zut
-      _ -> return ()
-    return True
+  on canvas #scrollEvent $ basicCanvasScrollCallback currentState canvas
 
   -- keyboard
   on canvas #keyPressEvent $ \eventKey -> do
@@ -507,10 +504,15 @@ startEditor window store
     case (Gdk.ModifierTypeControlMask `elem` ms, Gdk.ModifierTypeShiftMask `elem` ms, toLower k) of
       -- F2 - rename selection
       (False,False,'\65471') -> Gtk.widgetGrabFocus nameEntry
-      -- 'delete' whne the focus is on canvas - delete elements
+      -- 'delete' while the focus is on canvas - delete elements
       (False,False,'\65535') -> Gtk.menuItemActivate del
       _ -> return ()
     return True
+
+  on canvas #focusInEvent $ \event -> do
+    writeIORef focusedCanvas $ Just canvas
+    writeIORef focusedStateIORef $ Just currentState
+    return False
 
   ----------------------------------------------------------------------------------------------------------------------------
   -- Event Bindings for the Inspector Panel  ---------------------------------------------------------------------------------
@@ -1460,45 +1462,7 @@ startEditor window store
         stackUndo undoStack redoStack currentGraph es (Just (nM,eM))
         Gtk.widgetQueueDraw canvas
 
-
-  -- View Menu ---------------------------------------------------------------------------------------------------------------
-
-  -- zoom in
-  zin `on` #activate $ do
-    modifyIORef currentState (\es -> stateSetZoom (stateGetZoom es * 1.1) es )
-    Gtk.widgetQueueDraw canvas
-
-  -- zoom out
-  zut `on` #activate $ do
-    modifyIORef currentState (\es -> let z = stateGetZoom es * 0.9 in if z >= 0.5 then stateSetZoom z es else es)
-    Gtk.widgetQueueDraw canvas
-
-  -- 50% zoom
-  z50 `on` #activate $ do 
-    modifyIORef currentState (\es -> stateSetZoom 0.5 es )
-    Gtk.widgetQueueDraw canvas
-
-  -- reset zoom to defaults (100%)
-  zdf `on` #activate $ do
-    modifyIORef currentState (\es -> stateSetZoom 1.0 es )
-    Gtk.widgetQueueDraw canvas
-
-  -- 150% zoom
-  z150 `on` #activate $ do
-    modifyIORef currentState (\es -> stateSetZoom 1.5 es )
-    Gtk.widgetQueueDraw canvas
-
-  -- 200% zoom
-  z200 `on` #activate $ do
-    modifyIORef currentState (\es -> stateSetZoom 2.0 es )
-    Gtk.widgetQueueDraw canvas
-
-  -- reset view to defaults (reset zoom and pan)
-  vdf `on` #activate $ do
-    modifyIORef currentState (\es -> stateSetZoom 1 $ stateSetPan (0,0) es )
-    Gtk.widgetQueueDraw canvas
-
-  return (mainPane, currentState)
+  return (mainPane, canvas, currentState)
 
 
 
@@ -1516,13 +1480,13 @@ startEditor window store
 -}
 basicCanvasButtonPressedCallback :: IORef GraphState -> IORef (Double,Double) -> IORef (Maybe (Double,Double,Double,Double))
                             -> Gtk.DrawingArea -> Gdk.EventButton -> IO Bool
-basicCanvasButtonPressedCallback currentState oldPoint squareSelection canvas eventButton = do
+basicCanvasButtonPressedCallback state oldPoint squareSelection canvas eventButton = do
   b <- get eventButton #button
   x <- get eventButton #x
   y <- get eventButton #y
   ms <- get eventButton #state
   click <- get eventButton #type
-  es <- readIORef currentState
+  es <- readIORef state
   let z = stateGetZoom es
       (px,py) = stateGetPan es
       (x',y') = (x/z - px, y/z - py)
@@ -1543,7 +1507,7 @@ basicCanvasButtonPressedCallback currentState oldPoint squareSelection canvas ev
       case (sNode, sEdge, Gdk.ModifierTypeShiftMask `elem` ms, Gdk.ModifierTypeControlMask `elem` ms) of
         -- clicked in blank space with Shift not pressed -> clean selection, start square seleciton
         ([], [], False, _) -> do
-          modifyIORef currentState (stateSetSelected ([],[]))
+          modifyIORef state (stateSetSelected ([],[]))
           writeIORef squareSelection $ Just (x',y',0,0)
         -- selected nodes or edges without modifier key:
         (n, e, False, _) -> do
@@ -1552,30 +1516,31 @@ basicCanvasButtonPressedCallback currentState oldPoint squareSelection canvas ev
           if nS || eS
           then return ()
           else do 
-            modifyIORef currentState (stateSetSelected (n, e))
+            modifyIORef state (stateSetSelected (n, e))
         -- selected nodes or edges with Shift pressed -> add to selection
         (n, e, True, False) -> do
           let jointSN = removeDuplicates $ sNode ++ oldSN
               jointSE = removeDuplicates $ sEdge ++ oldSE
-          modifyIORef currentState (stateSetGraph graph . stateSetSelected (jointSN,jointSE))
+          modifyIORef state (stateSetGraph graph . stateSetSelected (jointSN,jointSE))
         -- selected nodes or edges with Shift + Ctrl pressed -> remove from selection
         (n, e, True, True) -> do
           let jointSN = if null n then oldSN else delete (n!!0) oldSN
               jointSE = if null e then oldSE else delete (e!!0) oldSE
-          modifyIORef currentState (stateSetGraph graph . stateSetSelected (jointSN,jointSE))
+          modifyIORef state (stateSetGraph graph . stateSetSelected (jointSN,jointSE))
     _ -> return () 
   Gtk.widgetQueueDraw canvas
+  Gtk.widgetGrabFocus canvas
   return False
 
 
 basicCanvasMotionCallBack :: IORef GraphState -> IORef (Double,Double) -> IORef (Maybe (Double,Double,Double,Double))
                           -> Gtk.DrawingArea -> Gdk.EventMotion -> IO Bool
-basicCanvasMotionCallBack currentState oldPoint squareSelection canvas eventMotion = do
+basicCanvasMotionCallBack state oldPoint squareSelection canvas eventMotion = do
   ms <- get eventMotion #state
   x <- get eventMotion #x
   y <- get eventMotion #y
   (ox,oy) <- readIORef oldPoint
-  es <- readIORef currentState
+  es <- readIORef state
 
   let leftButton = Gdk.ModifierTypeButton1Mask `elem` ms
       -- in case of the editor being used in a notebook or with a mouse with just two buttons, ctrl + right button can be used instead of the middle button.
@@ -1593,8 +1558,8 @@ basicCanvasMotionCallBack currentState oldPoint squareSelection canvas eventMoti
       Gtk.widgetQueueDraw canvas
     -- if left button is pressed with some elements selected, then move them
     (True, False, n, e) -> do
-      modifyIORef currentState (\es -> moveNodes es (ox,oy) (x',y') )
-      modifyIORef currentState (\es -> if (>0) . length . fst . stateGetSelected $ es
+      modifyIORef state (\es -> moveNodes es (ox,oy) (x',y') )
+      modifyIORef state (\es -> if (>0) . length . fst . stateGetSelected $ es
                               then es 
                               else moveEdges es (ox,oy) (x',y'))
       writeIORef oldPoint (x',y')
@@ -1602,18 +1567,18 @@ basicCanvasMotionCallBack currentState oldPoint squareSelection canvas eventMoti
     -- if middle button is pressed, then move the view
     (False ,True, _, _) -> do
       let (dx,dy) = (x'-ox,y'-oy)
-      modifyIORef currentState (stateSetPan (px+dx, py+dy))
+      modifyIORef state (stateSetPan (px+dx, py+dy))
       Gtk.widgetQueueDraw canvas
     _ -> return ()
   return False
 
 basicCanvasButtonReleasedCallback :: IORef GraphState -> IORef (Maybe (Double,Double,Double,Double)) -> Gtk.DrawingArea
                                   -> Gdk.EventButton -> IO Bool
-basicCanvasButtonReleasedCallback currentState squareSelection canvas eventButton = do
+basicCanvasButtonReleasedCallback state squareSelection canvas eventButton = do
   b <- get eventButton #button
   case b of
     1 -> do
-      es <- readIORef currentState
+      es <- readIORef state
       sq <- readIORef squareSelection
       let (n,e) = stateGetSelected es
       case (stateGetSelected es,sq) of
@@ -1628,7 +1593,7 @@ basicCanvasButtonReleasedCallback currentState squareSelection canvas eventButto
               sEdges = map edgeId $ filter (\e -> let pos = getEdgePosition (graph,(ngiM,egiM)) e
                                                   in pointInsideRectangle pos (x + (w/2), y + (h/2), abs w, abs h)) $ edges graph
               newEs = stateSetSelected (sNodes, sEdges) $ es
-          writeIORef currentState newEs
+          writeIORef state newEs
         ((n,e), Nothing) -> return ()
         _ -> return ()
     _ -> return ()
@@ -1636,8 +1601,17 @@ basicCanvasButtonReleasedCallback currentState squareSelection canvas eventButto
   Gtk.widgetQueueDraw canvas
   return False
 
-
-
+basicCanvasScrollCallback :: IORef GraphState -> Gtk.DrawingArea -> Gdk.EventScroll -> IO Bool
+basicCanvasScrollCallback state canvas eventScroll = do
+  d <- get eventScroll #direction
+  ms <- get eventScroll #state
+  case (Gdk.ModifierTypeControlMask `elem` ms, d) of
+    (True, Gdk.ScrollDirectionUp) -> modifyIORef state (\st -> stateSetZoom (stateGetZoom st * 1.1) st)
+    (True, Gdk.ScrollDirectionDown) -> modifyIORef state (\st -> let z = stateGetZoom st * 0.9 in if z >= 0.5 then stateSetZoom z st else st)
+    _ -> return ()
+  Gtk.widgetQueueDraw canvas
+  Gtk.widgetGrabFocus canvas
+  return False
 
 
 ---------------------------------------------------------------------------------------------------------------------------------
