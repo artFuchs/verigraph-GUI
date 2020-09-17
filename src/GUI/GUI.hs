@@ -135,7 +135,7 @@ startGUI = do
   -- start executor module
   execStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt]
   Exec.updateTreeStore execStore ("Rule0", 2, 3, 0)
-  (execPane, execCanvas, execState, execStarted, execNacListMap) <- Exec.buildExecutor execStore statesMap typeGraph nacInfoMap focusedCanvas focusedStateIORef
+  (execPane, execCanvas, execNacCBox, execState, execStarted, execNacListMap) <- Exec.buildExecutor execStore statesMap typeGraph nacInfoMap focusedCanvas focusedStateIORef
 
   -- start analysis module
   cpaBox <- buildCpaBox window editStore statesMap nacInfoMap
@@ -170,11 +170,17 @@ startGUI = do
         (valid,parent) <- Gtk.treeModelIterParent editStore iter
         if valid
           then do
+            -- update possible nac selections for the rule in the executor
             p <- Gtk.treeModelGetValue editStore parent 2 >>= fromGValue :: IO Int32
             nacListMap <- readIORef execNacListMap
-            let nacList = fromMaybe [] $ M.lookup p nacListMap
-                nacMap = M.insert n id $ M.fromList nacList
-            modifyIORef execNacListMap $ M.insert p (M.toList nacMap)
+            let invertPair = \(x,y) -> (y,x)
+                nacList = map invertPair $ fromMaybe [] $ M.lookup p nacListMap
+                nacUpdatedList = map invertPair $ M.toList $ M.insert id n $ M.fromList nacList
+            modifyIORef execNacListMap $ M.insert p nacUpdatedList
+            -- update text on the nacCBox
+            Gtk.comboBoxTextRemoveAll execNacCBox
+            forM_ (nacUpdatedList) $ \(str,index) -> Gtk.comboBoxTextAppendText execNacCBox (T.pack str)
+            Gtk.comboBoxSetActive execNacCBox 0
           else return ()
       (False,3) -> Exec.removeFromTreeStore execStore id
       (False,4) -> do
@@ -184,8 +190,12 @@ startGUI = do
             p <- Gtk.treeModelGetValue editStore parent 2 >>= fromGValue :: IO Int32
             nacListMap <- readIORef execNacListMap
             let nacList = fromMaybe [] $ M.lookup p nacListMap
-                nacMap = M.delete n $ M.fromList nacList
-            modifyIORef execNacListMap $ M.insert p (M.toList nacMap)
+                nacUpdatedList = M.toList $ M.delete n $ M.fromList nacList
+            modifyIORef execNacListMap $ M.insert p nacUpdatedList
+            -- update text on the nacCBox
+            Gtk.comboBoxTextRemoveAll execNacCBox
+            forM_ (nacUpdatedList) $ \(str,index) -> Gtk.comboBoxTextAppendText execNacCBox (T.pack str)
+            Gtk.comboBoxSetActive execNacCBox 0
           else return ()
       _ -> return ()
 

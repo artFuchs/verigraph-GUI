@@ -41,7 +41,7 @@ buildExecutor :: Gtk.TreeStore
               -> IORef (G.Graph Info Info) 
               -> IORef (M.Map Int32 NacInfo)
               -> IORef (Maybe Gtk.DrawingArea) -> IORef (Maybe (IORef GraphState))
-              -> IO (Gtk.Paned, Gtk.DrawingArea, IORef GraphState, IORef Bool, IORef (M.Map Int32 [(String, Int32)]))
+              -> IO (Gtk.Paned, Gtk.DrawingArea, Gtk.ComboBoxText, IORef GraphState, IORef Bool, IORef (M.Map Int32 [(String, Int32)]))
 buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIORef = do
     builder <- new Gtk.Builder []
     Gtk.builderAddFromFile builder "./Resources/executor.glade"
@@ -78,7 +78,11 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     lState      <- newIORef emptyState -- state refering to the graph of the left side of selected rule
     rState      <- newIORef emptyState -- state refering to the graph of the right side of selected rule
     kGraph      <- newIORef G.empty -- k graph needed for displaying ids in the left and right sides of rules
+
+    lStateOrig  <- newIORef emptyState -- similar to lState, but not moved
     nacState    <- newIORef emptyState -- state refering to the graph of nac
+    
+    mergeMap    <- newIORef (Nothing :: Maybe MergeMapping)
     
     currentNACIndex    <- newIORef (-1 :: Int32) -- index of current selected NAC
     currentRuleIndex   <- newIORef (-1 :: Int32) -- index of currentRule
@@ -105,7 +109,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         tg <- readIORef typeGraph
         sq <- readIORef nacSqrSel
         index <- readIORef currentNACIndex
-        (_,mm) <- readIORef nacInfoMap >>= return . fromMaybe (DG.empty, (M.empty,M.empty)) . M.lookup index
+        mm <- readIORef mergeMap >>= return . fromMaybe (M.empty,M.empty)
         renderWithContext context $ drawNACGraph es sq tg mm
         return False
     
@@ -123,57 +127,66 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                     g = stateGetGraph es
                     (l,k,r) = graphToRuleGraphs g
                     (ngiM,egiM) = stateGetGI es
-                    lngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds l)) ngiM
-                    legiM = M.filterWithKey (\k a -> (G.EdgeId k) `elem` (G.edgeIds l)) egiM
-                    lgi = (lngiM,legiM)
                 currRIndex <- readIORef currentRuleIndex
                 if (currRIndex == index)
                     then return ()
                     else do
-                        let rngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds r)) ngiM
+                        let lngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds l)) ngiM
+                            legiM = M.filterWithKey (\k a -> (G.EdgeId k) `elem` (G.edgeIds l)) egiM
+                            rngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds r)) ngiM
                             regiM = M.filterWithKey (\k a -> (G.EdgeId k) `elem` (G.edgeIds r)) egiM
                             (_,lgi) = adjustDiagrPosition (l,(lngiM,legiM))
                             (_,rgi) = adjustDiagrPosition (r,(rngiM,regiM))
                             (_,gi') = adjustDiagrPosition (g,(ngiM,egiM))
-                            les = stateSetGraph l . stateSetGI lgi $ es
-                            res = stateSetGraph r . stateSetGI rgi $ es
-                            es' = stateSetGI gi' es
-                        writeIORef ruleState es'
-                        writeIORef lState les
-                        writeIORef rState res
+                        writeIORef ruleState $ stateSetGI gi' es
+                        writeIORef lState $ stateSetGraph l . stateSetGI lgi $ es
+                        writeIORef rState $ stateSetGraph r . stateSetGI rgi $ es
+                        writeIORef lStateOrig $ stateSetGraph l . stateSetGI (lngiM,legiM) $ es
                         writeIORef kGraph k                    
+                        writeIORef currentRuleIndex index
 
                 nacListM <- readIORef nacListMap
                 let nacList = M.lookup index nacListM
                 
                 Gtk.comboBoxTextRemoveAll nacCBox
                 forM_ (fromMaybe [] nacList) $ \(str,index) -> Gtk.comboBoxTextAppendText nacCBox (T.pack str)
-
-                case Just (M.toList . M.fromList) <*> nacList of
-                    Nothing -> writeIORef nacState $ emptyState
-                    Just ((name,nIndex):_) -> do
-                        mNacInfo <- readIORef nacInfoMap >>= return . M.lookup nIndex
-                        (n,ngi) <- case mNacInfo of
-                            Nothing -> return (l,lgi)
-                            Just nacInfo -> do
-                                context <- Gtk.widgetGetPangoContext nacCanvas
-                                tg <- readIORef typeGraph
-                                nacInfo' <- Nac.applyLhsChangesToNac l nacInfo (Just context)
-                                return $ Nac.mountNACGraph (l,lgi) tg nacInfo'
-                        let (_,ngi') = adjustDiagrPosition (n,ngi)
-                            nes = stateSetGI ngi' . stateSetGraph n $ emptyState
-                        writeIORef nacState nes
-                        writeIORef currentNACIndex nIndex
-                        Gtk.comboBoxSetActive nacCBox 0
+                Gtk.comboBoxSetActive nacCBox 0
 
                 Gtk.widgetQueueDraw lCanvas
                 Gtk.widgetQueueDraw rCanvas
                 Gtk.widgetQueueDraw ruleCanvas
                 Gtk.widgetQueueDraw nacCanvas
-
-
             else return ()
 
+    on nacCBox #changed $ do
+        index <- Gtk.comboBoxGetActive nacCBox
+        if index == (-1)
+            then writeIORef nacState $ emptyState
+            else do
+                nacName <- Gtk.comboBoxTextGetActiveText nacCBox >>= return . T.unpack
+                ruleIndex <- readIORef currentRuleIndex
+                nacListM <- readIORef nacListMap
+                case M.lookup ruleIndex nacListM of
+                    Nothing -> writeIORef nacState $ emptyState
+                    Just nacList -> case lookup nacName nacList of
+                        Nothing -> writeIORef nacState $ emptyState
+                        Just nacIndex -> do
+                            les <- readIORef lStateOrig
+                            let l = stateGetGraph les
+                                lgi = stateGetGI les
+                            nacInfoM <- readIORef nacInfoMap
+                            (n,ngi) <- case M.lookup nacIndex nacInfoM of
+                                Nothing -> return (l,lgi)
+                                Just nacInfo -> do
+                                    context <- Gtk.widgetGetPangoContext nacCanvas
+                                    tg <- readIORef typeGraph
+                                    (nacdg',mergeM') <- Nac.applyLhsChangesToNac l nacInfo (Just context)
+                                    writeIORef mergeMap $ Just mergeM'
+                                    return $ Nac.mountNACGraph (l,lgi) tg (nacdg',mergeM')
+                            let (_,ngi') = adjustDiagrPosition (n,ngi)
+                                nes = stateSetGI ngi' . stateSetGraph n $ emptyState
+                            writeIORef nacState nes
+                            writeIORef currentNACIndex nacIndex
 
     -- execution controls
     on stopBtn #pressed $ do
@@ -183,7 +196,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         writeIORef execStarted False
     
     #show executorPane
-    return (executorPane, mainCanvas, hostState, execStarted, nacListMap)
+    return (executorPane, mainCanvas, nacCBox, hostState, execStarted, nacListMap)
 
 type SquareSelection = Maybe (Double,Double,Double,Double)
 setCanvasCallBacks :: Gtk.DrawingArea 

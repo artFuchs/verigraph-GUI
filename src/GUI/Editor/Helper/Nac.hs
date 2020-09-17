@@ -437,13 +437,16 @@ mountNACGraph :: DiaGraph
               -> NacInfo
               -> DiaGraph
 mountNACGraph (lhs,lhsgi) tg (nacdg,mergeM) = do
+      -- 'lock' the nodes from LHS
+      let lhsLockNodes = foldr (\n g -> G.updateNodePayload n g (\info -> infoSetOperation (infoSetLocked info True) Preserve)) lhs (nodeIds lhs)
+          lhs' = foldr (\e g -> G.updateEdgePayload e g (\info -> infoSetLocked info True)) lhsLockNodes (edgeIds lhs)
       case (G.null $ fst nacdg) of
-        True -> (lhs, lhsgi) -- if there's no nac' diagraph, then the nac is just the lhs
+        True -> (lhs', lhsgi) -- if there's no nac' diagraph, then the nac is just the lhs
         False -> do
           -- if there's a nac' diagraph, check if the graph is correct
           let nacValid = isGraphValid (fst nacdg) tg
           case nacValid of
-            True -> joinNAC (nacdg,mergeM) (lhs, lhsgi) tg 
+            True -> joinNAC (nacdg,mergeM) (lhs', lhsgi) tg 
             False -> do
               -- remove all the elements with type error
               let validG = correctTypeGraph (fst nacdg) tg
@@ -456,4 +459,4 @@ mountNACGraph (lhs,lhsgi) tg (nacdg,mergeM) = do
                   newNEGI = M.filterWithKey (\k a -> EdgeId k `elem` validEids) (snd . snd $ nacdg)
                   newNacdg = (newNG,(newNNGI, newNEGI))
               -- join nac
-              joinNAC (newNacdg, mergeM) (lhs, lhsgi) tg
+              joinNAC (newNacdg, mergeM) (lhs', lhsgi) tg

@@ -878,10 +878,8 @@ startEditor window store
               Just es -> do
                 tg <- readIORef typeGraph
                 -- load lhs diagraph
-                (l,lgi) <- getParentLHSDiaGraph store path graphStates
-                let ruleLGNodesLock = foldr (\n g -> G.updateNodePayload n g (\info -> infoSetOperation (infoSetLocked info True) Preserve)) l (nodeIds l)
-                    lhs = foldr (\e g -> G.updateEdgePayload e g (\info -> infoSetLocked info True)) ruleLGNodesLock (edgeIds l)
-                    lhsIsValid = isGraphValid lhs tg
+                (lhs,lgi) <- getParentLHSDiaGraph store path graphStates
+                let lhsIsValid = isGraphValid lhs tg
                 
                 case lhsIsValid of
                   False -> do
