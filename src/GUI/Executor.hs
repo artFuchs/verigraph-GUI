@@ -7,10 +7,12 @@ module GUI.Executor (
 , removeTrashFromTreeStore
 ) where
 
+-- GTK related modules
 import qualified GI.Gtk as Gtk
 import qualified GI.Gdk as Gdk
 import Graphics.Rendering.Cairo (Render)
 
+-- basic modules
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.IORef
@@ -21,8 +23,15 @@ import           Data.GI.Base.ManagedPtr (unsafeCastTo)
 import           Data.Int
 import qualified Data.Text as T
 
+-- Verigraph modules
+import qualified Abstract.Category as Cat
+import qualified Abstract.Rewriting.DPO as DPO
+import qualified Data.TypedGraph.Morphism as TGM
+import qualified Data.Graphs.Morphism as GM
 import qualified Data.Graphs as G
+import qualified Data.Relation as R
 
+-- Verigraph-GUI modules
 import           GUI.Data.DiaGraph hiding (empty)
 import qualified GUI.Data.DiaGraph as DG
 import           GUI.Data.GraphState
@@ -30,7 +39,7 @@ import           GUI.Data.Info
 import           GUI.Data.Nac
 import           GUI.Render.Render
 import           GUI.Render.GraphDraw
-import           GUI.Helper.GrammarMaker
+import qualified GUI.Helper.GrammarMaker as GMker
 
 -- shouldn't use functions from editor module. Must refactore later
 import qualified GUI.Editor as Editor
@@ -65,6 +74,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     nacCBox <- Gtk.builderGetObject builder "nacCBox" >>= unsafeCastTo Gtk.ComboBoxText . fromJust
 
     stopBtn <- Gtk.builderGetObject builder "stopBtn" >>= unsafeCastTo Gtk.Button . fromJust
+    stepBtn <- Gtk.builderGetObject builder "stepBtn" >>= unsafeCastTo Gtk.Button . fromJust
 
     treeView <- Gtk.builderGetObject builder "treeView" >>= unsafeCastTo Gtk.TreeView . fromJust
     Gtk.treeViewSetModel treeView (Just store)
@@ -90,6 +100,9 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     execStarted  <- newIORef False   -- if execution has already started
 
     nacListMap <- newIORef (M.empty :: M.Map Int32 [(String,Int32)])
+
+    productionMap <- newIORef (M.empty :: M.Map Int32 (DPO.Production (TGM.TypedGraphMorphism Info Info)))
+    matchesMap <- newIORef (M.empty :: M.Map Int32 (M.Map Int32 (TGM.TypedGraphMorphism Info Info)))
 
     -- callbacks ----------------------------------------------------------------------------------------------------------------
     -- hide rule viewer panel when colse button is pressed
@@ -119,16 +132,18 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
         if sel
             then do
-                index <- Gtk.treeModelGetValue model iter 1 >>= fromGValue :: IO Int32
-                gType <- Gtk.treeModelGetValue model iter 2 >>= fromGValue :: IO Int32
+                t <- Gtk.treeModelGetValue model iter 2 >>= fromGValue :: IO Int32
+                rIndex <- case t of
+                    1 -> Gtk.treeModelGetValue model iter 1 >>= fromGValue :: IO Int32
+                    2 -> Gtk.treeModelGetValue model iter 3 >>= fromGValue :: IO Int32
                 statesM <- readIORef statesMap
                 --load rule
-                let es = fromMaybe emptyState $ M.lookup index statesM
+                let es = fromMaybe emptyState $ M.lookup rIndex statesM
                     g = stateGetGraph es
-                    (l,k,r) = graphToRuleGraphs g
+                    (l,k,r) = GMker.graphToRuleGraphs g
                     (ngiM,egiM) = stateGetGI es
                 currRIndex <- readIORef currentRuleIndex
-                if (currRIndex == index)
+                if (currRIndex == rIndex)
                     then return ()
                     else do
                         let lngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds l)) ngiM
@@ -143,10 +158,10 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                         writeIORef rState $ stateSetGraph r . stateSetGI rgi $ es
                         writeIORef lStateOrig $ stateSetGraph l . stateSetGI (lngiM,legiM) $ es
                         writeIORef kGraph k                    
-                        writeIORef currentRuleIndex index
+                        writeIORef currentRuleIndex rIndex
 
                 nacListM <- readIORef nacListMap
-                let nacList = M.lookup index nacListM
+                let nacList = M.lookup rIndex nacListM
                 
                 Gtk.comboBoxTextRemoveAll nacCBox
                 forM_ (fromMaybe [] nacList) $ \(str,index) -> Gtk.comboBoxTextAppendText nacCBox (T.pack str)
@@ -194,6 +209,52 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         let initState = fromMaybe emptyState $ M.lookup 1 statesM
         writeIORef hostState initState
         writeIORef execStarted False
+        findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap
+        
+    on stepBtn #pressed $ do
+        -- test: take first match
+        matchesM <- readIORef matchesMap
+        prodMap  <- readIORef productionMap
+        -- Map ruleId (Map matchId match)
+        -- [(ruleId,[(matchId,match)])]
+        let ( (rid,(_,m):_):_ ) = M.toList $ M.map M.toList matchesM
+            p = fromJust $ M.lookup rid prodMap
+        
+        -- apply match
+        let (k,n,f,g) = DPO.calculateDPO m p        
+            fMapping = TGM.mapping f
+            gMapping = TGM.mapping g
+            newIds
+
+
+
+
+        
+        
+        
+        
+        -- codominio de f    : grafo inicial (G).
+        -- codominio de g e n: grafo final (H).
+        -- dominio de f e g  : grafo intermediario (D).
+        -- codominio de n    : lado direito da regra (R).
+
+        -- remover informação gráfica de elementos que não aparecem no mapeamento de D para G
+        -- adicionar informação gráfica de elementos que não participam do mapeamento de D para H
+            -- arestas: basta criar informações gráficas novas para uma aresta
+            -- evitar sobreposição de elementos
+
+        -- remove GraphicalInfo of elements that aren't in the mapping from D to G
+
+
+        
+        
+            
+
+
+        return ()
+            
+        
+
     
     #show executorPane
     return (executorPane, mainCanvas, nacCBox, hostState, execStarted, nacListMap)
@@ -228,8 +289,53 @@ setCanvasCallBacks canvas state refGraph drawMethod focusedCanvas focusedStateIO
         return False
     return (oldPoint,squareSelection) 
 
-    
 
+findMatches :: Gtk.TreeStore
+            -> IORef (M.Map Int32 GraphState)
+            -> IORef GraphState 
+            -> IORef (G.Graph Info Info) 
+            -> IORef (M.Map Int32 NacInfo)
+            -> IORef (M.Map Int32 [(String,Int32)])
+            -> IORef (M.Map Int32 (M.Map Int32 (TGM.TypedGraphMorphism Info Info)))
+            -> IORef (M.Map Int32 (DPO.Production (TGM.TypedGraphMorphism Info Info)))
+            -> IO ()
+findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap = do
+        -- get matches of each rule in the initial graph
+        -- prepare initial graph
+        hState <- readIORef hostState
+        typeG <- readIORef typeGraph
+        let g = stateGetGraph hState
+            tg = GMker.makeTypeGraph typeG
+            obj = GMker.makeTypedGraph g tg
+            
+        -- get rules from treeStore
+        nacListM <- readIORef nacListMap
+        rulesStates <- treeStoreGetRules store statesMap
+        productions <- forM rulesStates $ \(id,st) -> do
+                            let nacList = fromMaybe [] $ M.lookup id nacListM
+                            nacInfoM <- readIORef nacInfoMap
+                            let getNac index = Just (\(dg,mm) -> (fst dg, mm)) <*> (M.lookup index nacInfoM)
+                                mnacs = filter (not . null) $ map (\(_,index) -> getNac index) nacList
+                                nacs = map fromJust mnacs
+                            let rg = stateGetGraph st
+                            return $ (id,GMker.graphToRule rg nacs tg)
+        writeIORef productionMap (M.fromList productions)
+
+        -- get dpo matches
+        let morphismClass = Cat.monic :: Cat.MorphismClass (TGM.TypedGraphMorphism Info Info)
+            conf = DPO.MorphismsConfig morphismClass
+            matches = map (\(id,prod) -> (id,DPO.findApplicableMatches conf prod obj)) productions
+
+        let matchesM = foldr (\(rid,l) m -> M.insert rid (M.fromList $ zip ([1,2..] :: [Int32]) l) m) M.empty matches
+        writeIORef matchesMap matchesM
+
+        -- foreach match, generate a entry
+        let matchesEntries = concat $
+                                map (\(rid,mM) -> 
+                                    map (\(mid,m) -> ("match " ++ (show mid), mid, 2 :: Int32, rid) ) $ M.toList mM) $
+                                M.toList matchesM
+        
+        forM_ matchesEntries $ \entry -> updateTreeStore store entry
 
 
 {-| ExecGraphEntry
@@ -237,7 +343,7 @@ setCanvasCallBacks canvas state refGraph drawMethod focusedCanvas focusedStateIO
     It contains the informations:
     * name,
     * id,
-    * type (3 - rule, 4 - NAC),
+    * type (1 - rule, 2 - rule match),
     * parent id (used if type is NAC).
     * active
 -}
@@ -266,37 +372,39 @@ updateTreeStore' :: Gtk.TreeStore -> Gtk.TreeIter -> ExecGraphEntry -> IO ()
 updateTreeStore' store iter entry@(n,i,t,p) = do
     cid <- Gtk.treeModelGetValue store iter 1 >>= fromGValue :: IO Int32
     ct  <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
-    if cid == i
+    if ct == t && cid == i
         then storeSetGraphEntry store iter entry
-        else do
-            let updateInList parentIter = do
+        else case t of
+            1 -> updateInList Nothing
+            2 -> case (ct==1,cid==p) of
+                (True,True) -> do
+                    (valid,childIter) <- Gtk.treeModelIterChildren store (Just iter)
+                    if valid
+                        then updateTreeStore' store childIter entry
+                        else do
+                            newIter <- Gtk.treeStoreAppend store (Just iter)
+                            storeSetGraphEntry store newIter entry
+                (True,False) -> do
                     valid <- Gtk.treeModelIterNext store iter
                     if valid
                         then updateTreeStore' store iter entry
-                        else do
-                            newIter <- Gtk.treeStoreAppend store parentIter
-                            storeSetGraphEntry store newIter entry
-            case t of
-                3 -> updateInList Nothing
-                4 -> do
-                    case (ct == 3,cid == p) of
-                        (True,True) -> do
-                            (valid,childIter) <- Gtk.treeModelIterChildren store (Just iter) 
-                            if valid
-                                then updateTreeStore' store childIter entry
-                                else do
-                                    childIter <- Gtk.treeStoreAppend store (Just iter)
-                                    storeSetGraphEntry store childIter entry
-                        (True,False) -> do
-                            valid <- Gtk.treeModelIterNext store iter
-                            if valid
-                                then updateTreeStore' store iter entry
-                                else return ()
-                        _ -> do 
-                            (valid,parentIter) <- Gtk.treeModelIterParent store iter
-                            if valid
-                                then updateInList (Just parentIter)
-                                else return ()
+                        else return ()
+                _ -> do
+                    (valid,parentIter) <- Gtk.treeModelIterParent store iter
+                    if valid
+                        then updateInList (Just parentIter)
+                        else return ()
+            _ -> return ()
+
+    where
+        updateInList parentIter = do
+            valid <- Gtk.treeModelIterNext store iter
+            if valid
+                then updateTreeStore' store iter entry
+                else do
+                    newIter <- Gtk.treeStoreAppend store parentIter
+                    storeSetGraphEntry store newIter entry
+        
 
 
 removeFromTreeStore :: Gtk.TreeStore -> Int32 -> IO ()
@@ -334,21 +442,30 @@ removeTrashFromTreeStore' store iter statesMap = do
     index <- Gtk.treeModelGetValue store iter 1 >>= fromGValue :: IO Int32
     state <- return $ M.lookup index statesMap
     continue <- case state of
-        Just st -> do 
-            (hasChildren,childIter) <- Gtk.treeModelIterChildren store (Just iter)
-            if hasChildren
-                then removeTrashFromTreeStore' store childIter statesMap 
-                else return ()
-            Gtk.treeModelIterNext store iter                    
+        Just st -> Gtk.treeModelIterNext store iter                    
         Nothing -> Gtk.treeStoreRemove store iter
     if continue
         then removeTrashFromTreeStore' store iter statesMap
         else return ()
-    
-    
 
+-- get the GraphStates that are referenciated by the treeStore    
+treeStoreGetRules :: Gtk.TreeStore -> IORef (M.Map Int32 GraphState) -> IO [(Int32,GraphState)]
+treeStoreGetRules store statesMap = do
+    statesM <- readIORef statesMap
+    (valid,iter) <- Gtk.treeModelGetIterFirst store
+    if valid
+        then treeStoreGetRules' store iter statesM
+        else return []
 
-    
-    
-
+treeStoreGetRules' :: Gtk.TreeStore -> Gtk.TreeIter -> M.Map Int32 GraphState -> IO [(Int32,GraphState)]
+treeStoreGetRules' store iter statesMap = do
+    index <- Gtk.treeModelGetValue store iter 1 >>= fromGValue :: IO Int32
+    let state = M.lookup index statesMap
+    continue <- Gtk.treeModelIterNext store iter
+    states <- case continue of
+        True -> treeStoreGetRules' store iter statesMap
+        False -> return []
+    case state of
+        Nothing -> return states
+        Just st -> return $ (index,st) : states
     

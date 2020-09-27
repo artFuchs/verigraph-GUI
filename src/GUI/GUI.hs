@@ -165,7 +165,7 @@ startGUI = do
     a  <- Gtk.treeModelGetValue editStore iter 4 >>= fromGValue :: IO Bool
     v  <- Gtk.treeModelGetValue editStore iter 5 >>= fromGValue :: IO Bool
     case (v,t) of
-      (True,3) -> Exec.updateTreeStore execStore (n,id,t,0)
+      (True,3) -> Exec.updateTreeStore execStore (n,id,1,0)
       (True,4) -> do
         (valid,parent) <- Gtk.treeModelIterParent editStore iter
         if valid

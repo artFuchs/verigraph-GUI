@@ -1,6 +1,7 @@
 module GUI.Helper.GrammarMaker (
   makeGrammar
 , graphToRuleGraphs
+, graphToRule
 , makeTypeGraph
 , makeTypedGraph
 , getNacPushout
