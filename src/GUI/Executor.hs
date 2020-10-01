@@ -93,16 +93,16 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     nacState    <- newIORef emptyState -- state refering to the graph of nac
     
     mergeMap    <- newIORef (Nothing :: Maybe MergeMapping)
+    nacListMap <- newIORef (M.empty :: M.Map Int32 [(String,Int32)])
     
     currentNACIndex    <- newIORef (-1 :: Int32) -- index of current selected NAC
     currentRuleIndex   <- newIORef (-1 :: Int32) -- index of currentRule
 
-    execStarted  <- newIORef False   -- if execution has already started
-
-    nacListMap <- newIORef (M.empty :: M.Map Int32 [(String,Int32)])
-
     productionMap <- newIORef (M.empty :: M.Map Int32 (DPO.Production (TGM.TypedGraphMorphism Info Info)))
     matchesMap <- newIORef (M.empty :: M.Map Int32 (M.Map Int32 (TGM.TypedGraphMorphism Info Info)))
+    currentMatchIndex <- newIORef (-1 :: Int32) -- index of current match
+
+    execStarted  <- newIORef False   -- if execution has already started
 
     -- callbacks ----------------------------------------------------------------------------------------------------------------
     -- hide rule viewer panel when colse button is pressed
@@ -133,13 +133,16 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         if sel
             then do
                 t <- Gtk.treeModelGetValue model iter 2 >>= fromGValue :: IO Int32
-                rIndex <- case t of
-                    1 -> Gtk.treeModelGetValue model iter 1 >>= fromGValue :: IO Int32
-                    2 -> Gtk.treeModelGetValue model iter 3 >>= fromGValue :: IO Int32
+                (rIndex,mIndex) <- case t of
+                    1 -> do 
+                        ri <- Gtk.treeModelGetValue model iter 1 >>= fromGValue :: IO Int32
+                        return (ri,-1) 
+                    2 -> do 
+                        ri <- Gtk.treeModelGetValue model iter 3 >>= fromGValue :: IO Int32
+                        rm <- Gtk.treeModelGetValue model iter 1 >>= fromGValue :: IO Int32
+                        return (ri,rm)
+                writeIORef currentMatchIndex mIndex
                 statesM <- readIORef statesMap
-
-                -- TODO: select which match is to be applied.            
-                
                 --load rule
                 let es = fromMaybe emptyState $ M.lookup rIndex statesM
                     g = stateGetGraph es
@@ -213,93 +216,102 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         writeIORef hostState initState
         writeIORef execStarted False
         findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap
+        Gtk.treeViewExpandAll treeView
         
     on stepBtn #pressed $ do
-        -- test: take first match
         matchesM <- readIORef matchesMap
         prodMap  <- readIORef productionMap
-        -- Map ruleId (Map matchId match)
-        -- [(ruleId,[(matchId,match)])]
-        let ( (rid,(_,m):_):_ ) = M.toList $ M.map M.toList matchesM
-            p = fromJust $ M.lookup rid prodMap
-        
-        -- apply match to get mapping between graphs
-        let (k,n,f,g) = DPO.calculateDPO m p        
-            fMapping = TGM.mapping f
-            gMapping = TGM.mapping g
-            nMapping = TGM.mapping n
+        mIndex <- readIORef currentMatchIndex
+        rIndex <- readIORef currentRuleIndex
+
+        let prod = M.lookup rIndex prodMap
+            matches = fromMaybe M.empty $ M.lookup rIndex matchesM
+            match = M.lookup mIndex matches
+
+        case (prod,match) of
+            (Just p, Just m) -> do                
+                -- apply match to get mapping between graphs
+                let (k,n,f,g) = DPO.calculateDPO m p        
+                    fMapping = TGM.mapping f
+                    gMapping = TGM.mapping g
+                    nMapping = TGM.mapping n
+                    
+                    fNodeRelation = R.inverseRelation $ GM.nodeRelation fMapping -- G --fn'--> D
+                    fEdgeRelation = R.inverseRelation $ GM.edgeRelation fMapping -- G --fe'--> D
+                    gNodeRelation = GM.nodeRelation gMapping                     -- D --gn--> H
+                    gEdgeRelation = GM.edgeRelation gMapping                     -- D --ge--> H
+                    nNodeRelation = R.inverseRelation $ GM.nodeRelation nMapping -- H --nn'--> R
+                    nEdgeRelation = R.inverseRelation $ GM.edgeRelation nMapping -- H --ne'--> R
+
+                let apply rel k def = case R.apply rel k of [] -> def; id:_ -> id
+                    replaceInfo (k,i) m = case lookup k m of Nothing -> i; Just i' -> i'
+
+
+                -- make sure the mapped elements preserve the information between transformations
+                let gGraph = GM.domainGraph fMapping
+                    dGraph = GM.codomainGraph fMapping
+                    hGraph = GM.codomainGraph gMapping
+
+                    gNodesInfo = map (\(k,n) -> (apply fNodeRelation k (G.NodeId (-1)), G.nodeInfo n)) (G.nodeMap gGraph)
+                    gEdgesInfo = map (\(k,e) -> (apply fEdgeRelation k (G.EdgeId (-1)), G.edgeInfo e)) (G.edgeMap gGraph)
+                    
+                    dNodesInfo = map (\(k,n) -> (k, G.nodeInfo n)) (G.nodeMap dGraph)
+                    dEdgesInfo = map (\(k,e) -> (k, G.edgeInfo e)) (G.edgeMap dGraph)
+                    dNodesInfo' = map (\(k,ni) -> (apply gNodeRelation k (G.NodeId (-1)), replaceInfo (k,ni) gNodesInfo) ) dNodesInfo
+                    dEdgesInfo' = map (\(k,ei) -> (apply gEdgeRelation k (G.EdgeId (-1)), replaceInfo (k,ei) gEdgesInfo) ) dEdgesInfo
+
+                    hNodesInfo = map (\(k,n) -> (k, replaceInfo (k, G.nodeInfo n) dNodesInfo')) (G.nodeMap hGraph)
+                    hEdgesInfo = map (\(k,e) -> (k, replaceInfo (k, G.edgeInfo e) dEdgesInfo')) (G.edgeMap hGraph)
+                    
+                    hGraph' = foldr (\(k,i) g -> G.updateNodePayload k g (\ni -> i)) hGraph hNodesInfo
+                    hGraph'' = foldr (\(k,i) g -> G.updateEdgePayload k g (\ei -> i)) hGraph' hEdgesInfo
+                    hNodeMap' = map (\(k,n) -> (k, GMker.nodeFromJust n)) (G.nodeMap hGraph'')
+                    hEdgeMap' = map (\(k,e) -> (k, GMker.edgeFromJust e)) (G.edgeMap hGraph'')
+                    finalNodeMap = map (\(k,n) -> (k, n {G.nodeInfo = infoSetOperation (G.nodeInfo n) Preserve})) hNodeMap'
+                    finalEdgeMap = map (\(k,e) -> (k, e {G.edgeInfo = infoSetOperation (G.edgeInfo e) Preserve})) hEdgeMap'
+                    finalGraph = G.Graph finalNodeMap finalEdgeMap
+
+                -- modify graphical information to match the modifications
+                hostSt <- readIORef hostState
+                statesM <- readIORef statesMap
+                let (sgiN,sgiE) = stateGetGI hostSt
+                    -- delete layouts of elements that are not in the f morphism (G --f--> D)
+                    sgiN' = M.mapKeys G.NodeId $ M.filterWithKey (\k _ -> G.NodeId k `elem` (R.domain fNodeRelation)) sgiN
+                    sgiE' = M.mapKeys G.EdgeId $ M.filterWithKey (\k _ -> G.EdgeId k `elem` (R.domain fEdgeRelation)) sgiE
+                    -- modify the ids of the elements that are in the f morphism (G --f--> D)
+                    dgiN  = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply fNodeRelation k (G.NodeId (-1))) sgiN'
+                    dgiE  = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply fEdgeRelation k (G.EdgeId (-1))) sgiE'
+                    -- modify the ids of the elements that are in the g morphism (D --g--> H)
+                    dgiN' = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply gNodeRelation k (G.NodeId (-1))) dgiN
+                    dgiE' = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply gEdgeRelation k (G.EdgeId (-1))) dgiE
+                    -- add layouts to the elements of codomain of g morphism that have no relation to elements of it's domain
+                    
+                    rSt = fromJust $ M.lookup rIndex statesM
+                    (rgiN,rgiE) = stateGetGI rSt
+                    addedNodeIds = filter (\id -> id `notElem` (M.keys dgiN')) (R.domain nNodeRelation)
+                    addedEdgeIds = filter (\id -> id `notElem` (M.keys dgiE')) (R.domain nEdgeRelation)
+                    addedNodeIds' = filter (\(_,kr) -> fromEnum kr > 0) $ map (\k -> (k, apply nNodeRelation k (-1))) addedNodeIds
+                    addedEdgeIds' = filter (\(_,kr) -> fromEnum kr > 0) $ map (\k -> (k, apply nEdgeRelation k (-1))) addedEdgeIds
+                    addedNodeGIs = map (\(k,kr) -> (k,fromJust $ M.lookup (fromEnum kr) rgiN)) addedNodeIds'
+                    addedEdgeGIs = map (\(k,kr) -> (k,fromJust $ M.lookup (fromEnum kr) rgiE)) addedEdgeIds'
+
+                    {- TODO: set position of graphical informations avoiding overlapping
+                        Nodes should have a position relative to another node
+                        Edges positions are relative to to quantity of edges that are already there
+                    -} 
+
+                    hgiN = M.mapKeys fromEnum $ foldr (\(k,gi) m -> M.insert k gi m) dgiN' addedNodeGIs
+                    hgiE = M.mapKeys fromEnum $ foldr (\(k,gi) m -> M.insert k gi m) dgiE' addedEdgeGIs
+                    hState = stateSetGraph finalGraph . stateSetGI (hgiN,hgiE) $ hostSt
+
+                writeIORef hostState hState
+                Gtk.widgetQueueDraw mainCanvas
+
+                removeMatchesFromTreeStore store
+                findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap
+                Gtk.treeViewExpandAll treeView
             
-            fNodeRelation = R.inverseRelation $ GM.nodeRelation fMapping -- G --fn'--> D
-            fEdgeRelation = R.inverseRelation $ GM.edgeRelation fMapping -- G --fe'--> D
-            gNodeRelation = GM.nodeRelation gMapping                     -- D --gn--> H
-            gEdgeRelation = GM.edgeRelation gMapping                     -- D --ge--> H
-            nNodeRelation = R.inverseRelation $ GM.nodeRelation nMapping -- H --nn'--> R
-            nEdgeRelation = R.inverseRelation $ GM.edgeRelation nMapping -- H --ne'--> R
-
-        let apply rel k def = case R.apply rel k of [] -> def; id:_ -> id
-            replaceInfo (k,i) m = case lookup k m of Nothing -> i; Just i' -> i'
-
-
-        -- make sure the mapped elements preserve the information between transformations
-        let gGraph = GM.domainGraph fMapping
-            dGraph = GM.codomainGraph fMapping
-            hGraph = GM.codomainGraph gMapping
-
-            gNodesInfo = map (\(k,n) -> (apply fNodeRelation k (G.NodeId (-1)), G.nodeInfo n)) (G.nodeMap gGraph)
-            gEdgesInfo = map (\(k,e) -> (apply fEdgeRelation k (G.EdgeId (-1)), G.edgeInfo e)) (G.edgeMap gGraph)
-            
-            dNodesInfo = map (\(k,n) -> (k, G.nodeInfo n)) (G.nodeMap dGraph)
-            dEdgesInfo = map (\(k,e) -> (k, G.edgeInfo e)) (G.edgeMap dGraph)
-            dNodesInfo' = map (\(k,ni) -> (apply gNodeRelation k (G.NodeId (-1)), replaceInfo (k,ni) gNodesInfo) ) dNodesInfo
-            dEdgesInfo' = map (\(k,ei) -> (apply gEdgeRelation k (G.EdgeId (-1)), replaceInfo (k,ei) gEdgesInfo) ) dEdgesInfo
-
-            hNodesInfo = map (\(k,n) -> (k, replaceInfo (k, G.nodeInfo n) dNodesInfo')) (G.nodeMap hGraph)
-            hEdgesInfo = map (\(k,e) -> (k, replaceInfo (k, G.edgeInfo e) dEdgesInfo')) (G.edgeMap hGraph)
-            
-            hGraph' = foldr (\(k,i) g -> G.updateNodePayload k g (\ni -> i)) hGraph hNodesInfo
-            hGraph'' = foldr (\(k,i) g -> G.updateEdgePayload k g (\ei -> i)) hGraph' hEdgesInfo
-            hNodeMap' = map (\(k,n) -> (k, GMker.nodeFromJust n)) (G.nodeMap hGraph'')
-            hEdgeMap' = map (\(k,e) -> (k, GMker.edgeFromJust e)) (G.edgeMap hGraph'')
-            finalNodeMap = map (\(k,n) -> (k, n {G.nodeInfo = infoSetOperation (G.nodeInfo n) Preserve})) hNodeMap'
-            finalEdgeMap = map (\(k,e) -> (k, e {G.edgeInfo = infoSetOperation (G.edgeInfo e) Preserve})) hEdgeMap'
-            finalGraph = G.Graph finalNodeMap finalEdgeMap
-
-        -- modify graphical information to match the modifications
-        hostSt <- readIORef hostState
-        statesM <- readIORef statesMap
-        let (sgiN,sgiE) = stateGetGI hostSt
-            -- delete layouts of elements that are not in the f morphism (G --f--> D)
-            sgiN' = M.mapKeys G.NodeId $ M.filterWithKey (\k _ -> G.NodeId k `elem` (R.domain fNodeRelation)) sgiN
-            sgiE' = M.mapKeys G.EdgeId $ M.filterWithKey (\k _ -> G.EdgeId k `elem` (R.domain fEdgeRelation)) sgiE
-            -- modify the ids of the elements that are in the f morphism (G --f--> D)
-            dgiN  = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply fNodeRelation k (G.NodeId (-1))) sgiN'
-            dgiE  = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply fEdgeRelation k (G.EdgeId (-1))) sgiE'
-            -- modify the ids of the elements that are in the g morphism (D --g--> H)
-            dgiN' = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply gNodeRelation k (G.NodeId (-1))) dgiN
-            dgiE' = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply gEdgeRelation k (G.EdgeId (-1))) dgiE
-            -- add layouts to the elements of codomain of g morphism that have no relation to elements of it's domain
-            
-            rSt = fromJust $ M.lookup rid statesM
-            (rgiN,rgiE) = stateGetGI rSt
-            addedNodeIds = filter (\id -> id `notElem` (M.keys dgiN')) (R.domain nNodeRelation)
-            addedEdgeIds = filter (\id -> id `notElem` (M.keys dgiE')) (R.domain nEdgeRelation)
-            addedNodeIds' = filter (\(_,kr) -> fromEnum kr > 0) $ map (\k -> (k, apply nNodeRelation k (-1))) addedNodeIds
-            addedEdgeIds' = filter (\(_,kr) -> fromEnum kr > 0) $ map (\k -> (k, apply nEdgeRelation k (-1))) addedEdgeIds
-            addedNodeGIs = map (\(k,kr) -> (k,fromJust $ M.lookup (fromEnum kr) rgiN)) addedNodeIds'
-            addedEdgeGIs = map (\(k,kr) -> (k,fromJust $ M.lookup (fromEnum kr) rgiE)) addedEdgeIds'
-
-            {- TODO: set position of graphical informations avoiding overlapping
-                Nodes should have a position relative to another node
-                Edges positions are relative to to quantity of edges that are already there
-            -} 
-
-            hgiN = M.mapKeys fromEnum $ foldr (\(k,gi) m -> M.insert k gi m) dgiN' addedNodeGIs
-            hgiE = M.mapKeys fromEnum $ foldr (\(k,gi) m -> M.insert k gi m) dgiE' addedEdgeGIs
-            hState = stateSetGraph finalGraph . stateSetGI (hgiN,hgiE) $ hostSt
-
-        writeIORef hostState hState
-        Gtk.widgetQueueDraw mainCanvas
-        findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap
+            _ -> return ()
 
             
         
@@ -517,4 +529,27 @@ treeStoreGetRules' store iter statesMap = do
     case state of
         Nothing -> return states
         Just st -> return $ (index,st) : states
-    
+
+-- remove entries of matches from the treeStore
+removeMatchesFromTreeStore :: Gtk.TreeStore -> IO ()
+removeMatchesFromTreeStore store = do
+    (valid,iter) <- Gtk.treeModelGetIterFirst store
+    if valid
+        then removeMatchesFromTreeStore' store iter
+        else return ()
+
+removeMatchesFromTreeStore' :: Gtk.TreeStore -> Gtk.TreeIter -> IO ()
+removeMatchesFromTreeStore' store iter = do
+    t <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
+    continue <- case t of
+        1 -> do
+            (valid,childIter) <- Gtk.treeModelIterChildren store (Just iter)
+            if valid
+                then removeMatchesFromTreeStore' store childIter
+                else return ()
+            Gtk.treeModelIterNext store iter
+        2 -> Gtk.treeStoreRemove store iter
+    if continue
+        then removeMatchesFromTreeStore' store iter
+        else return ()
+         
