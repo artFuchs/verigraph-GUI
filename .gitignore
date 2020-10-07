@@ -2,3 +2,9 @@
 graph-editor-gi-gtk.cabal
 *~
 stack.yaml.lock
+graphs/verif2/cpa-both.cpx
+graphs/verif2/cpa-conflicts.cpx
+graphs/verif2/danres-verif2
+graphs/verif2/danres-verif2_vguiver.ggx
+verigraph-GUI.cabal
+Tarefas.md

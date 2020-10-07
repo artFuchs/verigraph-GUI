@@ -4,6 +4,7 @@ module GUI.Render.GraphDraw (
 , drawRuleGraph
 , drawRuleSideGraph
 , drawNACGraph
+, drawHostGraphWithMatches
 ) where
 
 import qualified Data.Map as M
@@ -351,6 +352,57 @@ drawNACGraph state sq tg (nM,eM) = do
 
   drawSelectionBox sq
   return ()
+
+drawHostGraphWithMatches :: GraphState -> Maybe (Double,Double,Double,Double) -> Graph Info Info -> ([NodeId],[EdgeId]) -> Render ()
+drawHostGraphWithMatches state sq tg matchedElems = do
+  let g = stateGetGraph state
+      (nGI,eGI) = stateGetGI state
+      (sNodes,sEdges) = stateGetSelected state
+      z = stateGetZoom state
+      (px,py) = stateGetPan state
+
+  scale z z
+  translate px py
+
+  let matchedColor = (0.90,0.75,0.05)
+      bothColor' = (0.28,0.70,0.09)
+
+  -- draw the edges
+  forM (edges g) (\e -> do
+    let dstN = M.lookup (fromEnum . targetId $ e) nGI
+        srcN = M.lookup (fromEnum . sourceId $ e) nGI
+        egi  = M.lookup (fromEnum . edgeId   $ e) eGI
+        selected = (edgeId e) `elem` sEdges
+        matched = (edgeId e) `elem` (snd matchedElems)
+        color = case (selected,matched) of
+                 (False,False) -> (0,0,0)
+                 (False,True) -> matchedColor
+                 (True,False) -> selectColor
+                 (True,True) -> bothColor'
+    case (egi, srcN, dstN) of
+      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabelStr (edgeInfo e)) src dst (selected || matched) color False (0,0,0)
+      _ -> return ())
+
+  -- draw the nodes
+  forM (nodes g) (\n -> do
+    let ngi = M.lookup (fromEnum . nodeId $ n) nGI
+        info = nodeInfo n
+        label = infoLabelStr info
+        selected = (nodeId n) `elem` (sNodes)
+        matched = (nodeId n) `elem` (fst matchedElems)
+        color = case (selected,matched) of
+                  (False,False) -> (0,0,0)
+                  (False,True) -> matchedColor
+                  (True,False) -> selectColor
+                  (True,True) -> bothColor'
+    case (ngi) of
+      Just gi -> renderNode gi label (selected || matched) color False (0,0,0)
+      Nothing -> return ())
+
+  -- draw the selectionBox
+  drawSelectionBox sq
+  return ()
+
 
 
 drawSelectionBox:: Maybe (Double,Double,Double,Double) -> Render()

@@ -111,11 +111,35 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         Gtk.panedSetPosition execPane closePos
 
     -- canvas
-    setCanvasCallBacks mainCanvas hostState typeGraph (Just drawHostGraph) focusedCanvas focusedStateIORef
     setCanvasCallBacks ruleCanvas ruleState typeGraph (Just drawRuleGraph) focusedCanvas focusedStateIORef
     setCanvasCallBacks lCanvas lState kGraph (Just drawRuleSideGraph) focusedCanvas focusedStateIORef
     setCanvasCallBacks rCanvas rState kGraph (Just drawRuleSideGraph) focusedCanvas focusedStateIORef
     setCanvasCallBacks rCanvas rState kGraph (Just drawRuleSideGraph) focusedCanvas focusedStateIORef
+
+    (_,mainSqrSel) <- setCanvasCallBacks mainCanvas hostState typeGraph Nothing focusedCanvas focusedStateIORef
+    on  mainCanvas #draw $ \context -> do
+        es <- readIORef hostState
+        tg <- readIORef typeGraph
+        sq <- readIORef mainSqrSel
+        rIndex <- readIORef currentRuleIndex
+        mIndex <- readIORef currentMatchIndex
+        matchesM <- readIORef matchesMap
+        let matches = fromMaybe M.empty $ M.lookup rIndex matchesM
+            match = M.lookup mIndex matches
+            matchedElems = case match of
+                                Nothing -> ([],[])
+                                Just m ->  (matchedNodes,matchedEdges)
+                                        where 
+                                            mapping = TGM.mapping m
+                                            nRel = GM.nodeRelation mapping
+                                            eRel = GM.edgeRelation mapping 
+                                            nMapping = R.mapping nRel
+                                            eMapping = R.mapping eRel
+                                            matchedNodes = concat $ M.elems nMapping 
+                                            matchedEdges = concat $ M.elems eMapping
+        renderWithContext context $ drawHostGraphWithMatches es sq tg matchedElems
+        return False
+
     (_,nacSqrSel)<- setCanvasCallBacks nacCanvas nacState typeGraph Nothing focusedCanvas focusedStateIORef
     on nacCanvas #draw $ \context -> do
         es <- readIORef nacState
@@ -179,6 +203,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                 Gtk.widgetQueueDraw nacCanvas
             else return ()
 
+    -- use the comboBox on RuleViewer to select NAC graph to display
     on nacCBox #changed $ do
         index <- Gtk.comboBoxGetActive nacCBox
         if index == (-1)
@@ -210,14 +235,17 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                             writeIORef currentNACIndex nacIndex
 
     -- execution controls
+    -- when stop button is pressed, reset the host graph to initial state
     on stopBtn #pressed $ do
         statesM <- readIORef statesMap
         let initState = fromMaybe emptyState $ M.lookup 1 statesM
         writeIORef hostState initState
         writeIORef execStarted False
+        removeMatchesFromTreeStore store
         findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap
         Gtk.treeViewExpandAll treeView
-        
+    
+    -- when the step button is pressed, apply the match that is selected
     on stepBtn #pressed $ do
         matchesM <- readIORef matchesMap
         prodMap  <- readIORef productionMap
