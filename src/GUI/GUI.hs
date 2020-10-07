@@ -134,7 +134,7 @@ startGUI = do
 
   -- start executor module
   execStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt]
-  Exec.updateTreeStore execStore ("Rule0", 2, 3, 0)
+  Exec.updateTreeStore execStore ("Rule0", 2, 1, 0)
   (execPane, execCanvas, execNacCBox, execState, execStarted, execNacListMap) <- Exec.buildExecutor execStore statesMap typeGraph nacInfoMap focusedCanvas focusedStateIORef
 
   -- start analysis module
