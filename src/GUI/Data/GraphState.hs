@@ -16,6 +16,8 @@ module GUI.Data.GraphState(
 , createEdge
 , createEdges
 , deleteSelected
+, newEdgePos
+, newLoopPos
 , edgesFromTo
 , moveNodes
 , moveEdges
@@ -116,7 +118,7 @@ createEdge es srcNode tgtNode info autoNaming estyle ecolor = stateSetGraph newG
     eid = head $ newEdges graph
     info' = if infoLabel info == (Label "") && autoNaming then infoSetLabel info (show $ fromEnum eid) else info
     newGraph = insertEdgeWithPayload eid srcNode tgtNode info' graph
-    newPos = if (tgtNode == srcNode) then newLoopPos srcNode (graph,(ngiM,egiM)) else newEdgePos srcNode tgtNode (graph,(ngiM,egiM))
+    newPos = if (tgtNode == srcNode) then newLoopPos srcNode graph else newEdgePos srcNode tgtNode graph
     negi = EdgeGI {cPosition = newPos, color = ecolor, style = estyle}
     newEgiM = M.insert (fromEnum eid) negi egiM
 
@@ -131,7 +133,7 @@ createEdges es tgtNode info autoNaming estyle ecolor = stateSetGraph newGraph . 
                                     eid = head $ newEdges g
                                     info' = if infoLabel info == (Label "") && autoNaming then infoSetLabel info (show $ fromEnum eid) else info
                                     ng = insertEdgeWithPayload eid nid tgtNode info' g
-                                    newPos = if (tgtNode == nid) then newLoopPos nid (g,(ngiM,egiM)) else newEdgePos nid tgtNode (g,(ngiM,egiM))
+                                    newPos = if (tgtNode == nid) then newLoopPos nid g else newEdgePos nid tgtNode g
                                     negi = EdgeGI {cPosition = newPos, color = ecolor, style = estyle}
                                   in (ng, M.insert (fromEnum eid) negi giM, eid:eids))
 
@@ -163,21 +165,21 @@ edgesFromTo (n, context) (n', _) = foldl edgesTo [] econtexts
 
 
 -- calculate a position for the new edge
-newEdgePos :: NodeId -> NodeId -> (Graph a b, GraphicalInfo) -> (Double,Double)
-newEdgePos nid nid' (g, giM)= (-pi/2,30*k)
+newEdgePos :: NodeId -> NodeId -> Graph a b -> (Double,Double)
+newEdgePos nid nid' g = (-pi/2,30*k)
   where
     mContextSrc = lookupNodeInContext nid g
     mContextTgt = lookupNodeInContext nid' g
     k = case (mContextSrc,mContextTgt) of
       (Just csrc, Just ctgt) -> let thisLength = genericLength (edgesFromTo csrc ctgt)
-                                    otherLength = length (edgesFromTo ctgt csrc)
+                                    otherLength = genericLength (edgesFromTo ctgt csrc)
                                 in thisLength + if otherLength > 0 then 1 else 0
       _ -> 0
 
 
 -- calculate a position for the new loop
-newLoopPos :: NodeId -> (Graph a b, GraphicalInfo) -> (Double,Double)
-newLoopPos nid (g, giM)= (-pi/2,50+30*k)
+newLoopPos :: NodeId -> Graph a b -> (Double,Double)
+newLoopPos nid g = (-pi/2,50+30*k)
  where
    k = case lookupNodeInContext nid g of
      Just c -> genericLength $ edgesFromTo c c

@@ -35,6 +35,7 @@ import qualified Data.Relation as R
 import           GUI.Data.DiaGraph hiding (empty)
 import qualified GUI.Data.DiaGraph as DG
 import           GUI.Data.GraphState
+import           GUI.Data.GraphicalInfo
 import           GUI.Data.Info
 import           GUI.Data.Nac
 import           GUI.Render.Render
@@ -323,13 +324,31 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                     addedNodeGIs = map (\(k,kr) -> (k,fromJust $ M.lookup (fromEnum kr) rgiN)) addedNodeIds'
                     addedEdgeGIs = map (\(k,kr) -> (k,fromJust $ M.lookup (fromEnum kr) rgiE)) addedEdgeIds'
 
+                    -- reposition added edges ----------------
+                    -- 1. get src and tgt nodes from each edge in intermediary graph D;
+                let addedEdges = M.fromList $ map (\eid -> (eid, fromJust $ G.lookupEdge eid hGraph) ) addedEdgeIds
+                    addedEdgesPeerIds = M.map (\e -> (G.sourceId e,G.targetId e) ) addedEdges
+                    gNodeRelation' = R.inverseRelation gNodeRelation
+                    addedEdgesPeerIds' = M.map (\(src,tgt) -> (R.apply gNodeRelation' src, R.apply gNodeRelation' tgt)) addedEdgesPeerIds
+                    -- Map EdgeId ([NodeId],[NodeId])
+                    (_,edgesPositions) = M.foldrWithKey (\eid (srcl,tgtl) (g,m) ->  case (srcl,tgtl) of 
+                                                                    (src:_,tgt:_)-> let pos = if src == tgt then newLoopPos src g else newEdgePos src tgt g
+                                                                                        newId = head $ G.newEdges g
+                                                                                        g' = G.insertEdge newId src tgt g
+                                                                                    in (g',M.insert eid pos m)
+                                                                    _ -> (g,m))
+                                        (dGraph,M.empty) addedEdgesPeerIds'
+                    addedEdgeGIs' = map (\(k,gi) -> case M.lookup k edgesPositions of
+                                                        Nothing -> (k,gi)
+                                                        Just p -> (k,gi {cPosition = p})) addedEdgeGIs
+
+                    
                     {- TODO: set position of graphical informations avoiding overlapping
-                        Nodes should have a position relative to another node
-                        Edges positions are relative to to quantity of edges that are already there
+                        new nodes positions must be relative to preserved nodes if possible.
                     -} 
 
                     hgiN = M.mapKeys fromEnum $ foldr (\(k,gi) m -> M.insert k gi m) dgiN' addedNodeGIs
-                    hgiE = M.mapKeys fromEnum $ foldr (\(k,gi) m -> M.insert k gi m) dgiE' addedEdgeGIs
+                    hgiE = M.mapKeys fromEnum $ foldr (\(k,gi) m -> M.insert k gi m) dgiE' addedEdgeGIs'
                     hState = stateSetGraph finalGraph . stateSetGI (hgiN,hgiE) $ hostSt
 
                 writeIORef hostState hState
