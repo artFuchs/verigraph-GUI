@@ -41,6 +41,8 @@ import           GUI.Data.Nac
 import           GUI.Render.Render
 import           GUI.Render.GraphDraw
 import qualified GUI.Helper.GrammarMaker as GMker
+import           GUI.Helper.OverlapAvoider
+import           GUI.Helper.Geometry
 
 -- shouldn't use functions from editor module. Must refactore later
 import qualified GUI.Editor as Editor
@@ -269,8 +271,9 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                     fEdgeRelation = R.inverseRelation $ GM.edgeRelation fMapping -- G --fe'--> D
                     gNodeRelation = GM.nodeRelation gMapping                     -- D --gn--> H
                     gEdgeRelation = GM.edgeRelation gMapping                     -- D --ge--> H
-                    nNodeRelation = R.inverseRelation $ GM.nodeRelation nMapping -- H --nn'--> R
-                    nEdgeRelation = R.inverseRelation $ GM.edgeRelation nMapping -- H --ne'--> R
+                    nNodeRelation = GM.nodeRelation nMapping
+                    nNodeRelation' = R.inverseRelation $ GM.nodeRelation nMapping -- H --nn'--> R
+                    nEdgeRelation' = R.inverseRelation $ GM.edgeRelation nMapping -- H --ne'--> R
 
                 let apply rel k def = case R.apply rel k of [] -> def; id:_ -> id
                     replaceInfo (k,i) m = case lookup k m of Nothing -> i; Just i' -> i'
@@ -317,10 +320,11 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                     
                     rSt = fromJust $ M.lookup rIndex statesM
                     (rgiN,rgiE) = stateGetGI rSt
-                    addedNodeIds = filter (\id -> id `notElem` (M.keys dgiN')) (R.domain nNodeRelation)
-                    addedEdgeIds = filter (\id -> id `notElem` (M.keys dgiE')) (R.domain nEdgeRelation)
-                    addedNodeIds' = filter (\(_,kr) -> fromEnum kr > 0) $ map (\k -> (k, apply nNodeRelation k (-1))) addedNodeIds
-                    addedEdgeIds' = filter (\(_,kr) -> fromEnum kr > 0) $ map (\k -> (k, apply nEdgeRelation k (-1))) addedEdgeIds
+                    rGraph = stateGetGraph rSt
+                    addedNodeIds = filter (\id -> id `notElem` (M.keys dgiN')) (R.domain nNodeRelation')
+                    addedEdgeIds = filter (\id -> id `notElem` (M.keys dgiE')) (R.domain nEdgeRelation')
+                    addedNodeIds' = filter (\(_,kr) -> fromEnum kr > 0) $ map (\k -> (k, apply nNodeRelation' k (-1))) addedNodeIds
+                    addedEdgeIds' = filter (\(_,kr) -> fromEnum kr > 0) $ map (\k -> (k, apply nEdgeRelation' k (-1))) addedEdgeIds
                     addedNodeGIs = map (\(k,kr) -> (k,fromJust $ M.lookup (fromEnum kr) rgiN)) addedNodeIds'
                     addedEdgeGIs = map (\(k,kr) -> (k,fromJust $ M.lookup (fromEnum kr) rgiE)) addedEdgeIds'
 
@@ -330,7 +334,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                     addedEdgesPeerIds = M.map (\e -> (G.sourceId e,G.targetId e) ) addedEdges
                     gNodeRelation' = R.inverseRelation gNodeRelation
                     addedEdgesPeerIds' = M.map (\(src,tgt) -> (R.apply gNodeRelation' src, R.apply gNodeRelation' tgt)) addedEdgesPeerIds
-                    -- Map EdgeId ([NodeId],[NodeId])
+                    -- 2. find what would be the added edges positions in D
                     (_,edgesPositions) = M.foldrWithKey (\eid (srcl,tgtl) (g,m) ->  case (srcl,tgtl) of 
                                                                     (src:_,tgt:_)-> let pos = if src == tgt then newLoopPos src g else newEdgePos src tgt g
                                                                                         newId = head $ G.newEdges g
@@ -338,18 +342,56 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                                                                                     in (g',M.insert eid pos m)
                                                                     _ -> (g,m))
                                         (dGraph,M.empty) addedEdgesPeerIds'
+                    -- 3. update positions
                     addedEdgeGIs' = map (\(k,gi) -> case M.lookup k edgesPositions of
                                                         Nothing -> (k,gi)
                                                         Just p -> (k,gi {cPosition = p})) addedEdgeGIs
 
-                    
-                    {- TODO: set position of graphical informations avoiding overlapping
-                        new nodes positions must be relative to preserved nodes if possible.
-                    -} 
+                    -- reposition added nodes -----------
+                    -- 1. find an anchor node foreach added node in R
+                    addedNodesInContext = map (\(k,kr) -> (k,kr,G.lookupNodeInContext kr rGraph)) addedNodeIds'
+                    addedNodesInContext' = map (\(k,kr,nc) -> (k,kr,fromJust nc) ) $ filter (\(_,_,nc) -> not $ null nc) addedNodesInContext
+                    anchorNodesInR = map (\(k,kr,(n,c)) -> let  nextNodes = [tgt | (_,_,tgt) <- G.outgoingEdges c]
+                                                                prevNodes = [src | (src,_,_) <- G.incomingEdges c]
+                                                                nextPreserved = filter (\(n,c) -> (infoOperation $ G.nodeInfo n) == Preserve) nextNodes
+                                                                prevPreserved = filter (\(n,c) -> (infoOperation $ G.nodeInfo n) == Preserve) prevNodes
+                                                                anchorNodeId = case (nextPreserved,prevPreserved,nextNodes,prevNodes) of
+                                                                                ([],[],[],[]) -> Nothing
+                                                                                ([],[],(n,c):ns,_) -> Just (G.nodeId n)
+                                                                                ([],[],[],(n,c):ns) -> Just (G.nodeId n)
+                                                                                ([],(n,c):ns,_,_) -> Just (G.nodeId n)
+                                                                                ((n,c):ns,_,_,_) -> Just (G.nodeId n)
+                                                            in (k,kr,anchorNodeId)
+                                                            ) addedNodesInContext'
+                    anchorNodesInR' = map (\(k,kr,krA) -> (k,kr,fromJust krA)) $ filter (\(k,kr,krA) -> not $ null krA) anchorNodesInR
+                    -- 2. calculate the relative position between each added node and it's anchor
+                    subPoints (a,b) (c,d) = (a-c,b-d)
+                    relPositions = map (\(k,kr,krA) ->  let gi = getNodeGI (fromEnum kr) rgiN
+                                                            giA = getNodeGI (fromEnum krA) rgiN
+                                                            relPosition = subPoints (position gi) (position giA)
+                                                        in (k,krA,relPosition)
+                                                        ) anchorNodesInR'
+                    anchorNodesInH = map (\(k,krA,rpos) -> (k,R.apply nNodeRelation krA,rpos)) relPositions
+                    -- 3. calculate position in H
+                    addedNodePositions = M.fromList 
+                                            $ map (\(k,kAs,rpos) -> let gi = case kAs of
+                                                                            [] -> Nothing
+                                                                            kA:_ -> M.lookup kA dgiN'
+                                                                        pos = Just (\gi -> addPoint (position gi) rpos) <*> gi
+                                                                    in (k,pos)
+                                                                    ) anchorNodesInH
+                    -- 4. add to GI
+                    addedNodeGIs' = map (\(k,gi) -> let newPos = M.lookup k addedNodePositions
+                                                        gi' = case newPos of 
+                                                                Just (Just pos) -> gi {position = pos}
+                                                                _ -> gi
+                                                        gi'' = repositionNode gi' (M.mapKeys fromEnum dgiN',M.empty)
+                                                    in (k,gi'')
+                                                    ) addedNodeGIs
 
-                    hgiN = M.mapKeys fromEnum $ foldr (\(k,gi) m -> M.insert k gi m) dgiN' addedNodeGIs
+                    hgiN = M.mapKeys fromEnum $ foldr (\(k,gi) m -> M.insert k gi m) dgiN' addedNodeGIs'
                     hgiE = M.mapKeys fromEnum $ foldr (\(k,gi) m -> M.insert k gi m) dgiE' addedEdgeGIs'
-                    hState = stateSetGraph finalGraph . stateSetGI (hgiN,hgiE) $ hostSt
+                    hState = stateSetSelected (addedNodeIds,addedEdgeIds) . stateSetGraph finalGraph . stateSetGI (hgiN,hgiE) $ hostSt
 
                 writeIORef hostState hState
                 Gtk.widgetQueueDraw mainCanvas

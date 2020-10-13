@@ -275,7 +275,7 @@ drawRuleSideGraph state sq k = do
                         NRect   -> addPoint (position gi) (-(fst . dims $ gi),0)
                         NSquare -> let a = maximum [fst . dims $ gi, snd . dims $ gi]
                                  in addPoint (position gi) ((-a/2),0)
-              let pos = addPoint (position gi) (-(fst . dims $ gi), -(snd . dims $ gi))
+              --let pos = addPoint (position gi) (-(fst . dims $ gi), -(snd . dims $ gi))
               pL <- GRPC.createLayout (show (fromEnum $ nodeId n))
               desc <- liftIO $ GRP.fontDescriptionFromString "Sans Bold 10"
               liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
@@ -366,6 +366,7 @@ drawHostGraphWithMatches state sq tg matchedElems = do
 
   let matchedColor = (0.90,0.75,0.05)
       bothColor' = (0.28,0.70,0.09)
+  let (idr, idg, idb) = (0.5,0.5,0.5) --(0.57, 0.47, 0)
 
   -- draw the edges
   forM (edges g) (\e -> do
@@ -396,8 +397,23 @@ drawHostGraphWithMatches state sq tg matchedElems = do
                   (True,False) -> selectColor
                   (True,True) -> bothColor'
     case (ngi) of
-      Just gi -> renderNode gi label (selected || matched) color False (0,0,0)
-      Nothing -> return ())
+      Just gi -> do 
+        renderNode gi label (selected || matched) color False (0,0,0)
+        let pos = case shape gi of
+                  NCircle -> let diam = maximum [fst . dims $ gi, snd . dims $ gi]
+                              in addPoint (position gi) ((-diam/2), 0)
+                  NRect   -> addPoint (position gi) (-(fst . dims $ gi),0)
+                  NSquare -> let a = maximum [fst . dims $ gi, snd . dims $ gi]
+                            in addPoint (position gi) ((-a/2),0)
+        pL <- GRPC.createLayout (show (fromEnum $ nodeId n))
+        desc <- liftIO $ GRP.fontDescriptionFromString "Sans Bold 10"
+        liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
+        setSourceRGB idr idg idb
+        moveTo (fst pos) (snd pos)
+        showLayout pL
+      Nothing -> return ()
+
+    )
 
   -- draw the selectionBox
   drawSelectionBox sq
