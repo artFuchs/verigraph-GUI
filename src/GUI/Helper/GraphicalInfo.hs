@@ -4,7 +4,7 @@
     Functions to help handling the graphical information of elements of the graph, 
       especially concerning the label of nodes and edges.
 -}
-module GUI.Editor.Helper.GraphicalInfo(
+module GUI.Helper.GraphicalInfo(
   getStringDims
 , updateNodesGiDims
 , renameSelected

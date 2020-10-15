@@ -58,13 +58,13 @@ import           GUI.Dialogs
 import           GUI.Helper.List
 import           GUI.Helper.Geometry
 import           GUI.Helper.GrammarMaker
+import           GUI.Helper.GraphicalInfo
 import           GUI.Helper.GraphValidation
 import           GUI.Render.Render
 import           GUI.Render.GraphDraw
 
 -- Editor modules
 import GUI.Editor.Helper.Clipboard
-import GUI.Editor.Helper.GraphicalInfo
 import GUI.Editor.Helper.Nac
 import GUI.Editor.Helper.SaveLoad
 import GUI.Editor.Helper.TypeInfer

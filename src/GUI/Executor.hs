@@ -43,6 +43,7 @@ import           GUI.Render.GraphDraw
 import qualified GUI.Helper.GrammarMaker as GMker
 import           GUI.Helper.OverlapAvoider
 import           GUI.Helper.Geometry
+import           GUI.Helper.GraphicalInfo
 
 -- shouldn't use functions from editor module. Must refactore later
 import qualified GUI.Editor as Editor
@@ -386,10 +387,14 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                                                                 Just (Just pos) -> gi {position = pos}
                                                                 _ -> gi
                                                         gi'' = repositionNode gi' (M.mapKeys fromEnum dgiN',M.empty)
+
                                                     in (k,gi'')
                                                     ) addedNodeGIs
+                -- update nodes dimensions
+                context <- Gtk.widgetGetPangoContext mainCanvas
+                addedNodeGIs'' <- updateNodesGiDims (M.mapKeys fromEnum $ M.fromList addedNodeGIs') finalGraph context
 
-                    hgiN = M.mapKeys fromEnum $ foldr (\(k,gi) m -> M.insert k gi m) dgiN' addedNodeGIs'
+                let hgiN = foldr (\(k,gi) m -> M.insert k gi m) (M.mapKeys fromEnum $ dgiN') (M.toList addedNodeGIs'')
                     hgiE = M.mapKeys fromEnum $ foldr (\(k,gi) m -> M.insert k gi m) dgiE' addedEdgeGIs'
                     hState = stateSetSelected (addedNodeIds,addedEdgeIds) . stateSetGraph finalGraph . stateSetGI (hgiN,hgiE) $ hostSt
 

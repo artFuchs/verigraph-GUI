@@ -23,10 +23,10 @@ import GUI.Data.DiaGraph
 import GUI.Data.GraphState
 import GUI.Data.Info
 import GUI.Data.Nac
-import GUI.Editor.Helper.GraphicalInfo
 import GUI.Helper.GrammarMaker
-import GUI.Helper.List
+import GUI.Helper.GraphicalInfo
 import GUI.Helper.GraphValidation
+import GUI.Helper.List
 
 import Control.Monad
 import Control.Monad.IO.Class
