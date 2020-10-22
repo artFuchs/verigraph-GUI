@@ -710,50 +710,51 @@ startEditor window store
   -- choose a type in the type nodeTypeCBox for nodes
   on nodeTypeCBox #changed $ do
     gt <- readIORef currentGraphType
-    if gt < 2
-      then return () -- if the current graph type is 
-      else do
-        index <- Gtk.comboBoxGetActive nodeTypeCBox
-        if index == (-1)
-          then return ()
-          else do
-            typeInfo <- Gtk.comboBoxTextGetActiveText nodeTypeCBox >>= return . T.unpack
-            typeNGI <- readIORef possibleNodeTypes >>= return . fst . fromJust . M.lookup typeInfo
-            es <- readIORef currentState
-            
-            let (sNids,sEids) = stateGetSelected es
-                g = stateGetGraph es
-                -- foreach selected node, change their types
-                acceptableSNids = filter (\nid -> case lookupNode nid g of
-                                                    Nothing -> False
-                                                    Just n -> not $ infoLocked (nodeInfo n)) sNids
-                giM = stateGetGI es
-                g' = foldr (\nid g -> updateNodePayload nid g (\info -> infoSetType info typeInfo)) g acceptableSNids
-                newNGI = foldr  (\nid giM -> let ngi = getNodeGI (fromEnum nid) giM
-                                            --in M.insert (fromEnum nid) (nodeGiSetPosition (position ngi) . nodeGiSetDims (dims ngi) $ typeNGI) gi) (fst giM) acceptableSNids
-                                            in M.insert (fromEnum nid) (typeNGI {position = position ngi, dims = dims ngi}) giM) 
-                                (fst giM)
-                                acceptableSNids
-                es' = stateSetGraph g' . stateSetGI (newNGI, snd giM) $ es
+    index <- Gtk.comboBoxGetActive nodeTypeCBox
+    case (index<0,gt<2) of
+      (True,_) -> return ()
+      (False,True) -> do
+        typeInfo <- Gtk.comboBoxTextGetActiveText nodeTypeCBox >>= return . T.unpack
+        writeIORef currentNodeType $ Just typeInfo
+      (False,False) -> do
+        typeInfo <- Gtk.comboBoxTextGetActiveText nodeTypeCBox >>= return . T.unpack
+        typeNGI <- readIORef possibleNodeTypes >>= return . fst . fromJust . M.lookup typeInfo
+        es <- readIORef currentState
+        
+        let (sNids,sEids) = stateGetSelected es
+            g = stateGetGraph es
+            -- foreach selected node, change their types
+            acceptableSNids = filter (\nid -> case lookupNode nid g of
+                                                Nothing -> False
+                                                Just n -> not $ infoLocked (nodeInfo n)) sNids
+            giM = stateGetGI es
+            g' = foldr (\nid g -> updateNodePayload nid g (\info -> infoSetType info typeInfo)) g acceptableSNids
+            newNGI = foldr  (\nid giM -> let ngi = getNodeGI (fromEnum nid) giM
+                                        --in M.insert (fromEnum nid) (nodeGiSetPosition (position ngi) . nodeGiSetDims (dims ngi) $ typeNGI) gi) (fst giM) acceptableSNids
+                                        in M.insert (fromEnum nid) (typeNGI {position = position ngi, dims = dims ngi}) giM) 
+                            (fst giM)
+                            acceptableSNids
+            es' = stateSetGraph g' . stateSetGI (newNGI, snd giM) $ es
 
-                -- foreach changed node, change the type of the edges connected to it
-            typesE <- readIORef possibleEdgeTypes >>= return . M.map fst
-            tg <- readIORef typeGraph
-            let es'' = infereEdgesTypesAfterNodeChange es' tg typesE
-              
-            case gt of
-              4 -> do
-                nacInfoM <- readIORef nacInfoMap
-                index <- readIORef currentGraph
-                let ((ng,ngiM), nacM) = fromJust $ M.lookup index nacInfoM
-                    newNG = extractNacGraph (stateGetGraph es'') nacM
-                    newNGIM = extractNacGI (stateGetGraph es'') (stateGetGI es'') nacM
-                modifyIORef nacInfoMap $ M.insert index ((newNG, newNGIM), nacM)
-              _ -> return ()
-            writeIORef currentState es''
-            writeIORef currentNodeType $ Just typeInfo
-            Gtk.widgetQueueDraw canvas
-            setCurrentValidFlag store currentState typeGraph currentPath
+            -- foreach changed node, change the type of the edges connected to it
+        typesE <- readIORef possibleEdgeTypes >>= return . M.map fst
+        tg <- readIORef typeGraph
+        let es'' = infereEdgesTypesAfterNodeChange es' tg typesE
+          
+        if gt == 4 
+          then do
+            nacInfoM <- readIORef nacInfoMap
+            index <- readIORef currentGraph
+            let ((ng,ngiM), nacM) = fromJust $ M.lookup index nacInfoM
+                newNG = extractNacGraph (stateGetGraph es'') nacM
+                newNGIM = extractNacGI (stateGetGraph es'') (stateGetGI es'') nacM
+            modifyIORef nacInfoMap $ M.insert index ((newNG, newNGIM), nacM)
+          else return ()
+
+        writeIORef currentState es''
+        writeIORef currentNodeType $ Just typeInfo
+        Gtk.widgetQueueDraw canvas
+        setCurrentValidFlag store currentState typeGraph currentPath
 
   -- choose a type in the type comboBox for edges
   on edgeTypeCBox #changed $ do
@@ -1725,6 +1726,10 @@ updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSele
     -- update the comboBoxes
     updateComboBoxText nodeTypeCBox (map T.pack $ M.keys pNT)
     updateComboBoxText edgeTypeCBox (map T.pack $ M.keys pET)
+    selNT <- Gtk.comboBoxGetActive nodeTypeCBox
+    if selNT < 0 && M.size pNT > 0
+      then Gtk.comboBoxSetActive nodeTypeCBox 0
+      else return ()
     -- update the valid flags
     states <- readIORef graphStates
     setValidFlags store tg states
