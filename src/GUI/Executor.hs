@@ -23,6 +23,7 @@ import           Data.GI.Base
 import           Data.GI.Base.ManagedPtr (unsafeCastTo)
 import           Data.Int
 import qualified Data.Text                as T
+import           System.Random
 
 -- Verigraph modules
 import qualified Abstract.Category        as Cat
@@ -82,6 +83,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     nacCBox <- Gtk.builderGetObject builder "nacCBox" >>= unsafeCastTo Gtk.ComboBoxText . fromJust
 
     stopBtn <- Gtk.builderGetObject builder "stopBtn" >>= unsafeCastTo Gtk.Button . fromJust
+    startBtn <- Gtk.builderGetObject builder "startBtn" >>= unsafeCastTo Gtk.Button . fromJust
     stepBtn <- Gtk.builderGetObject builder "stepBtn" >>= unsafeCastTo Gtk.Button . fromJust
 
     treeView <- Gtk.builderGetObject builder "treeView" >>= unsafeCastTo Gtk.TreeView . fromJust
@@ -269,13 +271,44 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                 -- apply match to get mapping between graphs
                 context <- Gtk.widgetGetPangoContext mainCanvas
                 applyMatch hostState statesMap rIndex context p m
+                --update GUI
                 Gtk.widgetQueueDraw mainCanvas
-
                 removeMatchesFromTreeStore store
+                -- find next matches
                 findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap
                 Gtk.treeViewExpandAll treeView
             _ -> return ()
+    
+    on startBtn #pressed $ do
+        matchesM <- readIORef matchesMap
+        prodMap  <- readIORef productionMap
+
+        -- Map ri (Map mi m) -> [(ri,[m])] -> [(ri,m)]
+        let matchesLL = M.toList $ M.map M.elems matchesM
+            mkpairs (x,[]) = []
+            mkpairs (x,y:ys) = (x,y): mkpairs (x,ys)
+            matchesEntries = concat $ map mkpairs matchesLL
+
+        -- get a random match from a random rule
+        if length matchesEntries == 0
+            then return ()
+            else do
+                index <- randomRIO (0,(length matchesEntries)-1)
+                let (rIndex, match) = matchesEntries!!index
+                    prod = fromJust $ M.lookup rIndex prodMap
+                -- apply match to get mapping between graphs
+                context <- Gtk.widgetGetPangoContext mainCanvas
+                applyMatch hostState statesMap rIndex context prod match
+                --update GUI
+                Gtk.widgetQueueDraw mainCanvas
+                removeMatchesFromTreeStore store
+                -- find next matches
+                findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap
+                Gtk.treeViewExpandAll treeView
+
+
         
+            
 
     
     #show executorPane
