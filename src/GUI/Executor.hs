@@ -8,46 +8,50 @@ module GUI.Executor (
 ) where
 
 -- GTK related modules
-import qualified GI.Gtk as Gtk
-import qualified GI.Gdk as Gdk
-import Graphics.Rendering.Cairo (Render)
+import qualified GI.Gtk                   as Gtk
+import qualified GI.Gdk                   as Gdk
+import qualified GI.Pango                 as P
+import Graphics.Rendering.Cairo           (Render)
 
 -- basic modules
 import           Control.Monad
 import           Control.Monad.IO.Class
 import           Data.IORef
 import           Data.Maybe
-import qualified Data.Map as M
+import qualified Data.Map                 as M
 import           Data.GI.Base
 import           Data.GI.Base.ManagedPtr (unsafeCastTo)
 import           Data.Int
-import qualified Data.Text as T
+import qualified Data.Text                as T
 
 -- Verigraph modules
-import qualified Abstract.Category as Cat
-import qualified Abstract.Rewriting.DPO as DPO
+import qualified Abstract.Category        as Cat
+import qualified Abstract.Rewriting.DPO   as DPO
 import qualified Data.TypedGraph.Morphism as TGM
-import qualified Data.Graphs.Morphism as GM
-import qualified Data.Graphs as G
-import qualified Data.Relation as R
+import qualified Data.Graphs.Morphism     as GM
+import qualified Data.Graphs              as G
+import qualified Data.Relation            as R
 
 -- Verigraph-GUI modules
-import           GUI.Data.DiaGraph hiding (empty)
-import qualified GUI.Data.DiaGraph as DG
+import           GUI.Data.DiaGraph        hiding (empty)
+import qualified GUI.Data.DiaGraph        as DG
 import           GUI.Data.GraphState
 import           GUI.Data.GraphicalInfo
 import           GUI.Data.Info
 import           GUI.Data.Nac
 import           GUI.Render.Render
 import           GUI.Render.GraphDraw
-import qualified GUI.Helper.GrammarMaker as GMker
+import qualified GUI.Helper.GrammarMaker  as GMker
 import           GUI.Helper.OverlapAvoider
 import           GUI.Helper.Geometry
 import           GUI.Helper.GraphicalInfo
 
 -- shouldn't use functions from editor module. Must refactore later
-import qualified GUI.Editor as Editor
-import qualified GUI.Editor.Helper.Nac as Nac
+import qualified GUI.Editor               as Editor
+import qualified GUI.Editor.Helper.Nac    as Nac
+
+type TGMProduction = DPO.Production (TGM.TypedGraphMorphism Info Info)
+type Match = TGM.TypedGraphMorphism Info Info
 
 buildExecutor :: Gtk.TreeStore 
               -> IORef (M.Map Int32 GraphState) 
@@ -102,8 +106,8 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     currentNACIndex    <- newIORef (-1 :: Int32) -- index of current selected NAC
     currentRuleIndex   <- newIORef (-1 :: Int32) -- index of currentRule
 
-    productionMap <- newIORef (M.empty :: M.Map Int32 (DPO.Production (TGM.TypedGraphMorphism Info Info)))
-    matchesMap <- newIORef (M.empty :: M.Map Int32 (M.Map Int32 (TGM.TypedGraphMorphism Info Info)))
+    productionMap <- newIORef (M.empty :: M.Map Int32 TGMProduction)
+    matchesMap <- newIORef (M.empty :: M.Map Int32 (M.Map Int32 Match))
     currentMatchIndex <- newIORef (-1 :: Int32) -- index of current match
 
     execStarted  <- newIORef False   -- if execution has already started
@@ -263,151 +267,14 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         case (prod,match) of
             (Just p, Just m) -> do                
                 -- apply match to get mapping between graphs
-                let (k,n,f,g) = DPO.calculateDPO m p        
-                    fMapping = TGM.mapping f
-                    gMapping = TGM.mapping g
-                    nMapping = TGM.mapping n
-                    
-                    fNodeRelation = R.inverseRelation $ GM.nodeRelation fMapping -- G --fn'--> D
-                    fEdgeRelation = R.inverseRelation $ GM.edgeRelation fMapping -- G --fe'--> D
-                    gNodeRelation = GM.nodeRelation gMapping                     -- D --gn--> H
-                    gEdgeRelation = GM.edgeRelation gMapping                     -- D --ge--> H
-                    nNodeRelation = GM.nodeRelation nMapping
-                    nNodeRelation' = R.inverseRelation $ GM.nodeRelation nMapping -- H --nn'--> R
-                    nEdgeRelation' = R.inverseRelation $ GM.edgeRelation nMapping -- H --ne'--> R
-
-                let apply rel k def = case R.apply rel k of [] -> def; id:_ -> id
-                    replaceInfo (k,i) m = case lookup k m of Nothing -> i; Just i' -> i'
-
-
-                -- make sure the mapped elements preserve the information between transformations
-                let gGraph = GM.domainGraph fMapping
-                    dGraph = GM.codomainGraph fMapping
-                    hGraph = GM.codomainGraph gMapping
-
-                    gNodesInfo = map (\(k,n) -> (apply fNodeRelation k (G.NodeId (-1)), G.nodeInfo n)) (G.nodeMap gGraph)
-                    gEdgesInfo = map (\(k,e) -> (apply fEdgeRelation k (G.EdgeId (-1)), G.edgeInfo e)) (G.edgeMap gGraph)
-                    
-                    dNodesInfo = map (\(k,n) -> (k, G.nodeInfo n)) (G.nodeMap dGraph)
-                    dEdgesInfo = map (\(k,e) -> (k, G.edgeInfo e)) (G.edgeMap dGraph)
-                    dNodesInfo' = map (\(k,ni) -> (apply gNodeRelation k (G.NodeId (-1)), replaceInfo (k,ni) gNodesInfo) ) dNodesInfo
-                    dEdgesInfo' = map (\(k,ei) -> (apply gEdgeRelation k (G.EdgeId (-1)), replaceInfo (k,ei) gEdgesInfo) ) dEdgesInfo
-
-                    hNodesInfo = map (\(k,n) -> (k, replaceInfo (k, G.nodeInfo n) dNodesInfo')) (G.nodeMap hGraph)
-                    hEdgesInfo = map (\(k,e) -> (k, replaceInfo (k, G.edgeInfo e) dEdgesInfo')) (G.edgeMap hGraph)
-                    
-                    hGraph' = foldr (\(k,i) g -> G.updateNodePayload k g (\ni -> i)) hGraph hNodesInfo
-                    hGraph'' = foldr (\(k,i) g -> G.updateEdgePayload k g (\ei -> i)) hGraph' hEdgesInfo
-                    hNodeMap' = map (\(k,n) -> (k, GMker.nodeFromJust n)) (G.nodeMap hGraph'')
-                    hEdgeMap' = map (\(k,e) -> (k, GMker.edgeFromJust e)) (G.edgeMap hGraph'')
-                    finalNodeMap = map (\(k,n) -> (k, n {G.nodeInfo = infoSetOperation (G.nodeInfo n) Preserve})) hNodeMap'
-                    finalEdgeMap = map (\(k,e) -> (k, e {G.edgeInfo = infoSetOperation (G.edgeInfo e) Preserve})) hEdgeMap'
-                    finalGraph = G.Graph finalNodeMap finalEdgeMap
-
-                -- modify graphical information to match the modifications
-                hostSt <- readIORef hostState
-                statesM <- readIORef statesMap
-                let (sgiN,sgiE) = stateGetGI hostSt
-                    -- delete layouts of elements that are not in the f morphism (G --f--> D)
-                    sgiN' = M.mapKeys G.NodeId $ M.filterWithKey (\k _ -> G.NodeId k `elem` (R.domain fNodeRelation)) sgiN
-                    sgiE' = M.mapKeys G.EdgeId $ M.filterWithKey (\k _ -> G.EdgeId k `elem` (R.domain fEdgeRelation)) sgiE
-                    -- modify the ids of the elements that are in the f morphism (G --f--> D)
-                    dgiN  = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply fNodeRelation k (G.NodeId (-1))) sgiN'
-                    dgiE  = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply fEdgeRelation k (G.EdgeId (-1))) sgiE'
-                    -- modify the ids of the elements that are in the g morphism (D --g--> H)
-                    dgiN' = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply gNodeRelation k (G.NodeId (-1))) dgiN
-                    dgiE' = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply gEdgeRelation k (G.EdgeId (-1))) dgiE
-                    -- add layouts to the elements of codomain of g morphism that have no relation to elements of it's domain
-                    
-                    rSt = fromJust $ M.lookup rIndex statesM
-                    (rgiN,rgiE) = stateGetGI rSt
-                    rGraph = stateGetGraph rSt
-                    addedNodeIds = filter (\id -> id `notElem` (M.keys dgiN')) (R.domain nNodeRelation')
-                    addedEdgeIds = filter (\id -> id `notElem` (M.keys dgiE')) (R.domain nEdgeRelation')
-                    addedNodeIds' = filter (\(_,kr) -> fromEnum kr > 0) $ map (\k -> (k, apply nNodeRelation' k (-1))) addedNodeIds
-                    addedEdgeIds' = filter (\(_,kr) -> fromEnum kr > 0) $ map (\k -> (k, apply nEdgeRelation' k (-1))) addedEdgeIds
-                    addedNodeGIs = map (\(k,kr) -> (k,fromJust $ M.lookup (fromEnum kr) rgiN)) addedNodeIds'
-                    addedEdgeGIs = map (\(k,kr) -> (k,fromJust $ M.lookup (fromEnum kr) rgiE)) addedEdgeIds'
-
-                    -- reposition added edges ----------------
-                    -- 1. get src and tgt nodes from each edge in intermediary graph D;
-                let addedEdges = M.fromList $ map (\eid -> (eid, fromJust $ G.lookupEdge eid hGraph) ) addedEdgeIds
-                    addedEdgesPeerIds = M.map (\e -> (G.sourceId e,G.targetId e) ) addedEdges
-                    gNodeRelation' = R.inverseRelation gNodeRelation
-                    addedEdgesPeerIds' = M.map (\(src,tgt) -> (R.apply gNodeRelation' src, R.apply gNodeRelation' tgt)) addedEdgesPeerIds
-                    -- 2. find what would be the added edges positions in D
-                    (_,edgesPositions) = M.foldrWithKey (\eid (srcl,tgtl) (g,m) ->  case (srcl,tgtl) of 
-                                                                    (src:_,tgt:_)-> let pos = if src == tgt then newLoopPos src g else newEdgePos src tgt g
-                                                                                        newId = head $ G.newEdges g
-                                                                                        g' = G.insertEdge newId src tgt g
-                                                                                    in (g',M.insert eid pos m)
-                                                                    _ -> (g,m))
-                                        (dGraph,M.empty) addedEdgesPeerIds'
-                    -- 3. update positions
-                    addedEdgeGIs' = map (\(k,gi) -> case M.lookup k edgesPositions of
-                                                        Nothing -> (k,gi)
-                                                        Just p -> (k,gi {cPosition = p})) addedEdgeGIs
-
-                    -- reposition added nodes -----------
-                    -- 1. find an anchor node foreach added node in R
-                    addedNodesInContext = map (\(k,kr) -> (k,kr,G.lookupNodeInContext kr rGraph)) addedNodeIds'
-                    addedNodesInContext' = map (\(k,kr,nc) -> (k,kr,fromJust nc) ) $ filter (\(_,_,nc) -> not $ null nc) addedNodesInContext
-                    anchorNodesInR = map (\(k,kr,(n,c)) -> let  nextNodes = [tgt | (_,_,tgt) <- G.outgoingEdges c]
-                                                                prevNodes = [src | (src,_,_) <- G.incomingEdges c]
-                                                                nextPreserved = filter (\(n,c) -> (infoOperation $ G.nodeInfo n) == Preserve) nextNodes
-                                                                prevPreserved = filter (\(n,c) -> (infoOperation $ G.nodeInfo n) == Preserve) prevNodes
-                                                                anchorNodeId = case (nextPreserved,prevPreserved,nextNodes,prevNodes) of
-                                                                                ([],[],[],[]) -> Nothing
-                                                                                ([],[],(n,c):ns,_) -> Just (G.nodeId n)
-                                                                                ([],[],[],(n,c):ns) -> Just (G.nodeId n)
-                                                                                ([],(n,c):ns,_,_) -> Just (G.nodeId n)
-                                                                                ((n,c):ns,_,_,_) -> Just (G.nodeId n)
-                                                            in (k,kr,anchorNodeId)
-                                                            ) addedNodesInContext'
-                    anchorNodesInR' = map (\(k,kr,krA) -> (k,kr,fromJust krA)) $ filter (\(k,kr,krA) -> not $ null krA) anchorNodesInR
-                    -- 2. calculate the relative position between each added node and it's anchor
-                    subPoints (a,b) (c,d) = (a-c,b-d)
-                    relPositions = map (\(k,kr,krA) ->  let gi = getNodeGI (fromEnum kr) rgiN
-                                                            giA = getNodeGI (fromEnum krA) rgiN
-                                                            relPosition = subPoints (position gi) (position giA)
-                                                        in (k,krA,relPosition)
-                                                        ) anchorNodesInR'
-                    anchorNodesInH = map (\(k,krA,rpos) -> (k,R.apply nNodeRelation krA,rpos)) relPositions
-                    -- 3. calculate position in H
-                    addedNodePositions = M.fromList 
-                                            $ map (\(k,kAs,rpos) -> let gi = case kAs of
-                                                                            [] -> Nothing
-                                                                            kA:_ -> M.lookup kA dgiN'
-                                                                        pos = Just (\gi -> addPoint (position gi) rpos) <*> gi
-                                                                    in (k,pos)
-                                                                    ) anchorNodesInH
-                    -- 4. add to GI
-                    addedNodeGIs' = map (\(k,gi) -> let newPos = M.lookup k addedNodePositions
-                                                        gi' = case newPos of 
-                                                                Just (Just pos) -> gi {position = pos}
-                                                                _ -> gi
-                                                        gi'' = repositionNode gi' (M.mapKeys fromEnum dgiN',M.empty)
-
-                                                    in (k,gi'')
-                                                    ) addedNodeGIs
-                -- update nodes dimensions
                 context <- Gtk.widgetGetPangoContext mainCanvas
-                addedNodeGIs'' <- updateNodesGiDims (M.mapKeys fromEnum $ M.fromList addedNodeGIs') finalGraph context
-
-                let hgiN = foldr (\(k,gi) m -> M.insert k gi m) (M.mapKeys fromEnum $ dgiN') (M.toList addedNodeGIs'')
-                    hgiE = M.mapKeys fromEnum $ foldr (\(k,gi) m -> M.insert k gi m) dgiE' addedEdgeGIs'
-                    hState = stateSetSelected (addedNodeIds,addedEdgeIds) . stateSetGraph finalGraph . stateSetGI (hgiN,hgiE) $ hostSt
-
-                writeIORef hostState hState
+                applyMatch hostState statesMap rIndex context p m
                 Gtk.widgetQueueDraw mainCanvas
 
                 removeMatchesFromTreeStore store
                 findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap
                 Gtk.treeViewExpandAll treeView
-            
             _ -> return ()
-
-            
         
 
     
@@ -451,8 +318,8 @@ findMatches :: Gtk.TreeStore
             -> IORef (G.Graph Info Info) 
             -> IORef (M.Map Int32 NacInfo)
             -> IORef (M.Map Int32 [(String,Int32)])
-            -> IORef (M.Map Int32 (M.Map Int32 (TGM.TypedGraphMorphism Info Info)))
-            -> IORef (M.Map Int32 (DPO.Production (TGM.TypedGraphMorphism Info Info)))
+            -> IORef (M.Map Int32 (M.Map Int32 Match))
+            -> IORef (M.Map Int32 TGMProduction)
             -> IO ()
 findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap = do
         -- get matches of each rule in the initial graph
@@ -492,6 +359,140 @@ findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap
         
         forM_ matchesEntries $ \entry -> updateTreeStore store entry
 
+
+applyMatch :: IORef GraphState -> IORef (M.Map Int32 GraphState) -> Int32 -> P.Context -> TGMProduction -> Match -> IO ()
+applyMatch hostState statesMap rIndex context p m = do
+    let (k,n,f,g) = DPO.calculateDPO m p        
+        fMapping = TGM.mapping f
+        gMapping = TGM.mapping g
+        nMapping = TGM.mapping n
+        fNodeRelation' = R.inverseRelation $ GM.nodeRelation fMapping -- G --fn'--> D
+        fEdgeRelation' = R.inverseRelation $ GM.edgeRelation fMapping -- G --fe'--> D
+        gNodeRelation = GM.nodeRelation gMapping                      -- D --gn--> H
+        gEdgeRelation = GM.edgeRelation gMapping                      -- D --ge--> H
+        nNodeRelation = GM.nodeRelation nMapping                      -- R --nn--> H
+        nNodeRelation' = R.inverseRelation $ GM.nodeRelation nMapping -- H --nn'--> R
+        nEdgeRelation' = R.inverseRelation $ GM.edgeRelation nMapping -- H --ne'--> R
+
+    let apply rel k def = case R.apply rel k of [] -> def; id:_ -> id
+        replaceInfo (k,i) m = case lookup k m of Nothing -> i; Just i' -> i'
+
+    -- make sure the mapped elements preserve the information between transformations
+    let gGraph = GM.domainGraph fMapping
+        dGraph = GM.codomainGraph fMapping
+        hGraph = GM.codomainGraph gMapping
+
+        gNodesInfo = map (\(k,n) -> (apply fNodeRelation' k (G.NodeId (-1)), G.nodeInfo n)) (G.nodeMap gGraph)
+        gEdgesInfo = map (\(k,e) -> (apply fEdgeRelation' k (G.EdgeId (-1)), G.edgeInfo e)) (G.edgeMap gGraph)
+        
+        dNodesInfo = map (\(k,n) -> (k, G.nodeInfo n)) (G.nodeMap dGraph)
+        dEdgesInfo = map (\(k,e) -> (k, G.edgeInfo e)) (G.edgeMap dGraph)
+        dNodesInfo' = map (\(k,ni) -> (apply gNodeRelation k (G.NodeId (-1)), replaceInfo (k,ni) gNodesInfo) ) dNodesInfo
+        dEdgesInfo' = map (\(k,ei) -> (apply gEdgeRelation k (G.EdgeId (-1)), replaceInfo (k,ei) gEdgesInfo) ) dEdgesInfo
+
+        hNodesInfo = map (\(k,n) -> (k, replaceInfo (k, G.nodeInfo n) dNodesInfo')) (G.nodeMap hGraph)
+        hEdgesInfo = map (\(k,e) -> (k, replaceInfo (k, G.edgeInfo e) dEdgesInfo')) (G.edgeMap hGraph)
+        
+        hGraph' = foldr (\(k,i) g -> G.updateNodePayload k g (\ni -> i)) hGraph hNodesInfo
+        hGraph'' = foldr (\(k,i) g -> G.updateEdgePayload k g (\ei -> i)) hGraph' hEdgesInfo
+        hNodeMap' = map (\(k,n) -> (k, GMker.nodeFromJust n)) (G.nodeMap hGraph'')
+        hEdgeMap' = map (\(k,e) -> (k, GMker.edgeFromJust e)) (G.edgeMap hGraph'')
+        finalNodeMap = map (\(k,n) -> (k, n {G.nodeInfo = infoSetOperation (G.nodeInfo n) Preserve})) hNodeMap'
+        finalEdgeMap = map (\(k,e) -> (k, e {G.edgeInfo = infoSetOperation (G.edgeInfo e) Preserve})) hEdgeMap'
+        finalGraph = G.Graph finalNodeMap finalEdgeMap
+
+    -- modify graphical information to match the modifications
+    hostSt <- readIORef hostState
+    statesM <- readIORef statesMap
+    let (sgiN,sgiE) = stateGetGI hostSt
+        -- delete layouts of elements that are not in the f morphism (G --f--> D)
+        sgiN' = M.mapKeys G.NodeId $ M.filterWithKey (\k _ -> G.NodeId k `elem` (R.domain fNodeRelation')) sgiN
+        sgiE' = M.mapKeys G.EdgeId $ M.filterWithKey (\k _ -> G.EdgeId k `elem` (R.domain fEdgeRelation')) sgiE
+        -- modify the ids of the elements that are in the f morphism (G --f--> D)
+        dgiN  = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply fNodeRelation' k (G.NodeId (-1))) sgiN'
+        dgiE  = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply fEdgeRelation' k (G.EdgeId (-1))) sgiE'
+        -- modify the ids of the elements that are in the g morphism (D --g--> H)
+        dgiN' = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply gNodeRelation k (G.NodeId (-1))) dgiN
+        dgiE' = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply gEdgeRelation k (G.EdgeId (-1))) dgiE
+
+        -- add layouts to the elements of codomain of g morphism that have no relation to elements of it's domain
+        rSt = fromJust $ M.lookup rIndex statesM
+        (rgiN,rgiE) = stateGetGI rSt
+        rGraph = stateGetGraph rSt
+        addedNodeIds = filter (\id -> id `notElem` (M.keys dgiN')) (R.domain nNodeRelation')
+        addedEdgeIds = filter (\id -> id `notElem` (M.keys dgiE')) (R.domain nEdgeRelation')
+        addedNodeIds' = filter (\(_,kr) -> fromEnum kr > 0) $ map (\k -> (k, apply nNodeRelation' k (-1))) addedNodeIds
+        addedEdgeIds' = filter (\(_,kr) -> fromEnum kr > 0) $ map (\k -> (k, apply nEdgeRelation' k (-1))) addedEdgeIds
+        addedNodeGIs = map (\(k,kr) -> (k,fromJust $ M.lookup (fromEnum kr) rgiN)) addedNodeIds'
+        addedEdgeGIs = map (\(k,kr) -> (k,fromJust $ M.lookup (fromEnum kr) rgiE)) addedEdgeIds'
+
+        -- reposition added edges ----------------
+        -- 1. get src and tgt nodes from each edge in intermediary graph D;
+    let addedEdges = M.fromList $ map (\eid -> (eid, fromJust $ G.lookupEdge eid hGraph) ) addedEdgeIds
+        gNodeRelation' = R.inverseRelation gNodeRelation
+        addedEdgesPeerIds = M.map (\e -> (R.apply gNodeRelation' $ G.sourceId e, R.apply gNodeRelation' $ G.targetId e)) addedEdges
+        -- 2. find what would be the added edges positions in D
+        (_,edgesPositions) = M.foldrWithKey (\eid (srcl,tgtl) (g,m) ->  case (srcl,tgtl) of 
+                                                        (src:_,tgt:_)-> let pos = if src == tgt then newLoopPos src g else newEdgePos src tgt g
+                                                                            newId = head $ G.newEdges g
+                                                                            g' = G.insertEdge newId src tgt g
+                                                                        in (g',M.insert eid pos m)
+                                                        _ -> (g,m))
+                            (dGraph,M.empty) addedEdgesPeerIds
+        -- 3. update positions of the GIs
+        addedEdgeGIs' = map (\(k,gi) -> case M.lookup k edgesPositions of
+                                            Nothing -> (k,gi)
+                                            Just p -> (k,gi {cPosition = p})) addedEdgeGIs
+
+        -- reposition added nodes -----------
+        -- 1. find an anchor node foreach added node in R
+        addedNodesInContext = map (\(k,kr) -> (k,kr,G.lookupNodeInContext kr rGraph)) addedNodeIds'
+        addedNodesInContext' = map (\(k,kr,nc) -> (k,kr,fromJust nc) ) $ filter (\(_,_,nc) -> not $ null nc) addedNodesInContext
+        anchorNodesInR = map (\(k,kr,(n,c)) -> let  nextNodes = [tgt | (_,_,tgt) <- G.outgoingEdges c]
+                                                    prevNodes = [src | (src,_,_) <- G.incomingEdges c]
+                                                    nextPreserved = filter (\(n,c) -> (infoOperation $ G.nodeInfo n) == Preserve) nextNodes
+                                                    prevPreserved = filter (\(n,c) -> (infoOperation $ G.nodeInfo n) == Preserve) prevNodes
+                                                    anchorNodeId = case (nextPreserved,prevPreserved,nextNodes,prevNodes) of
+                                                                    ([],[],[],[]) -> Nothing
+                                                                    ([],[],(n,c):ns,_) -> Just (G.nodeId n)
+                                                                    ([],[],[],(n,c):ns) -> Just (G.nodeId n)
+                                                                    ([],(n,c):ns,_,_) -> Just (G.nodeId n)
+                                                                    ((n,c):ns,_,_,_) -> Just (G.nodeId n)
+                                                in (k,kr,anchorNodeId)
+                                                ) addedNodesInContext'
+        anchorNodesInR' = map (\(k,kr,krA) -> (k,kr,fromJust krA)) $ filter (\(k,kr,krA) -> not $ null krA) anchorNodesInR
+        -- 2. calculate the relative position between each added node and it's anchor
+        subPoints (a,b) (c,d) = (a-c,b-d)
+        relPositions = map (\(k,kr,krA) ->  let gi = getNodeGI (fromEnum kr) rgiN
+                                                giA = getNodeGI (fromEnum krA) rgiN
+                                                relPosition = subPoints (position gi) (position giA)
+                                            in (k,krA,relPosition)
+                                            ) anchorNodesInR'
+        anchorNodesInH = map (\(k,krA,rpos) -> (k,R.apply nNodeRelation krA,rpos)) relPositions
+        -- 3. calculate position in H
+        addedNodePositions = M.fromList 
+                                $ map (\(k,kAs,rpos) -> let gi = case kAs of
+                                                                [] -> Nothing
+                                                                kA:_ -> M.lookup kA dgiN'
+                                                            pos = Just (\gi -> addPoint (position gi) rpos) <*> gi
+                                                        in (k,pos)
+                                                        ) anchorNodesInH
+        -- 4. add to GI
+        addedNodeGIs' = map (\(k,gi) -> let newPos = M.lookup k addedNodePositions
+                                            gi' = case newPos of 
+                                                    Just (Just pos) -> gi {position = pos}
+                                                    _ -> gi
+                                            gi'' = repositionNode gi' (M.mapKeys fromEnum dgiN',M.empty)
+                                        in (k,gi'')
+                                        ) addedNodeGIs
+    -- update nodes dimensions
+    addedNodeGIs'' <- updateNodesGiDims (M.mapKeys fromEnum $ M.fromList addedNodeGIs') finalGraph context
+
+    let hgiN = foldr (\(k,gi) m -> M.insert k gi m) (M.mapKeys fromEnum $ dgiN') (M.toList addedNodeGIs'')
+        hgiE = M.mapKeys fromEnum $ foldr (\(k,gi) m -> M.insert k gi m) dgiE' addedEdgeGIs'
+        hState = stateSetSelected (addedNodeIds,addedEdgeIds) . stateSetGraph finalGraph . stateSetGI (hgiN,hgiE) $ hostSt
+
+    writeIORef hostState hState
 
 {-| ExecGraphEntry
     A tuple representing what is showed in each node of the tree in the treeview
