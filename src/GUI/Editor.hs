@@ -1012,6 +1012,8 @@ startEditor window store
         n <- Gtk.treeModelIterNChildren store (Just parent)
         iter <- Gtk.treeStoreAppend store (Just parent)
         storeSetGraphStore store iter ("Rule" ++ (show n), 0, newKey, 3, True, True)
+        path <- Gtk.treeModelGetPath store iter
+        Gtk.treeViewExpandToPath treeview path
         modifyIORef graphStates (M.insert newKey emptyState)
         modifyIORef undoStack (M.insert newKey [])
         modifyIORef redoStack (M.insert newKey [])
@@ -1043,8 +1045,9 @@ startEditor window store
               then removeNacs nacIter
               else return ()
             index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue
-            Gtk.treeStoreRemove store iter
             modifyIORef graphStates $ M.delete index
+            Gtk.treeStoreRemove store iter
+            return ()
           4 -> do 
             removeNac iter
             return ()
@@ -1083,6 +1086,8 @@ startEditor window store
             n <- Gtk.treeModelIterNChildren store (Just iterR)
             iterN <- Gtk.treeStoreAppend store (Just iterR)
             storeSetGraphStore store iterN ("NAC" ++ (show n), 0, newKey, 4, True, True)
+            path <- Gtk.treeModelGetPath store iterN
+            Gtk.treeViewExpandToPath treeview path
             modifyIORef nacInfoMap (M.insert newKey (DG.empty,(nodeMap,edgeMap)))
             modifyIORef graphStates (M.insert newKey (stateSetGraph lhs . stateSetGI (ngi',egi') $ emptyState))
             modifyIORef undoStack (M.insert newKey [])

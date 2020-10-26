@@ -160,6 +160,11 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         renderWithContext context $ drawNACGraph es sq tg mm
         return False
     
+    on store #rowInserted $ \path iter -> do
+        _ <- Gtk.treePathUp path
+        _ <- Gtk.treeViewExpandRow treeView path False
+        return ()
+
     -- when select a rule, change their states
     on treeView #cursorChanged $ do
         selection <- Gtk.treeViewGetSelection treeView
@@ -168,6 +173,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
             then do
                 t <- Gtk.treeModelGetValue model iter 2 >>= fromGValue :: IO Int32
                 (rIndex,mIndex) <- case t of
+                    0 -> return (-1,-1)
                     1 -> do 
                         ri <- Gtk.treeModelGetValue model iter 1 >>= fromGValue :: IO Int32
                         return (ri,-1) 
@@ -532,9 +538,8 @@ applyMatch hostState statesMap rIndex context p m = do
     It contains the informations:
     * name,
     * id,
-    * type (1 - rule, 2 - rule match),
+    * type (0 - topic, 1 - rule, 2 - rule match),
     * parent id (used if type is NAC).
-    * active
 -}
 type ExecGraphEntry = (String, Int32, Int32, Int32)
 
@@ -547,15 +552,30 @@ storeSetGraphEntry store iter (n,i,t,p) = do
     gvp <- toGValue p
     #set store iter [0,1,2,3] [gvn,gvi,gvt,gvp]
 
+getFirstRuleIter :: Gtk.TreeStore -> IO (Maybe Gtk.TreeIter)
+getFirstRuleIter store = do
+    (valid,rootIter) <- Gtk.treeModelGetIterFirst store
+    if valid 
+        then do
+            (valid,childIter) <- Gtk.treeModelIterChildren store (Just rootIter)
+            if valid
+                then return $ Just childIter
+                else return Nothing
+        else do
+            rootIter <- Gtk.treeStoreAppend store Nothing
+            storeSetGraphEntry store rootIter ("Grammar", (-1), 0, (-1))
+            return Nothing
+
 -- search the treeStore for an entry. If the entry is found then update it, else create the entry.
 updateTreeStore :: Gtk.TreeStore -> ExecGraphEntry -> IO ()
 updateTreeStore store entry = do
-    (valid,iter) <- Gtk.treeModelGetIterFirst store
-    if valid
-        then updateTreeStore' store iter entry
-        else do
-            iter <- Gtk.treeStoreAppend store Nothing
+    mIter <- getFirstRuleIter store
+    case mIter of
+        Nothing -> do
+            (valid,rootIter) <- Gtk.treeModelGetIterFirst store
+            iter <- Gtk.treeStoreAppend store (Just rootIter)
             storeSetGraphEntry store iter entry
+        Just iter -> updateTreeStore' store iter entry        
 
 updateTreeStore' :: Gtk.TreeStore -> Gtk.TreeIter -> ExecGraphEntry -> IO ()
 updateTreeStore' store iter entry@(n,i,t,p) = do
@@ -564,7 +584,11 @@ updateTreeStore' store iter entry@(n,i,t,p) = do
     if ct == t && cid == i
         then storeSetGraphEntry store iter entry
         else case t of
-            1 -> updateInList Nothing
+            1 -> do 
+                (valid,rootIter) <- Gtk.treeModelIterParent store iter
+                if valid
+                    then updateInList rootIter
+                    else return ()
             2 -> case (ct==1,cid==p) of
                 (True,True) -> do
                     (valid,childIter) <- Gtk.treeModelIterChildren store (Just iter)
@@ -581,7 +605,7 @@ updateTreeStore' store iter entry@(n,i,t,p) = do
                 _ -> do
                     (valid,parentIter) <- Gtk.treeModelIterParent store iter
                     if valid
-                        then updateInList (Just parentIter)
+                        then updateInList parentIter
                         else return ()
             _ -> return ()
 
@@ -591,17 +615,17 @@ updateTreeStore' store iter entry@(n,i,t,p) = do
             if valid
                 then updateTreeStore' store iter entry
                 else do
-                    newIter <- Gtk.treeStoreAppend store parentIter
+                    newIter <- Gtk.treeStoreAppend store (Just parentIter)
                     storeSetGraphEntry store newIter entry
         
 
 
 removeFromTreeStore :: Gtk.TreeStore -> Int32 -> IO ()
 removeFromTreeStore store index = do
-    (valid, iter) <- Gtk.treeModelGetIterFirst store
-    if valid
-        then removeFromTreeStore' store iter index
-        else return ()
+    mIter <- getFirstRuleIter store
+    case mIter of
+        Nothing -> return ()
+        Just iter -> removeFromTreeStore' store iter index
 
 removeFromTreeStore' :: Gtk.TreeStore -> Gtk.TreeIter -> Int32 -> IO ()
 removeFromTreeStore' store iter index = do
@@ -618,33 +642,33 @@ removeFromTreeStore' store iter index = do
 
 
 
--- remove entries that contains invalid keys for the Map that it refers to
-removeTrashFromTreeStore :: Gtk.TreeStore -> M.Map Int32 GraphState -> IO ()
-removeTrashFromTreeStore store statesMap = do
-    (valid, iter) <- Gtk.treeModelGetIterFirst store
-    if valid
-        then removeTrashFromTreeStore' store iter statesMap
-        else return ()
+-- remove entries that contains invalid indexes - must pass a list of valid indexes
+removeTrashFromTreeStore :: Gtk.TreeStore -> [Int32] -> IO ()
+removeTrashFromTreeStore store validIndexes = do
+    mIter <- getFirstRuleIter store
+    case mIter of
+        Nothing -> return ()
+        Just iter -> removeTrashFromTreeStore' store iter validIndexes
 
-removeTrashFromTreeStore' :: Gtk.TreeStore -> Gtk.TreeIter -> M.Map Int32 GraphState -> IO ()
-removeTrashFromTreeStore' store iter statesMap = do
+removeTrashFromTreeStore' :: Gtk.TreeStore -> Gtk.TreeIter -> [Int32] -> IO ()
+removeTrashFromTreeStore' store iter validIndexes = do
     index <- Gtk.treeModelGetValue store iter 1 >>= fromGValue :: IO Int32
-    state <- return $ M.lookup index statesMap
-    continue <- case state of
-        Just st -> Gtk.treeModelIterNext store iter                    
-        Nothing -> Gtk.treeStoreRemove store iter
+    continue <- case index `elem` validIndexes of
+        True -> Gtk.treeModelIterNext store iter                    
+        False -> Gtk.treeStoreRemove store iter
     if continue
-        then removeTrashFromTreeStore' store iter statesMap
+        then removeTrashFromTreeStore' store iter validIndexes
         else return ()
 
 -- get the GraphStates that are referenciated by the treeStore    
 treeStoreGetRules :: Gtk.TreeStore -> IORef (M.Map Int32 GraphState) -> IO [(Int32,GraphState)]
 treeStoreGetRules store statesMap = do
-    statesM <- readIORef statesMap
-    (valid,iter) <- Gtk.treeModelGetIterFirst store
-    if valid
-        then treeStoreGetRules' store iter statesM
-        else return []
+    mIter <- getFirstRuleIter store
+    case mIter of
+        Nothing -> return []
+        Just iter -> do
+            statesM <- readIORef statesMap
+            treeStoreGetRules' store iter statesM
 
 treeStoreGetRules' :: Gtk.TreeStore -> Gtk.TreeIter -> M.Map Int32 GraphState -> IO [(Int32,GraphState)]
 treeStoreGetRules' store iter statesMap = do
@@ -661,10 +685,10 @@ treeStoreGetRules' store iter statesMap = do
 -- remove entries of matches from the treeStore
 removeMatchesFromTreeStore :: Gtk.TreeStore -> IO ()
 removeMatchesFromTreeStore store = do
-    (valid,iter) <- Gtk.treeModelGetIterFirst store
-    if valid
-        then removeMatchesFromTreeStore' store iter
-        else return ()
+    mIter <- getFirstRuleIter store
+    case mIter of
+        Nothing -> return ()
+        Just iter -> removeMatchesFromTreeStore' store iter
 
 removeMatchesFromTreeStore' :: Gtk.TreeStore -> Gtk.TreeIter -> IO ()
 removeMatchesFromTreeStore' store iter = do

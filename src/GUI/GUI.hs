@@ -201,8 +201,28 @@ startGUI = do
 
   -- when a rule or nac is deleted from editStore, remove the correspondent from execStore
   after editStore #rowDeleted $ \path -> do
-    statesM <- readIORef statesMap
-    Exec.removeTrashFromTreeStore execStore statesM
+    -- get the list of rule indexes in the editStore
+    let getIndexes iter = do
+          i <- Gtk.treeModelGetValue editStore iter 2 >>= fromGValue :: IO Int32
+          continue <- Gtk.treeModelIterNext editStore iter
+          next <- if continue
+            then getIndexes iter
+            else return []
+          return (i:next)
+
+    (hasRules, fstRuleIter) <- Gtk.treeModelGetIterFromString editStore "2:0"
+    if hasRules 
+      then do 
+        ruleIndexes <- getIndexes fstRuleIter 
+        Exec.removeTrashFromTreeStore execStore ruleIndexes
+      else Exec.removeTrashFromTreeStore execStore []
+    
+    
+
+    
+    
+      
+
     
   on tabs #switchPage $ \page pageNum -> do
     -- update statesMap with the information of editorState
