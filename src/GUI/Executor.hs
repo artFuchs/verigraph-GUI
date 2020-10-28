@@ -263,54 +263,26 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     
     -- when the step button is pressed, apply the match that is selected
     on stepBtn #pressed $ do
-        matchesM <- readIORef matchesMap
-        prodMap  <- readIORef productionMap
-        mIndex <- readIORef currentMatchIndex
-        rIndex <- readIORef currentRuleIndex
-
-        let prod = M.lookup rIndex prodMap
-            matches = fromMaybe M.empty $ M.lookup rIndex matchesM
-            match = M.lookup mIndex matches
-
-        case (prod,match) of
-            (Just p, Just m) -> do                
-                -- apply match to get mapping between graphs
-                context <- Gtk.widgetGetPangoContext mainCanvas
-                applyMatch hostState statesMap rIndex context p m
-                --update GUI
-                Gtk.widgetQueueDraw mainCanvas
-                removeMatchesFromTreeStore store
-                -- find next matches
-                findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap
-                Gtk.treeViewExpandAll treeView
-            _ -> return ()
+        context <- Gtk.widgetGetPangoContext mainCanvas
+        --apply match
+        applyMatchAccordingToLevel hostState statesMap context matchesMap productionMap currentMatchIndex currentRuleIndex
+        --update GUI
+        Gtk.widgetQueueDraw mainCanvas
+        removeMatchesFromTreeStore store
+        -- find next matches
+        findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap
     
     on startBtn #pressed $ do
-        matchesM <- readIORef matchesMap
-        prodMap  <- readIORef productionMap
-
-        -- Map ri (Map mi m) -> [(ri,[m])] -> [(ri,m)]
-        let matchesLL = M.toList $ M.map M.elems matchesM
-            mkpairs (x,[]) = []
-            mkpairs (x,y:ys) = (x,y): mkpairs (x,ys)
-            matchesEntries = concat $ map mkpairs matchesLL
-
-        -- get a random match from a random rule
-        if length matchesEntries == 0
-            then return ()
-            else do
-                index <- randomRIO (0,(length matchesEntries)-1)
-                let (rIndex, match) = matchesEntries!!index
-                    prod = fromJust $ M.lookup rIndex prodMap
-                -- apply match to get mapping between graphs
-                context <- Gtk.widgetGetPangoContext mainCanvas
-                applyMatch hostState statesMap rIndex context prod match
-                --update GUI
-                Gtk.widgetQueueDraw mainCanvas
-                removeMatchesFromTreeStore store
-                -- find next matches
-                findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap
-                Gtk.treeViewExpandAll treeView
+        -- TODO: Iterate the application of matches until no more matches exist
+        context <- Gtk.widgetGetPangoContext mainCanvas
+        --apply match
+        applyMatchAccordingToLevel hostState statesMap context matchesMap productionMap currentMatchIndex currentRuleIndex
+        --update GUI
+        Gtk.widgetQueueDraw mainCanvas
+        removeMatchesFromTreeStore store
+        -- find next matches
+        findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap
+        Gtk.treeViewExpandAll treeView
 
 
         
@@ -398,6 +370,58 @@ findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap
         
         forM_ matchesEntries $ \entry -> updateTreeStore store entry
 
+-- apply matches according to the selected level on the treeView.
+-- select top level (Grammar) to full randomness
+-- select a prodution to get random matches of that production
+-- select a match to no randomness
+-- the selected level is given by currentMatchIndex and currentRuleIndex
+applyMatchAccordingToLevel :: IORef GraphState 
+                            -> IORef (M.Map Int32 GraphState) 
+                            -> P.Context 
+                            -> IORef (M.Map Int32 (M.Map Int32 Match)) 
+                            -> IORef (M.Map Int32 TGMProduction)
+                            -> IORef Int32
+                            -> IORef Int32
+                            -> IO ()
+applyMatchAccordingToLevel hostState statesMap context matchesMap productionMap currentMatchIndex currentRuleIndex= do
+    matchesM <- readIORef matchesMap
+    prodMap  <- readIORef productionMap
+    mIndex <- readIORef currentMatchIndex
+    rIndex <- readIORef currentRuleIndex
+    
+    let prod = M.lookup rIndex prodMap
+        matches = fromMaybe M.empty $ M.lookup rIndex matchesM
+        match = M.lookup mIndex matches
+
+    -- apply match according to the level selected
+    case (prod,match, rIndex, mIndex) of 
+        (Just p, Just m, _, _) -> do  -- specified rule, specified match           
+            applyMatch hostState statesMap rIndex context p m
+
+        (Just p,Nothing, _, -1) -> do -- specified rule, random match
+            let matchesL = M.elems matches
+            if length matchesL == 0
+                then return ()
+                else do
+                    index <- randomRIO (0, (length matchesL)-1)
+                    let m = matchesL!!index
+                    applyMatch hostState statesMap rIndex context p m
+
+        (Nothing,Nothing,-1,-1) -> do -- full random
+            let matchesLL = M.toList $ M.map M.elems matchesM
+                mkpairs (x,[]) = []
+                mkpairs (x,y:ys) = (x,y): mkpairs (x,ys)
+                matchesEntries = concat $ map mkpairs matchesLL
+            if length matchesEntries == 0
+                then return ()
+                else do
+                    index <- randomRIO (0,(length matchesEntries)-1)
+                    let (rIndex, m) = matchesEntries!!index
+                        p = fromJust $ M.lookup rIndex prodMap                        
+                    applyMatch hostState statesMap rIndex context p m
+        _ -> return ()
+
+    
 
 applyMatch :: IORef GraphState -> IORef (M.Map Int32 GraphState) -> Int32 -> P.Context -> TGMProduction -> Match -> IO ()
 applyMatch hostState statesMap rIndex context p m = do
