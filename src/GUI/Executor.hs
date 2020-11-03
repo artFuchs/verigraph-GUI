@@ -13,6 +13,10 @@ import qualified GI.Gdk                   as Gdk
 import qualified GI.Pango                 as P
 import Graphics.Rendering.Cairo           (Render)
 
+-- modules needed for threads
+import           Control.Concurrent
+import qualified GI.GLib as GLib
+
 -- basic modules
 import           Control.Monad
 import           Control.Monad.IO.Class
@@ -89,8 +93,8 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     treeView <- Gtk.builderGetObject builder "treeView" >>= unsafeCastTo Gtk.TreeView . fromJust
     Gtk.treeViewSetModel treeView (Just store)
 
-    firstRulePath <- Gtk.treePathNewFromIndices [0]
-    Gtk.treeViewSetCursor treeView firstRulePath Gtk.noTreeViewColumn False
+    rootPath <- Gtk.treePathNewFromIndices [0]
+    Gtk.treeViewSetCursor treeView rootPath Gtk.noTreeViewColumn False
 
     -- IORefs -------------------------------------------------------------------------------------------------------------------
     hostState   <- newIORef emptyState -- state refering to the init graph with rules applied
@@ -113,6 +117,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     currentMatchIndex <- newIORef (-1 :: Int32) -- index of current match
 
     execStarted  <- newIORef False   -- if execution has already started
+    execThread  <- newIORef Nothing
 
     -- callbacks ----------------------------------------------------------------------------------------------------------------
     -- hide rule viewer panel when colse button is pressed
@@ -160,10 +165,10 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         renderWithContext context $ drawNACGraph es sq tg mm
         return False
     
-    on store #rowInserted $ \path iter -> do
-        _ <- Gtk.treePathUp path
-        _ <- Gtk.treeViewExpandRow treeView path False
-        return ()
+    -- on store #rowInserted $ \path iter -> do
+    --     _ <- Gtk.treePathUp path
+    --     _ <- Gtk.treeViewExpandRow treeView path False
+    --     return ()
 
     -- when select a rule, change their states
     on treeView #cursorChanged $ do
@@ -253,44 +258,73 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     -- execution controls
     -- when stop button is pressed, reset the host graph to initial state
     on stopBtn #pressed $ do
+        writeIORef execStarted False
+        mThread <- readIORef execThread
+        case mThread of
+            Nothing -> return ()
+            Just t -> do 
+                killThread t
+                writeIORef execThread Nothing
         statesM <- readIORef statesMap
         let initState = fromMaybe emptyState $ M.lookup 1 statesM
         writeIORef hostState initState
-        writeIORef execStarted False
         removeMatchesFromTreeStore store
         findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap
         Gtk.treeViewExpandAll treeView
     
     -- when the step button is pressed, apply the match that is selected
-    on stepBtn #pressed $ do
-        context <- Gtk.widgetGetPangoContext mainCanvas
-        --apply match
-        applyMatchAccordingToLevel hostState statesMap context matchesMap productionMap currentMatchIndex currentRuleIndex
-        --update GUI
-        Gtk.widgetQueueDraw mainCanvas
-        removeMatchesFromTreeStore store
-        -- find next matches
-        findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap
+    on stepBtn #pressed $ do 
+        started <- readIORef execStarted
+        if started
+            then return ()
+            else do
+                context <- Gtk.widgetGetPangoContext mainCanvas
+                --apply match
+                applyMatchAccordingToLevel hostState statesMap context matchesMap productionMap currentMatchIndex currentRuleIndex
+                --update GUI
+                Gtk.widgetQueueDraw mainCanvas
+                removeMatchesFromTreeStore store
+                -- find next matches
+                findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap
     
     on startBtn #pressed $ do
-        -- TODO: Iterate the application of matches until no more matches exist
-        context <- Gtk.widgetGetPangoContext mainCanvas
-        --apply match
-        applyMatchAccordingToLevel hostState statesMap context matchesMap productionMap currentMatchIndex currentRuleIndex
-        --update GUI
-        Gtk.widgetQueueDraw mainCanvas
-        removeMatchesFromTreeStore store
-        -- find next matches
-        findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap
-        Gtk.treeViewExpandAll treeView
-
-
-        
-            
-
+        started <- readIORef execStarted
+        if started
+            then return () 
+            else do 
+                writeIORef execStarted True
+                execT <- forkIO $ executeMultipleSteps store mainCanvas typeGraph hostState statesMap nacInfoMap nacListMap matchesMap productionMap currentMatchIndex currentRuleIndex
+                writeIORef execThread $ Just execT
+                return ()
     
     #show executorPane
     return (executorPane, mainCanvas, nacCBox, hostState, execStarted, nacListMap)
+
+
+executeMultipleSteps store mainCanvas typeGraph hostState statesMap nacInfoMap nacListMap matchesMap productionMap currentMatchIndex currentRuleIndex = do
+    Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
+        executeStep store mainCanvas typeGraph hostState statesMap nacInfoMap nacListMap matchesMap productionMap currentMatchIndex currentRuleIndex
+        return False
+    matchesM <- readIORef matchesMap
+    let allMatches = concat $ M.elems $ M.map M.elems matchesM
+    if length allMatches > 0
+        then do 
+            threadDelay 500000
+            executeMultipleSteps store mainCanvas typeGraph hostState statesMap nacInfoMap nacListMap matchesMap productionMap currentMatchIndex currentRuleIndex
+        else return ()
+
+
+executeStep store mainCanvas typeGraph hostState statesMap nacInfoMap nacListMap matchesMap productionMap currentMatchIndex currentRuleIndex = do
+    context <- Gtk.widgetGetPangoContext mainCanvas
+    --apply match
+    applyMatchAccordingToLevel hostState statesMap context matchesMap productionMap currentMatchIndex currentRuleIndex
+    --update GUI
+    Gtk.widgetQueueDraw mainCanvas
+    removeMatchesFromTreeStore store
+    -- find next matches
+    findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap
+
+
 
 type SquareSelection = Maybe (Double,Double,Double,Double)
 setCanvasCallBacks :: Gtk.DrawingArea 
