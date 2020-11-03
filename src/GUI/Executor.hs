@@ -89,6 +89,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     stopBtn <- Gtk.builderGetObject builder "stopBtn" >>= unsafeCastTo Gtk.Button . fromJust
     startBtn <- Gtk.builderGetObject builder "startBtn" >>= unsafeCastTo Gtk.Button . fromJust
     stepBtn <- Gtk.builderGetObject builder "stepBtn" >>= unsafeCastTo Gtk.Button . fromJust
+    pauseBtn <- Gtk.builderGetObject builder "pauseBtn" >>= unsafeCastTo Gtk.Button . fromJust
 
     treeView <- Gtk.builderGetObject builder "treeView" >>= unsafeCastTo Gtk.TreeView . fromJust
     Gtk.treeViewSetModel treeView (Just store)
@@ -271,6 +272,16 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         removeMatchesFromTreeStore store
         findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap
         Gtk.treeViewExpandAll treeView
+
+    -- when pause button is pressed, kills the execution thread
+    on pauseBtn #pressed $ do
+        writeIORef execStarted False
+        mThread <- readIORef execThread
+        case mThread of
+            Nothing -> return ()
+            Just t -> do 
+                killThread t
+                writeIORef execThread Nothing
     
     -- when the step button is pressed, apply the match that is selected
     on stepBtn #pressed $ do 
