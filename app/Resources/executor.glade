@@ -3,10 +3,9 @@
 <interface>
   <requires lib="gtk+" version="3.20"/>
   <object class="GtkAdjustment" id="adjustment1">
-    <property name="lower">0.01</property>
-    <property name="upper">10</property>
+    <property name="upper">5</property>
     <property name="value">0.10000000000000001</property>
-    <property name="step_increment">0.01</property>
+    <property name="step_increment">0.10000000000000001</property>
     <property name="page_increment">10</property>
   </object>
   <object class="GtkPaned" id="executorPane">
@@ -80,7 +79,7 @@
                     <property name="visible">True</property>
                     <property name="can_focus">True</property>
                     <property name="receives_default">True</property>
-                    <property name="tooltip_text" translatable="yes">stope execution</property>
+                    <property name="tooltip_text" translatable="yes">stop execution</property>
                     <property name="image_position">right</property>
                     <property name="always_show_image">True</property>
                     <child>
@@ -102,6 +101,7 @@
                     <property name="visible">True</property>
                     <property name="can_focus">True</property>
                     <property name="receives_default">True</property>
+                    <property name="tooltip_text" translatable="yes">start execution</property>
                     <property name="image_position">right</property>
                     <property name="always_show_image">True</property>
                     <child>
@@ -123,6 +123,7 @@
                     <property name="visible">True</property>
                     <property name="can_focus">True</property>
                     <property name="receives_default">True</property>
+                    <property name="tooltip_text" translatable="yes">pause execution</property>
                     <child>
                       <object class="GtkImage" id="pauseImg">
                         <property name="visible">True</property>
@@ -142,7 +143,7 @@
                     <property name="visible">True</property>
                     <property name="can_focus">True</property>
                     <property name="receives_default">True</property>
-                    <property name="tooltip_text" translatable="yes">give a step forward in execution</property>
+                    <property name="tooltip_text" translatable="yes">execute one step</property>
                     <property name="image_position">right</property>
                     <property name="always_show_image">True</property>
                     <child>
@@ -160,16 +161,17 @@
                   </packing>
                 </child>
                 <child>
-                  <object class="GtkSpinButton" id="btnExecSpeed">
+                  <object class="GtkSpinButton" id="execSpeedBtn">
                     <property name="visible">True</property>
                     <property name="can_focus">True</property>
+                    <property name="tooltip_text" translatable="yes">delay between execution steps (in seconds)</property>
                     <property name="max_width_chars">4</property>
                     <property name="text" translatable="yes">0</property>
                     <property name="progress_pulse_step">0</property>
                     <property name="input_purpose">number</property>
                     <property name="adjustment">adjustment1</property>
                     <property name="climb_rate">0.10000000000000001</property>
-                    <property name="digits">2</property>
+                    <property name="digits">1</property>
                     <property name="numeric">True</property>
                   </object>
                   <packing>
