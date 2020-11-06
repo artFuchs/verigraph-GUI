@@ -92,6 +92,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     pauseBtn <- Gtk.builderGetObject builder "pauseBtn" >>= unsafeCastTo Gtk.Button . fromJust
     execSpeedBtn <- Gtk.builderGetObject builder "execSpeedBtn" >>= unsafeCastTo Gtk.SpinButton . fromJust
 
+    keepRuleCheckBtn <- Gtk.builderGetObject builder "keepRuleCheckBtn" >>= unsafeCastTo Gtk.CheckButton . fromJust
     treeView <- Gtk.builderGetObject builder "treeView" >>= unsafeCastTo Gtk.TreeView . fromJust
     Gtk.treeViewSetModel treeView (Just store)
 
@@ -109,7 +110,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     nacState    <- newIORef emptyState -- state refering to the graph of nac
     
     mergeMap    <- newIORef (Nothing :: Maybe MergeMapping)
-    nacListMap <- newIORef (M.empty :: M.Map Int32 [(String,Int32)])
+    nacIDListMap <- newIORef (M.empty :: M.Map Int32 [(String,Int32)])
     
     currentNACIndex    <- newIORef (-1 :: Int32) -- index of current selected NAC
     currentRuleIndex   <- newIORef (-1 :: Int32) -- index of currentRule
@@ -121,6 +122,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     execStarted  <- newIORef False   -- if execution has already started
     execThread  <- newIORef Nothing
     execDelay <- newIORef (100000 :: Int)
+    execKeepInProd <- newIORef True
 
     
     initExecDelay <- Gtk.spinButtonGetValue execSpeedBtn
@@ -218,7 +220,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                         writeIORef kGraph k                    
                         writeIORef currentRuleIndex rIndex
 
-                nacListM <- readIORef nacListMap
+                nacListM <- readIORef nacIDListMap
                 let nacList = M.lookup rIndex nacListM
                 
                 Gtk.comboBoxTextRemoveAll nacCBox
@@ -239,7 +241,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
             else do
                 nacName <- Gtk.comboBoxTextGetActiveText nacCBox >>= return . T.unpack
                 ruleIndex <- readIORef currentRuleIndex
-                nacListM <- readIORef nacListMap
+                nacListM <- readIORef nacIDListMap
                 case M.lookup ruleIndex nacListM of
                     Nothing -> writeIORef nacState $ emptyState
                     Just nacList -> case lookup nacName nacList of
@@ -276,7 +278,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         let initState = fromMaybe emptyState $ M.lookup 1 statesM
         writeIORef hostState initState
         removeMatchesFromTreeStore store
-        findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap
+        findMatches store statesMap hostState typeGraph nacInfoMap nacIDListMap matchesMap productionMap
 
     -- when pause button is pressed, kills the execution thread
     on pauseBtn #pressed $ do
@@ -293,15 +295,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         started <- readIORef execStarted
         if started
             then return ()
-            else do
-                context <- Gtk.widgetGetPangoContext mainCanvas
-                --apply match
-                applyMatchAccordingToLevel hostState statesMap context matchesMap productionMap currentMatchIndex currentRuleIndex
-                --update GUI
-                Gtk.widgetQueueDraw mainCanvas
-                removeMatchesFromTreeStore store
-                -- find next matches
-                findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap
+            else executeStep treeView store keepRuleCheckBtn mainCanvas typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex
     
     on startBtn #pressed $ do
         started <- readIORef execStarted
@@ -309,7 +303,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
             then return () 
             else do 
                 writeIORef execStarted True
-                execT <- forkIO $ executeMultipleSteps execDelay store mainCanvas typeGraph hostState statesMap nacInfoMap nacListMap matchesMap productionMap currentMatchIndex currentRuleIndex
+                execT <- forkIO $ executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex
                 writeIORef execThread $ Just execT
                 return ()
 
@@ -318,32 +312,68 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         writeIORef execDelay $ round (value * 1000000)
     
     #show executorPane
-    return (executorPane, mainCanvas, nacCBox, hostState, execStarted, nacListMap)
+    return (executorPane, mainCanvas, nacCBox, hostState, execStarted, nacIDListMap)
 
 
-executeMultipleSteps execDelay store mainCanvas typeGraph hostState statesMap nacInfoMap nacListMap matchesMap productionMap currentMatchIndex currentRuleIndex = do
+executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex = do
     Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
-        executeStep store mainCanvas typeGraph hostState statesMap nacInfoMap nacListMap matchesMap productionMap currentMatchIndex currentRuleIndex
+        executeStep treeView store keepRuleCheckBtn mainCanvas typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex
         return False
+
+    -- wait before the next step
+    delay <- readIORef execDelay
+    threadDelay delay
+
+    -- checks if the selected 
     matchesM <- readIORef matchesMap
     let allMatches = concat $ M.elems $ M.map M.elems matchesM
     if length allMatches > 0
         then do 
-            delay <- readIORef execDelay
-            threadDelay delay
-            executeMultipleSteps execDelay store mainCanvas typeGraph hostState statesMap nacInfoMap nacListMap matchesMap productionMap currentMatchIndex currentRuleIndex
+            executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex
         else return ()
 
-
-executeStep store mainCanvas typeGraph hostState statesMap nacInfoMap nacListMap matchesMap productionMap currentMatchIndex currentRuleIndex = do
+executeStep :: Gtk.TreeView -> Gtk.TreeStore -> Gtk.CheckButton -> Gtk.DrawingArea
+            -> IORef (G.Graph Info Info) -> IORef GraphState -> IORef (M.Map Int32 GraphState) 
+            -> IORef (M.Map Int32 NacInfo) -> IORef (M.Map Int32 [(String, Int32)])
+            -> IORef (M.Map Int32 (M.Map Int32 Match)) -> IORef (M.Map Int32 TGMProduction) -> IORef Int32 -> IORef Int32 
+            -> IO ()
+executeStep treeView store keepRuleCheckBtn mainCanvas typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex = do
     context <- Gtk.widgetGetPangoContext mainCanvas
     --apply match
     applyMatchAccordingToLevel hostState statesMap context matchesMap productionMap currentMatchIndex currentRuleIndex
-    --update GUI
+    --update Canvas
     Gtk.widgetQueueDraw mainCanvas
+    -- 
+    matchIndex <- readIORef currentMatchIndex
+    keepInProd <- Gtk.toggleButtonGetActive keepRuleCheckBtn
+    (maybePath,_) <- Gtk.treeViewGetCursor treeView
+    case (matchIndex>=0, keepInProd, maybePath) of
+        (True,True,Just path) -> do
+                hasParent <- Gtk.treePathUp path
+                if hasParent
+                    then Gtk.treeViewSetCursor treeView path Gtk.noTreeViewColumn False
+                    else return ()
+        (_,False,_) -> do
+            path <- Gtk.treePathNewFirst
+            Gtk.treeViewSetCursor treeView path Gtk.noTreeViewColumn False
+        _ -> return ()
+    -- remove matches from treeStore
     removeMatchesFromTreeStore store
     -- find next matches
-    findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap
+    findMatches store statesMap hostState typeGraph nacInfoMap nacIDListMap matchesMap productionMap
+    -- if keepInProd is true but the selected production has no matches, then go up one level to full randomness
+    if keepInProd 
+        then do
+            matchesM <- readIORef matchesMap
+            ruleIndex <- readIORef currentRuleIndex
+            pathFst <- Gtk.treePathNewFirst
+            case M.lookup ruleIndex matchesM of
+                Nothing -> Gtk.treeViewSetCursor treeView pathFst Gtk.noTreeViewColumn False
+                Just m -> if M.size m == 0 
+                            then Gtk.treeViewSetCursor treeView pathFst Gtk.noTreeViewColumn False
+                            else return ()
+        else return ()
+
 
 
 
@@ -387,7 +417,7 @@ findMatches :: Gtk.TreeStore
             -> IORef (M.Map Int32 (M.Map Int32 Match))
             -> IORef (M.Map Int32 TGMProduction)
             -> IO ()
-findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap productionMap = do
+findMatches store statesMap hostState typeGraph nacInfoMap nacIDListMap matchesMap productionMap = do
         -- get matches of each rule in the initial graph
         -- prepare initial graph
         hState <- readIORef hostState
@@ -397,7 +427,7 @@ findMatches store statesMap hostState typeGraph nacInfoMap nacListMap matchesMap
             obj = GMker.makeTypedGraph g tg
             
         -- get rules from treeStore
-        nacListM <- readIORef nacListMap
+        nacListM <- readIORef nacIDListMap
         rulesStates <- treeStoreGetRules store statesMap
         productions <- forM rulesStates $ \(id,st) -> do
                             let nacList = fromMaybe [] $ M.lookup id nacListM
