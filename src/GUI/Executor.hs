@@ -278,6 +278,9 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         let initState = fromMaybe emptyState $ M.lookup 1 statesM
         writeIORef hostState initState
         removeMatchesFromTreeStore store
+
+        loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap
+
         findMatches store statesMap hostState typeGraph nacInfoMap nacIDListMap matchesMap productionMap
 
     -- when pause button is pressed, kills the execution thread
@@ -302,6 +305,9 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         if started
             then return () 
             else do 
+
+                loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap
+
                 writeIORef execStarted True
                 execT <- forkIO $ executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex
                 writeIORef execThread $ Just execT
@@ -406,7 +412,22 @@ setCanvasCallBacks canvas state refGraph drawMethod focusedCanvas focusedStateIO
         writeIORef focusedStateIORef $ Just state
         return False
     return (oldPoint,squareSelection) 
-
+           
+loadProductions :: Gtk.TreeStore -> IORef (G.Graph Info Info) -> IORef (M.Map Int32 GraphState) -> IORef (M.Map Int32 NacInfo) -> IORef (M.Map Int32 [(String,Int32)]) -> IORef (M.Map Int32 TGMProduction) -> IO ()
+loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap = do
+    typeG <- readIORef typeGraph
+    nacListM <- readIORef nacIDListMap
+    rulesStates <- treeStoreGetRules store statesMap
+    nacInfoM <- readIORef nacInfoMap
+    let tg = GMker.makeTypeGraph typeG
+    productions <- forM rulesStates $ \(id,st) -> do
+                        let nacList = fromMaybe [] $ M.lookup id nacListM
+                        let getNac index = Just (\(dg,mm) -> (fst dg, mm)) <*> (M.lookup index nacInfoM)
+                            mnacs = filter (not . null) $ map (\(_,index) -> getNac index) nacList
+                            nacs = map fromJust mnacs
+                        let rg = stateGetGraph st
+                        return $ (id,GMker.graphToRule rg nacs tg)
+    writeIORef productionMap (M.fromList productions)
 
 findMatches :: Gtk.TreeStore
             -> IORef (M.Map Int32 GraphState)
@@ -425,25 +446,11 @@ findMatches store statesMap hostState typeGraph nacInfoMap nacIDListMap matchesM
         let g = stateGetGraph hState
             tg = GMker.makeTypeGraph typeG
             obj = GMker.makeTypedGraph g tg
-            
-        -- get rules from treeStore
-        nacListM <- readIORef nacIDListMap
-        rulesStates <- treeStoreGetRules store statesMap
-        productions <- forM rulesStates $ \(id,st) -> do
-                            let nacList = fromMaybe [] $ M.lookup id nacListM
-                            nacInfoM <- readIORef nacInfoMap
-                            let getNac index = Just (\(dg,mm) -> (fst dg, mm)) <*> (M.lookup index nacInfoM)
-                                mnacs = filter (not . null) $ map (\(_,index) -> getNac index) nacList
-                                nacs = map fromJust mnacs
-                            let rg = stateGetGraph st
-                            return $ (id,GMker.graphToRule rg nacs tg)
-        writeIORef productionMap (M.fromList productions)
-
+        productions <- readIORef productionMap >>= return . M.toList
         -- get dpo matches
         let morphismClass = Cat.monic :: Cat.MorphismClass (TGM.TypedGraphMorphism Info Info)
             conf = DPO.MorphismsConfig morphismClass
             matches = map (\(id,prod) -> (id,DPO.findApplicableMatches conf prod obj)) productions
-
         let matchesM = foldr (\(rid,l) m -> M.insert rid (M.fromList $ zip ([1,2..] :: [Int32]) l) m) M.empty matches
         writeIORef matchesMap matchesM
 
