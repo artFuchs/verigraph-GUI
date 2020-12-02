@@ -506,6 +506,45 @@ startEditor window store
       (False,False,'\65471') -> Gtk.widgetGrabFocus nameEntry
       -- 'delete' while the focus is on canvas - delete elements
       (False,False,'\65535') -> Gtk.menuItemActivate del
+      (_,_,'1') -> do
+        gType <- readIORef currentGraphType
+        if gType == 2 
+          then do
+            cShape <- readIORef currentShape
+            cColor <- readIORef currentC
+            cLColor <- readIORef currentLC
+            auto <- Gtk.toggleButtonGetActive autoLabelNCheckBtn
+            context <- Gtk.widgetGetPangoContext canvas
+            mntype <- readIORef currentNodeType
+            (t, shape, c, lc) <- case mntype of
+              Nothing -> return ("", cShape, cColor, cLColor)
+              Just t -> do
+                possibleNT <- readIORef possibleNodeTypes
+                let possibleNT' = M.map (\(gi,i) -> gi) possibleNT
+                    mngi = M.lookup t possibleNT'
+                case mngi of
+                  Nothing -> return ("", cShape, cColor, cLColor)
+                  Just gi -> return (t, shape gi, fillColor gi, lineColor gi)
+            
+            st <- readIORef currentState
+            let desiredNum = 1024
+                columsNum = 32
+                g = stateGetGraph st
+                firstId = fromEnum $ head $ newNodes g 
+            forM_ [firstId..(firstId + desiredNum - 1)] $ \i -> do
+              let x = 50 * (((i - firstId) `mod` columsNum) + 1)
+                  y = 50 * (((i - firstId) `quot` columsNum) + 1)
+              nid <- createNode' currentState (infoSetType I.empty t) auto (fromIntegral x, fromIntegral y) shape c lc context
+              return ()
+
+            Gtk.widgetQueueDraw canvas
+
+            setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+            setCurrentValidFlag store currentState typeGraph currentPath
+            
+
+          else return ()
+
       _ -> return ()
     return True
 
@@ -1832,13 +1871,16 @@ changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTy
         (False,_) -> defaultAction
 
 -- create a new node, auto-generating it's name and dimensions
-createNode' :: IORef GraphState -> Info -> Bool -> GIPos -> NodeShape -> GIColor -> GIColor -> P.Context ->  IO ()
+createNode' :: IORef GraphState -> Info -> Bool -> GIPos -> NodeShape -> GIColor -> GIColor -> P.Context ->  IO NodeId
 createNode' currentState info autoNaming pos nshape color lcolor context = do
   es <- readIORef currentState
   let nid = head $ newNodes (stateGetGraph es)
       info' = if infoLabelStr info == "" && autoNaming then infoSetLabel info (show $ fromEnum nid) else info
   dim <- getStringDims (infoVisible info') context Nothing
-  writeIORef currentState $ createNode es pos dim info' nshape color lcolor    
+  writeIORef currentState $ createNode es pos dim info' nshape color lcolor
+  
+  return nid
+
 
 -- auxiliar function to prepare the treeStore to save
 -- auxiliar function, add the current editor state in the graphStates list

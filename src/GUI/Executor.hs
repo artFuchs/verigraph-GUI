@@ -92,6 +92,9 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     pauseBtn <- Gtk.builderGetObject builder "pauseBtn" >>= unsafeCastTo Gtk.Button . fromJust
     execSpeedBtn <- Gtk.builderGetObject builder "execSpeedBtn" >>= unsafeCastTo Gtk.SpinButton . fromJust
 
+    statusLabel <- Gtk.builderGetObject builder "statusLabel" >>= unsafeCastTo Gtk.Label . fromJust
+    statusSpinner <- Gtk.builderGetObject builder "statusSpinner" >>= unsafeCastTo Gtk.Spinner . fromJust
+
     keepRuleCheckBtn <- Gtk.builderGetObject builder "keepRuleCheckBtn" >>= unsafeCastTo Gtk.CheckButton . fromJust
     treeView <- Gtk.builderGetObject builder "treeView" >>= unsafeCastTo Gtk.TreeView . fromJust
     Gtk.treeViewSetModel treeView (Just store)
@@ -120,9 +123,10 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     currentMatchIndex <- newIORef (-1 :: Int32) -- index of current match
 
     execStarted  <- newIORef False   -- if execution has already started
-    execThread  <- newIORef Nothing
-    execDelay <- newIORef (100000 :: Int)
-    execKeepInProd <- newIORef True
+    execThread  <- newIORef Nothing  -- thread for execution process
+    execDelay <- newIORef (100000 :: Int) -- delay between execution steps
+    execKeepInProd <- newIORef True  -- if after a execution step the same match should be selected
+    processingMatches <- newIORef False -- flag to check if Verigraph is calculating the next matches - can be a long process if the graph is big and it would be bad to be executed more than once at the same time.
 
     
     initExecDelay <- Gtk.spinButtonGetValue execSpeedBtn
@@ -279,37 +283,61 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         writeIORef hostState initState
         removeMatchesFromTreeStore store
 
-        loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap
+        processing <- readIORef processingMatches
+        if processing
+            then return ()
+            else do
+                loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap
+                execT <- forkFinally (do 
+                                        writeIORef processingMatches True
+                                        Gtk.spinnerStart statusSpinner
+                                        Gtk.labelSetText statusLabel "processing matches"
+                                        findMatches store statesMap hostState typeGraph nacInfoMap nacIDListMap matchesMap productionMap)
+                                    (\_ -> do 
+                                        writeIORef processingMatches False
+                                        Gtk.spinnerStop statusSpinner
+                                        Gtk.labelSetText statusLabel "")
+                writeIORef execThread $ Just execT
+                return ()
 
-        findMatches store statesMap hostState typeGraph nacInfoMap nacIDListMap matchesMap productionMap
 
     -- when pause button is pressed, kills the execution thread
     on pauseBtn #pressed $ do
         writeIORef execStarted False
+        writeIORef processingMatches False
         mThread <- readIORef execThread
         case mThread of
             Nothing -> return ()
             Just t -> do 
                 killThread t
                 writeIORef execThread Nothing
+                Gtk.spinnerStop statusSpinner
+                Gtk.labelSetText statusLabel ""
     
     -- when the step button is pressed, apply the match that is selected
     on stepBtn #pressed $ do 
         started <- readIORef execStarted
-        if started
+        processing <- readIORef processingMatches
+        if started || processing
             then return ()
-            else executeStep treeView store keepRuleCheckBtn mainCanvas typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex
+            else do 
+                execT <- forkFinally 
+                            (do writeIORef execStarted True
+                                executeStep treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel  typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches)
+                            (\_ -> writeIORef execStarted False)
+                writeIORef execThread $ Just execT
     
     on startBtn #pressed $ do
         started <- readIORef execStarted
-        if started
+        processing <- readIORef processingMatches
+        if started || processing
             then return () 
             else do 
-
                 loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap
-
-                writeIORef execStarted True
-                execT <- forkIO $ executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex
+                execT <- forkFinally 
+                            (do writeIORef execStarted True
+                                executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel  typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches)
+                            (\_ -> writeIORef execStarted False)
                 writeIORef execThread $ Just execT
                 return ()
 
@@ -321,10 +349,9 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     return (executorPane, mainCanvas, nacCBox, hostState, execStarted, nacIDListMap)
 
 
-executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex = do
-    Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
-        executeStep treeView store keepRuleCheckBtn mainCanvas typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex
-        return False
+executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches = do
+
+    executeStep treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel  typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches
 
     -- wait before the next step
     delay <- readIORef execDelay
@@ -335,50 +362,73 @@ executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas typeGr
     let allMatches = concat $ M.elems $ M.map M.elems matchesM
     if length allMatches > 0
         then do 
-            executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex
+            executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches
         else return ()
 
-executeStep :: Gtk.TreeView -> Gtk.TreeStore -> Gtk.CheckButton -> Gtk.DrawingArea
+executeStep :: Gtk.TreeView -> Gtk.TreeStore -> Gtk.CheckButton -> Gtk.DrawingArea -> Gtk.Spinner -> Gtk.Label
             -> IORef (G.Graph Info Info) -> IORef GraphState -> IORef (M.Map Int32 GraphState) 
             -> IORef (M.Map Int32 NacInfo) -> IORef (M.Map Int32 [(String, Int32)])
             -> IORef (M.Map Int32 (M.Map Int32 Match)) -> IORef (M.Map Int32 TGMProduction) -> IORef Int32 -> IORef Int32 
+            -> IORef Bool
             -> IO ()
-executeStep treeView store keepRuleCheckBtn mainCanvas typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex = do
-    context <- Gtk.widgetGetPangoContext mainCanvas
+executeStep treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches = do
+    contextIOR <- newIORef Nothing
+    Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
+        Gtk.spinnerStart statusSpinner
+        Gtk.labelSetText statusLabel "applying match"
+        context <- Gtk.widgetGetPangoContext mainCanvas
+        writeIORef contextIOR (Just context)
+        return False
+    
     --apply match
+    context <- readIORef contextIOR >>= return . fromJust
     applyMatchAccordingToLevel hostState statesMap context matchesMap productionMap currentMatchIndex currentRuleIndex
-    --update Canvas
-    Gtk.widgetQueueDraw mainCanvas
-    -- 
-    matchIndex <- readIORef currentMatchIndex
-    keepInProd <- Gtk.toggleButtonGetActive keepRuleCheckBtn
-    (maybePath,_) <- Gtk.treeViewGetCursor treeView
-    case (matchIndex>=0, keepInProd, maybePath) of
-        (True,True,Just path) -> do
-                hasParent <- Gtk.treePathUp path
-                if hasParent
-                    then Gtk.treeViewSetCursor treeView path Gtk.noTreeViewColumn False
-                    else return ()
-        (_,False,_) -> do
-            path <- Gtk.treePathNewFirst
-            Gtk.treeViewSetCursor treeView path Gtk.noTreeViewColumn False
-        _ -> return ()
-    -- remove matches from treeStore
-    removeMatchesFromTreeStore store
+
+    Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
+        --update Canvas
+        Gtk.widgetQueueDraw mainCanvas
+        matchIndex <- readIORef currentMatchIndex
+        keepInProd <- Gtk.toggleButtonGetActive keepRuleCheckBtn
+        (maybePath,_) <- Gtk.treeViewGetCursor treeView
+        case (matchIndex>=0, keepInProd, maybePath) of
+            (True,True,Just path) -> do
+                    hasParent <- Gtk.treePathUp path
+                    if hasParent
+                        then Gtk.treeViewSetCursor treeView path Gtk.noTreeViewColumn False
+                        else return ()
+            (_,False,_) -> do
+                path <- Gtk.treePathNewFirst
+                Gtk.treeViewSetCursor treeView path Gtk.noTreeViewColumn False
+            _ -> return ()
+        -- remove matches from treeStore
+        removeMatchesFromTreeStore store
+        Gtk.spinnerStart statusSpinner
+        Gtk.labelSetText statusLabel "processing matches"
+        return False
+
     -- find next matches
+    writeIORef processingMatches True
     findMatches store statesMap hostState typeGraph nacInfoMap nacIDListMap matchesMap productionMap
-    -- if keepInProd is true but the selected production has no matches, then go up one level to full randomness
-    if keepInProd 
-        then do
-            matchesM <- readIORef matchesMap
-            ruleIndex <- readIORef currentRuleIndex
-            pathFst <- Gtk.treePathNewFirst
-            case M.lookup ruleIndex matchesM of
-                Nothing -> Gtk.treeViewSetCursor treeView pathFst Gtk.noTreeViewColumn False
-                Just m -> if M.size m == 0 
-                            then Gtk.treeViewSetCursor treeView pathFst Gtk.noTreeViewColumn False
-                            else return ()
-        else return ()
+    writeIORef processingMatches False
+    
+    Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
+        -- if keepInProd is true but the selected production has no matches, then go up one level to full randomness
+        Gtk.spinnerStop statusSpinner
+        Gtk.labelSetText statusLabel ""
+        keepInProd <- Gtk.toggleButtonGetActive keepRuleCheckBtn
+        if keepInProd 
+            then do
+                matchesM <- readIORef matchesMap
+                ruleIndex <- readIORef currentRuleIndex
+                pathFst <- Gtk.treePathNewFirst
+                case M.lookup ruleIndex matchesM of
+                    Nothing -> Gtk.treeViewSetCursor treeView pathFst Gtk.noTreeViewColumn False
+                    Just m -> if M.size m == 0 
+                                then Gtk.treeViewSetCursor treeView pathFst Gtk.noTreeViewColumn False
+                                else return ()
+            else return ()
+        return False
+    return ()
 
 
 
@@ -429,6 +479,8 @@ loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap 
                         return $ (id,GMker.graphToRule rg nacs tg)
     writeIORef productionMap (M.fromList productions)
 
+-- process matches and
+-- this function should be executed inside a thread
 findMatches :: Gtk.TreeStore
             -> IORef (M.Map Int32 GraphState)
             -> IORef GraphState 
@@ -451,7 +503,7 @@ findMatches store statesMap hostState typeGraph nacInfoMap nacIDListMap matchesM
         let morphismClass = Cat.monic :: Cat.MorphismClass (TGM.TypedGraphMorphism Info Info)
             conf = DPO.MorphismsConfig morphismClass
             matches = map (\(id,prod) -> (id,DPO.findApplicableMatches conf prod obj)) productions
-        let matchesM = foldr (\(rid,l) m -> M.insert rid (M.fromList $ zip ([1,2..] :: [Int32]) l) m) M.empty matches
+        let matchesM = foldr (\(rid,l) m -> M.insert rid (M.fromList $ zip ([1..] :: [Int32]) l) m) M.empty matches
         writeIORef matchesMap matchesM
 
         -- foreach match, generate a entry
@@ -459,8 +511,11 @@ findMatches store statesMap hostState typeGraph nacInfoMap nacIDListMap matchesM
                                 map (\(rid,mM) -> 
                                     map (\(mid,m) -> ("match " ++ (show mid), mid, 2 :: Int32, rid) ) $ M.toList mM) $
                                 M.toList matchesM
-        
-        forM_ matchesEntries $ \entry -> updateTreeStore store entry
+        putStrLn $ "there are a total of " ++ (show $ length matchesEntries) ++ "rules matches in the graph"
+        Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
+            forM_ (take 100 matchesEntries) $ \entry -> updateTreeStore store entry
+            return False
+        return ()
 
 -- apply matches according to the selected level on the treeView.
 -- select top level (Grammar) to full randomness
@@ -655,7 +710,7 @@ applyMatch hostState statesMap rIndex context p m = do
     * name,
     * id,
     * type (0 - topic, 1 - rule, 2 - rule match),
-    * parent id (used if type is NAC).
+    * parent id (used if type is '2 - rule match').
 -}
 type ExecGraphEntry = (String, Int32, Int32, Int32)
 
@@ -734,7 +789,6 @@ updateTreeStore' store iter entry@(n,i,t,p) = do
                     newIter <- Gtk.treeStoreAppend store (Just parentIter)
                     storeSetGraphEntry store newIter entry
         
-
 
 removeFromTreeStore :: Gtk.TreeStore -> Int32 -> IO ()
 removeFromTreeStore store index = do
