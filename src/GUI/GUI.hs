@@ -228,10 +228,15 @@ startGUI = do
     -- update statesMap with the information of editorState
     Edit.storeCurrentES window editorState storeIORefs nacInfoMap
     case pageNum of
-      0 -> do
+      0 -> do  -- Editor tab
+          gT <- readIORef currentGraphType
+          mapM_ (\m -> Gtk.widgetSetSensitive m True) [del,udo,rdo,cpy,pst,cut,sla,sln,sle]
+          mapM_ (\m -> Gtk.widgetSetSensitive m (gT == 4)) [mrg,spt]
           writeIORef focusedCanvas $ Just editorCanvas
           writeIORef focusedStateIORef $ Just editorState
-      1 -> do
+      1 -> do  -- Executor tab
+          mapM_ (\m -> Gtk.widgetSetSensitive m True) [sla,sln,sle]
+          mapM_ (\m -> Gtk.widgetSetSensitive m False) [del,udo,rdo,cpy,pst,cut,mrg,spt]
           Gtk.widgetGrabFocus execCanvas
           writeIORef focusedCanvas $ Just execCanvas
           writeIORef focusedStateIORef $ Just execState
@@ -241,13 +246,61 @@ startGUI = do
             else do
               initState <- readIORef statesMap >>= return . fromMaybe emptyState . M.lookup 1
               writeIORef execState initState
-      2 -> do
+          
+      2 -> do  -- Analysis tab
+          mapM_ (\m -> Gtk.widgetSetSensitive m False) editItems
           writeIORef focusedCanvas $ Nothing
           writeIORef focusedStateIORef $ Nothing
       _ -> return ()     
+  
   ----------------------------------------------------------------------------------------------------------------------------
-  -- View Menu ---------------------------------------------------------------------------------------------------------------
+  -- Edit Menu ---------------------------------------------------------------------------------------------------------------
 
+  -- delete, undo, redo, copy, paste, cut, merge, split menu items callbacks are defined in Editor.startEditor in Editor.hs
+
+  -- select all
+  on sla #activate $ do
+    focusCanvas <- readIORef focusedCanvas
+    focusStateIORef  <- readIORef focusedStateIORef
+    case (focusCanvas, focusStateIORef) of
+      (_,Nothing) -> return ()
+      (Just canvas, Just fState) -> do
+        modifyIORef fState $ \es -> let g = stateGetGraph es in stateSetSelected (nodeIds g, edgeIds g) es
+        Gtk.widgetQueueDraw canvas
+
+  -- select edges
+  on sle #activate $ do
+    focusCanvas <- readIORef focusedCanvas
+    focusStateIORef <- readIORef focusedStateIORef
+    case (focusCanvas, focusStateIORef) of
+      (_,Nothing) -> return ()
+      (Just canvas, Just fState) -> do
+        es <- readIORef fState
+        let selected = stateGetSelected es
+            g = stateGetGraph es
+        case selected of
+          ([],[]) -> writeIORef fState $ stateSetSelected ([], edgeIds g) es
+          ([], e) -> return ()
+          (n,e) -> writeIORef fState $ stateSetSelected ([],e) es
+        Gtk.widgetQueueDraw canvas
+
+  -- select nodes
+  on sln #activate $ do
+    focusCanvas <- readIORef focusedCanvas
+    focusStateIORef <- readIORef focusedStateIORef
+    case (focusCanvas, focusStateIORef) of
+      (_,Nothing) -> return ()
+      (Just canvas, Just fState) -> do
+        es <- readIORef fState
+        let selected = stateGetSelected es
+            g = stateGetGraph es
+        case selected of
+          ([],[]) -> writeIORef fState $ stateSetSelected (nodeIds g, []) es
+          (n, []) -> return ()
+          (n,e) -> writeIORef fState $ stateSetSelected (n,[]) es
+        Gtk.widgetQueueDraw canvas
+
+  -- View Menu ---------------------------------------------------------------------------------------------------------------
   -- zoom in
   zin `on` #activate $ do
     focusCanvas <- readIORef focusedCanvas

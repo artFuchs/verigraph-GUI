@@ -166,6 +166,8 @@ startEditor window store
       [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
       [zin,zut,z50,zdf,z150,z200,vdf] = viewItems
 
+  mapM_ (\m -> Gtk.widgetSetSensitive m False) [mrg,spt]
+
   #showAll mainPane
   #hide typeSelectionBox
   #hide createNBtn
@@ -1001,6 +1003,7 @@ startEditor window store
           1 -> do
             #show layoutBox
             #hide typeSelectionBox
+            mapM_ (\m -> Gtk.widgetSetSensitive m False) [mrg,spt]
           2 -> do
             #hide layoutBox
             #show typeSelectionBox
@@ -1009,6 +1012,7 @@ startEditor window store
             #hide splitBtn
             resetCurrentGI
             updateElements
+            mapM_ (\m -> Gtk.widgetSetSensitive m False) [mrg,spt]
           3 -> do
             #hide layoutBox
             #show typeSelectionBox
@@ -1017,6 +1021,7 @@ startEditor window store
             #hide splitBtn
             resetCurrentGI
             updateElements
+            mapM_ (\m -> Gtk.widgetSetSensitive m False) [mrg,spt]
           4 -> do
             #hide layoutBox
             #show typeSelectionBox
@@ -1025,6 +1030,7 @@ startEditor window store
             #show splitBtn
             resetCurrentGI
             updateElements
+            mapM_ (\m -> Gtk.widgetSetSensitive m True) [mrg,spt]
           _ -> return ()
 
         if gType == 3 || gType == 4
@@ -1415,34 +1421,6 @@ startEditor window store
     setChangeFlags window store changedProject changedGraph currentPath currentGraph  True
     Gtk.widgetQueueDraw canvas
     updateByType
-
-  -- select all
-  on sla #activate $ do
-    modifyIORef currentState (\es -> let g = stateGetGraph es
-                           in stateSetSelected (nodeIds g, edgeIds g) es)
-    Gtk.widgetQueueDraw canvas
-
-  -- select edges
-  on sle #activate $ do
-    es <- readIORef currentState
-    let selected = stateGetSelected es
-        g = stateGetGraph es
-    case selected of
-      ([],[]) -> writeIORef currentState $ stateSetSelected ([], edgeIds g) es
-      ([], e) -> return ()
-      (n,e) -> writeIORef currentState $ stateSetSelected ([],e) es
-    Gtk.widgetQueueDraw canvas
-
-  -- select nodes
-  on sln #activate $ do
-    es <- readIORef currentState
-    let selected = stateGetSelected es
-        g = stateGetGraph es
-    case selected of
-      ([],[]) -> writeIORef currentState $ stateSetSelected (nodeIds g, []) es
-      (n, []) -> return ()
-      (n,e) -> writeIORef currentState $ stateSetSelected (n,[]) es
-    Gtk.widgetQueueDraw canvas
 
   -- merge elements in NACs
   on mrg #activate $ do
