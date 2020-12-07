@@ -38,6 +38,7 @@ import qualified Data.Text as T
 import qualified Data.Map as M
 import qualified Data.Tree as Tree
 import Data.Monoid
+import Data.Ord
 
 -- verigraph modules
 import Abstract.Category
@@ -333,9 +334,9 @@ startEditor window store
                 setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                 setCurrentValidFlag store currentState typeGraph currentPath
 
-                case gType of
-                  -- if the current graph is a nac, then add the node in nacg
-                  4 -> do
+                -- if the current graph is a nac, then add the node to nacg
+                if gType == 4
+                  then do
                     -- get the node and it's gi
                     es <- readIORef currentState
                     let g = stateGetGraph es
@@ -350,7 +351,7 @@ startEditor window store
                         nacg' = insertNodeWithPayload addedNodeId (nodeInfo addedNode) nacg
                         nacNgi' = M.insert (fromEnum addedNodeId) addedNodeGI (fst nacgi)
                     modifyIORef nacInfoMap $ M.insert index ((nacg',(nacNgi', snd nacgi)), mapping)
-                  _ -> return ()
+                  else return ()
 
 
           -- one node selected: create edges targeting this node
@@ -375,7 +376,7 @@ startEditor window store
               -- create edges infering their types
               let sNids = fst $ stateGetSelected es
                   g = stateGetGraph es
-                  srcNodes = map (\nid -> fromJust $ G.lookupNode nid g) sNids
+                  srcNodes = map fromJust $ filter (not . null) $ map (\nid -> G.lookupNode nid g) sNids
                   tgtNode = fromJust $ G.lookupNode nid g
                   tgtType = infoType $ nodeInfo tgtNode
                   edgesTs = map (\src -> (src, infereEdgeType tg src tgtNode metype)) srcNodes
@@ -1672,10 +1673,8 @@ prepToExport :: Gtk.TreeStore
 prepToExport store graphStates nacInfoMap = do
   sts <- readIORef graphStates
 
-  let tes = fromJust $ M.lookup 0 sts
-      hes = fromJust $ M.lookup 1 sts
-      tg = stateGetGraph tes
-      hg = stateGetGraph hes
+  let tg = stateGetGraph . fromJust $ M.lookup 0 sts
+      hg = stateGetGraph . fromJust $ M.lookup 1 sts
 
   rules <- getRules store graphStates nacInfoMap
   let rulesNames = map (\(_,_,name) -> name) rules
@@ -1706,39 +1705,32 @@ updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSele
     es <- readIORef currentState
     -- check if all edges and nodes have different names
     let g = stateGetGraph es
-        giM = stateGetGI es
-        nds = nodes g
-        edgs = edges g
-
+        (ngiM,egiM) = stateGetGI es
         nameConflictG = nameConflictGraph g
         diffNames = and (map nodeInfo (nodes nameConflictG)) &&
                     and (map edgeInfo (edges nameConflictG))
 
+    -- if so, get the typegraph and possible names for nodes and edges (labels)
     let (tg, pNT, pET) = if diffNames
-              then  let
-                      pNT =
-                        M.fromList $ 
-                        zipWith (\i (k,gi) -> (k, (gi, i)) ) [0..] $
-                        M.toList $
-                        foldr (\(Node nid info) m -> let ngi = getNodeGI (fromEnum nid) (fst giM)
-                                                        in M.insert (infoLabelStr info) ngi m) 
-                              M.empty nds
-                      pET =
-                        M.fromList $
-                        zipWith (\i (k,sm) -> (k, (sm, i)) ) [0..] $
-                        M.toList $
-                        foldr (\(Edge eid s t info) m -> let 
-                                                            sourceT = infoLabelStr . nodeInfo . fromJust $ lookupNode s g
-                                                            targetT = infoLabelStr . nodeInfo . fromJust $ lookupNode t g
-                                                            edgeT = infoLabelStr info
-                                                            egi = getEdgeGI (fromEnum eid) (snd giM)
-                                                            subM = case M.lookup edgeT m of 
-                                                              Nothing -> M.singleton (sourceT,targetT) egi
-                                                              Just sm -> M.insert (sourceT,targetT) egi sm
-                                                          in M.insert edgeT subM m) 
-                              M.empty edgs
-                    in (g,pNT, pET)
+              then (g, pNT, pET)
               else (G.empty, M.empty, M.empty)
+                where
+                  pNT = M.fromList $ zipWith (\i (k,gi) -> (k, (gi, i)) ) [0..] nodeNames2GI
+                  pET = M.fromList $ zipWith (\i (k,sm) -> (k, (sm, i)) ) [0..] edgeNames2SubMap
+                  -- generate a mapping of node labels to node GIs
+                  nodeNames2GI = sortBy (comparing fst) $ map (\(Node nid info) -> (infoLabelStr info, getNodeGI (fromEnum nid) ngiM)) (nodes g)
+                  -- generate a mapping of edge labels to a submapping of (source node label, target node label) to edge GIs
+                  edgeNames2SubMap = M.toList $ 
+                                      foldr (\(Edge eid s t info) m ->
+                                            let srcType = infoLabelStr . nodeInfo . fromJust $ lookupNode s g
+                                                tgtType = infoLabelStr . nodeInfo . fromJust $ lookupNode t g
+                                                edgeType = infoLabelStr info
+                                                egi = getEdgeGI (fromEnum eid) egiM
+                                                subM = case M.lookup edgeType m of
+                                                  Nothing -> M.singleton (srcType,tgtType) egi
+                                                  Just sm -> M.insert (srcType,tgtType) egi sm
+                                                in M.insert edgeType subM m)
+                                      M.empty (edges g)
 
     writeIORef typeGraph tg
     writeIORef possibleNodeTypes pNT
