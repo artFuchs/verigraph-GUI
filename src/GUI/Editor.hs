@@ -1211,21 +1211,20 @@ startEditor window store
           Just (forest,fn) -> do
                 writeIORef graphStates M.empty
                 Gtk.treeStoreClear store
-                let toGSandStates n i = case n of
-                              Topic name -> ((name,0,0,0,False), (0,(i,emptyState)))
-                              TypeGraph name es -> ((name,0,i,1,True), (1, (i,es)))
-                              HostGraph name es -> ((name,0,i,2,True), (2, (i,es)))
-                              RuleGraph name es a -> ((name,0,i,3,a), (3, (i,es)))
-                              NacGraph name _ -> ((name,0,i,4,True), (4,(i,emptyState)))
-                let toNACInfos n i = case n of
-                              NacGraph name nacInfo -> (i,nacInfo)
+                let toGSandStates n = case n of
+                              Topic name -> ((name,0,0,0,False), (0,(-1,emptyState)))
+                              TypeGraph id name es -> ((name,0,id,1,True), (1, (id,es)))
+                              HostGraph id name es -> ((name,0,id,2,True), (2, (id,es)))
+                              RuleGraph id name es a -> ((name,0,id,3,a), (3, (id,es)))
+                              NacGraph id name _ -> ((name,0,id,4,True), (4,(id,emptyState)))
+                let toNACInfos n = case n of
+                              NacGraph id name nacInfo -> (id,nacInfo)
                               _ -> (0,(DG.empty,(M.empty,M.empty)))
-                    idForest = genForestIds forest 0
-                    infoForest = zipWith (mzipWith toGSandStates) forest idForest
+                    infoForest = map (fmap toGSandStates) forest
                     nameForest = map (fmap fst) infoForest
                     statesForest = map (fmap snd) infoForest
-                    statesList = map snd . filter (\currentState -> fst currentState /= 0) . concat . map Tree.flatten $ statesForest
-                    nacInfos = filter (\ni -> fst ni /= 0). concat . map Tree.flatten $ zipWith (mzipWith toNACInfos) forest idForest
+                    statesList = map snd . filter (\st-> fst st /= 0) . concat . map Tree.flatten $ statesForest
+                    nacInfos = filter (\ni -> fst ni /= 0). concat . map Tree.flatten $ map (fmap toNACInfos) forest
                 let putInStore (Tree.Node (name,c,i,t,a) fs) mparent = do
                         iter <- Gtk.treeStoreAppend store mparent
                         storeSetGraphStore store iter (name,c,i,t,a,True)
@@ -1870,23 +1869,6 @@ storeCurrentES window currentState (graphStates, _, currentGraph, currentGraphTy
           let nacGI = extractNacGI (stateGetGraph es) (stateGetGI es) mergeM
           modifyIORef nacInfoMap $ M.insert index ((ng,nacGI),mergeM)
     else return ()
-
-
--- Tree generation/manipulation ------------------------------------------------
--- given a forest, assign an id foreach node of the trees contained in it
-genForestIds :: Tree.Forest a -> Int32 -> Tree.Forest Int32
-genForestIds [] i = []
-genForestIds (t:ts) i = t' : (genForestIds ts i')
-  where (t',i') = genTreeId t i
-
-genTreeId :: Tree.Tree a -> Int32 -> (Tree.Tree Int32, Int32)
-genTreeId (Tree.Node x []) i = (Tree.Node i [], i + 1)
-genTreeId (Tree.Node x f) i = (Tree.Node i f', i')
-  where
-    f' = genForestIds f (i+1)
-    i' = (maximum (fmap maximum f')) + 1
-
-
 
 
 afterSave :: Gtk.TreeStore 

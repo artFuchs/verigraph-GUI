@@ -143,13 +143,13 @@ getStructsToSave store graphStates nacInfoMapIORef = do
                     (fmap (\(name, nid, t, active) -> case t of
                                 0 -> Topic name
                                 1 -> let es = fromJust $ M.lookup nid states
-                                     in TypeGraph name es
+                                     in TypeGraph nid name es
                                 2 -> let es = fromJust $ M.lookup nid states
-                                     in HostGraph name es
+                                     in HostGraph nid name es
                                 3 -> let es = fromJust $ M.lookup nid states
-                                     in RuleGraph name es active
+                                     in RuleGraph nid name es active
                                 4 -> let (nacdg,mapping) = fromJust $ M.lookup nid nacInfoMap
-                                     in NacGraph name (nacdg,mapping)
+                                     in NacGraph nid name (nacdg,mapping)
                     )) treeNodeList
       return structs
 
