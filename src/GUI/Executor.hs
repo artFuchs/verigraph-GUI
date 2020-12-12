@@ -46,13 +46,13 @@ import           GUI.Data.Info
 import           GUI.Data.Nac
 import           GUI.Render.Render
 import           GUI.Render.GraphDraw
+import           GUI.Helper.BasicCanvasCallbacks
 import qualified GUI.Helper.GrammarMaker  as GMker
 import           GUI.Helper.OverlapAvoider
 import           GUI.Helper.Geometry
 import           GUI.Helper.GraphicalInfo
 
 -- shouldn't use functions from editor module. Must refactore later
-import qualified GUI.Editor               as Editor
 import qualified GUI.Editor.Helper.Nac    as Nac
 
 type TGMProduction = DPO.Production (TGM.TypedGraphMorphism Info Info)
@@ -453,10 +453,10 @@ setCanvasCallBacks canvas state refGraph drawMethod focusedCanvas focusedStateIO
                 return False
             return ()
         Nothing -> return ()
-    on canvas #buttonPressEvent $ Editor.basicCanvasButtonPressedCallback state oldPoint squareSelection canvas
-    on canvas #motionNotifyEvent $ Editor.basicCanvasMotionCallBack state oldPoint squareSelection canvas
-    on canvas #buttonReleaseEvent $ Editor.basicCanvasButtonReleasedCallback state squareSelection canvas
-    on canvas #scrollEvent $ Editor.basicCanvasScrollCallback state canvas
+    on canvas #buttonPressEvent $ basicCanvasButtonPressedCallback state oldPoint squareSelection canvas
+    on canvas #motionNotifyEvent $ basicCanvasMotionCallBack state oldPoint squareSelection canvas
+    on canvas #buttonReleaseEvent $ basicCanvasButtonReleasedCallback state squareSelection canvas
+    on canvas #scrollEvent $ basicCanvasScrollCallback state canvas
     on canvas #focusInEvent $ \event -> do
         writeIORef focusedCanvas $ Just canvas
         writeIORef focusedStateIORef $ Just state
