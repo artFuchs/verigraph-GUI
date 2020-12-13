@@ -70,7 +70,7 @@ stateSetPan p state = state {stateGetPan = p}
 
 
 -- node/edge intersection functions
--- check if a given point is inside a node
+-- | check if a given point is inside a node
 selectNodeInPosition:: GraphicalInfo -> (Double,Double) -> Maybe NodeId
 selectNodeInPosition (nodesG,_) (x,y) =
   case find (\n -> isSelected (snd n)) $ (M.toList nodesG) of
@@ -85,7 +85,7 @@ selectNodeInPosition (nodesG,_) (x,y) =
                               NSquare -> pointInsideRectangle (x,y) (nx,ny,l,l) )
 
 
--- check if a given point is close of an edge control point
+-- | check if a given point is close of an edge control point
 selectEdgeInPosition:: Graph Info Info -> GraphicalInfo -> (Double,Double) -> Maybe EdgeId
 selectEdgeInPosition g gi (x,y) =
   case find (\e -> isSelected e) $ edges g of
@@ -98,7 +98,7 @@ selectEdgeInPosition g gi (x,y) =
 
 
 -- create/delete operations ----------------------------------------------------
--- create a new node with it's default Info and GraphicalInfo
+-- | create a new node with it's default Info and GraphicalInfo
 createNode :: GraphState -> GIPos -> GIDim -> Info -> NodeShape -> GIColor -> GIColor -> GraphState
 createNode es pos dim info nshape color lcolor = stateSetGraph newGraph . stateSetGI newGI . stateSetSelected ([nid], []) $ es
   where
@@ -109,7 +109,7 @@ createNode es pos dim info nshape color lcolor = stateSetGraph newGraph . stateS
     newGI = (M.insert (fromEnum nid) newNgi $ fst (stateGetGI es) , snd (stateGetGI es))
 
 
--- create a single edge between a src node and a target node
+-- | create a single edge between a source node and a target node
 createEdge :: GraphState -> NodeId -> NodeId -> Info -> Bool -> EdgeStyle -> (Double,Double,Double) -> GraphState
 createEdge es srcNode tgtNode info autoNaming estyle ecolor = stateSetGraph newGraph . stateSetGI (ngiM, newEgiM) . stateSetSelected ([],[eid]) $ es
   where 
@@ -122,7 +122,7 @@ createEdge es srcNode tgtNode info autoNaming estyle ecolor = stateSetGraph newG
     negi = EdgeGI {cPosition = newPos, color = ecolor, style = estyle}
     newEgiM = M.insert (fromEnum eid) negi egiM
 
--- create edges between the selected nodes and a target node
+-- | create edges between the selected nodes and a target node
 createEdges:: GraphState -> NodeId -> Info -> Bool -> EdgeStyle -> (Double,Double,Double) -> GraphState
 createEdges es tgtNode info autoNaming estyle ecolor = stateSetGraph newGraph . stateSetGI (ngiM, newegiM) . stateSetSelected ([],createdEdges) $ es
   where selectedNodes = fst $ stateGetSelected es
@@ -137,7 +137,7 @@ createEdges es tgtNode info autoNaming estyle ecolor = stateSetGraph newGraph . 
                                     negi = EdgeGI {cPosition = newPos, color = ecolor, style = estyle}
                                   in (ng, M.insert (fromEnum eid) negi giM, eid:eids))
 
--- delete the selection
+-- | delete the selection
 deleteSelected:: GraphState -> GraphState
 deleteSelected es = stateSetSelected ([],[]) . stateSetGI (newngiM, newegiM) . stateSetGraph newGraph $ es
   where graph = stateGetGraph es
@@ -196,7 +196,7 @@ moveNodes es (xold,yold) (xnew,ynew) = stateSetGI (movedNGIs,egiM)  es
       -- move the nodes
       moveN = \giMap (NodeId nid) -> let gi = getNodeGI nid giMap
                                          (ox, oy) = position gi
-                                     in M.insert nid (nodeGiSetPosition (addPoint (position gi) (deltaX,deltaY)) gi) giMap
+                                     in M.insert nid (gi {position = (addPoint (position gi) (deltaX,deltaY))}) giMap
       movedNGIs = foldl moveN ngiM sNodes
 
 -- | Move selected edges
@@ -219,14 +219,14 @@ moveEdges es (xold,yold) (xnew,ynew) = stateSetGI (ngi,newegi) es
                   edgePos' = addPoint delta edgePos
                   a' = angle pmid edgePos' - ang
                   d' = pointDistance pmid edgePos'
-              in M.insert (fromEnum eid) (edgeGiSetPosition (a',d') $ gi) egiM
+              in M.insert (fromEnum eid) ( gi {cPosition = (a',d')} ) egiM
             else
               let nodePos = position . getNodeGI (fromEnum $ sourceId edge) $ ngi
                   gi = getEdgeGI (fromEnum $ eid) egi
                   (ae, de) = cPosition gi
                   edgePos = addPoint delta $ pointAt ae de nodePos
                   (a,d) = toPolarFrom nodePos edgePos
-              in M.insert (fromEnum eid) (edgeGiSetPosition (a,d) gi) egiM
+              in M.insert (fromEnum eid) ( gi {cPosition = (a,d)} ) egiM
           Nothing -> egiM)
         newegi = foldl moveE egi sEdges
 
@@ -236,7 +236,7 @@ changeNodeShape es s = stateSetGI (newNgiM, egiM) es
   where
       nids = fst $ stateGetSelected es
       (ngiM, egiM) = stateGetGI es
-      newNgiM = M.mapWithKey (\k gi -> if NodeId k `elem` nids then nodeGiSetShape s gi else gi) ngiM
+      newNgiM = M.mapWithKey (\k gi -> if NodeId k `elem` nids then gi {shape = s} else gi) ngiM
 
 -- | Change the selected edges style
 changeEdgeStyle :: GraphState -> EdgeStyle -> GraphState
@@ -244,4 +244,4 @@ changeEdgeStyle es s = stateSetGI (ngiM, newEgiM) es
   where
     eids = snd $ stateGetSelected es
     (ngiM, egiM) = stateGetGI es
-    newEgiM = M.mapWithKey (\k gi -> if EdgeId k `elem` eids then edgeGiSetStyle s gi else gi) egiM
+    newEgiM = M.mapWithKey (\k gi -> if EdgeId k `elem` eids then gi {style = s} else gi) egiM

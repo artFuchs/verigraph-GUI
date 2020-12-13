@@ -9,57 +9,35 @@ import qualified GI.Gdk as Gdk
 import           Data.GI.Base
 import           Data.GI.Base.GValue
 import           Data.GI.Base.GType
-import           Data.GI.Base.ManagedPtr (unsafeCastTo)    
-import           Graphics.Rendering.Cairo
-import           Graphics.Rendering.Pango.Layout
-import           Graphics.Rendering.Pango
+import           Data.GI.Base.ManagedPtr (unsafeCastTo)
 
 -- haskell data modules
 import           Control.Monad
-import           Control.Monad.IO.Class
-import           Control.Monad.Zip
 import           Data.IORef
-import           Data.List
 import           Data.Int
-import           Data.Char
 import           Data.Maybe
 import           Data.Either
 import qualified Data.Text as T
 import qualified Data.Map as M
-import qualified Data.Tree as Tree
-import           Data.Monoid
 
 -- verigraph modules
-import           Abstract.Category
-import           Abstract.Rewriting.DPO
 import           Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
-import qualified Data.TypedGraph.Morphism as TGM
 
 -- Verigraph-GUI modules
+import           GUI.Analysis.CriticalPairAnalysis
 import           GUI.Data.GraphicalInfo
 import           GUI.Data.Info hiding (empty)
 import qualified GUI.Data.Info as I
 import           GUI.Data.DiaGraph hiding (empty)
-import           GUI.Dialogs
 import           GUI.Data.GraphState
 import qualified GUI.Data.DiaGraph as DG
 import           GUI.Data.Nac
+import           GUI.Dialogs
 import           GUI.Editor as Edit
 import qualified GUI.Editor.Helper.TreeStore as Edit
-import           GUI.Helper.GrammarMaker
-import           GUI.Helper.List
-import           GUI.Helper.Geometry
-import           GUI.Helper.GraphValidation
-import           GUI.Render.Render
-
--- modules for executor
 import qualified GUI.Executor as Exec
-
--- modules needed for analysis
-import GUI.Analysis.CriticalPairAnalysis
-
-import GUI.HelpWindow
+import           GUI.HelpWindow
 
 
 -- | creates the Graphical User Interface and bind actions to events
@@ -111,16 +89,16 @@ startGUI = do
 
   -- build main window
   (window, tabs, fileItems, editItems, viewItems, helpItems) <- buildMainWindow
-  #showAll window
-
-  -- build auxiliar windows
-  helpWindow <- buildHelpWindow
-
   -- set the menubar
   let [newm,opn,svn,sva,eggx,evgg] = fileItems
       [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
       [zin,zut,z50,zdf,z150,z200,vdf] = viewItems
       [hlp,abt] = helpItems
+  #showAll window
+
+  -- build help window
+  helpWindow <- buildHelpWindow
+
 
   -- init an model to display in the editor tree panel --------------------------------
   editStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt, gtypeBoolean, gtypeBoolean]

@@ -66,9 +66,9 @@ import GUI.Editor.Helper.Clipboard
 import GUI.Editor.Helper.Nac
 import GUI.Editor.Helper.SaveLoad
 import GUI.Editor.Helper.TypeInfer
+import GUI.Editor.Helper.TreeStore
 import GUI.Editor.Helper.UndoRedo
 import GUI.Editor.UI.UIBuilders
-import GUI.Editor.Helper.TreeStore
 import GUI.Editor.UI.UpdateInspector
 
 ---------------------------------------------------------------------------------------------------------------------------------
@@ -621,7 +621,7 @@ startEditor window store
       then return ()
       else do
         let (ngiM, egiM) = stateGetGI es
-            newngiM = M.mapWithKey (\k ngi -> if NodeId k `elem` nds then nodeGiSetColor color ngi else ngi) ngiM
+            newngiM = M.mapWithKey (\k ngi -> if NodeId k `elem` nds then ngi {fillColor = color} else ngi) ngiM
         stackUndo undoStack redoStack currentGraph es Nothing
         setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef currentState (\es -> stateSetGI (newngiM, egiM) es)
@@ -643,8 +643,8 @@ startEditor window store
       then return ()
       else do
         let (ngiM, egiM) = stateGetGI es
-            newngiM = M.mapWithKey (\k ngi -> if NodeId k `elem` nds then nodeGiSetLineColor color ngi else ngi) ngiM
-            newegiM = M.mapWithKey (\k egi -> if EdgeId k `elem` edgs then edgeGiSetColor color egi else egi) egiM
+            newngiM = M.mapWithKey (\k ngi -> if NodeId k `elem` nds then ngi {lineColor = color} else ngi) ngiM
+            newegiM = M.mapWithKey (\k egi -> if EdgeId k `elem` edgs then egi {color = color} else egi) egiM
         stackUndo undoStack redoStack currentGraph es Nothing
         setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         modifyIORef currentState (\es -> stateSetGI (newngiM, newegiM) es)
@@ -769,8 +769,7 @@ startEditor window store
             giM = stateGetGI es
             g' = foldr (\nid g -> updateNodePayload nid g (\info -> infoSetType info typeInfo)) g acceptableSNids
             newNGI = foldr  (\nid giM -> let ngi = getNodeGI (fromEnum nid) giM
-                                        --in M.insert (fromEnum nid) (nodeGiSetPosition (position ngi) . nodeGiSetDims (dims ngi) $ typeNGI) gi) (fst giM) acceptableSNids
-                                        in M.insert (fromEnum nid) (typeNGI {position = position ngi, dims = dims ngi}) giM) 
+                                         in M.insert (fromEnum nid) (typeNGI {position = position ngi, dims = dims ngi}) giM) 
                             (fst giM)
                             acceptableSNids
             es' = stateSetGraph g' . stateSetGI (newNGI, snd giM) $ es
@@ -867,7 +866,7 @@ startEditor window store
             ndims <- forM sNids $ \nid -> do
               dim <- getStringDims (infoVisible . nodeInfo . fromJust . G.lookupNode nid $ newGraph') context font
               return (nid, dim)
-            let newNgiM = foldl (\giM (nid, dim) -> let gi = nodeGiSetDims dim $ getNodeGI (fromEnum nid) giM
+            let newNgiM = foldl (\giM (nid, dim) -> let gi = (getNodeGI (fromEnum nid) giM) {dims = dim}
                                                     in M.insert (fromEnum nid) gi giM) (fst gi) ndims
             writeIORef currentState (stateSetGI (newNgiM, snd gi) . stateSetGraph newGraph' $ es)
             Gtk.widgetQueueDraw canvas
@@ -974,7 +973,7 @@ startEditor window store
                             where nid = fromEnum (nodeId node)
                   gn (i,t,gi) = case M.lookup t pnt of
                                   Nothing -> (i,gi)
-                                  Just (gi',_) -> (i,nodeGiSetColor (fillColor gi') . nodeGiSetShape (shape gi') $ gi)
+                                  Just (gi',_) -> (i, gi {fillColor = (fillColor gi'), shape = (shape gi')})
                   fe ((src,_), edge, (tgt,_)) = (eid, eType, srcType, tgtType, getEdgeGI eid egi)
                             where eid = fromEnum (edgeId edge)
                                   eType = infoType (edgeInfo edge)

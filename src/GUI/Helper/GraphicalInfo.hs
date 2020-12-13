@@ -50,8 +50,8 @@ updateNodesGiDims ngiM g context = do
                 Just node -> do
                   let info = nodeInfo node
                       label = infoLabelStr info
-                  dims <- getStringDims label context Nothing
-                  return (n, nodeGiSetDims dims gi)
+                  dim <- getStringDims label context Nothing
+                  return (n, gi {dims = dim})
   return $ M.fromList listOfNGIs
 
 -- rename the selected itens, modifying the sizes of nodes according to the text
@@ -86,7 +86,7 @@ renameSelected es content context = do
                      return (nodeId n, dim)
                )
   let newNgiM = M.mapWithKey (\k gi -> case lookup (NodeId k) dims of
-                                        Just dim -> nodeGiSetDims dim gi
+                                        Just dim -> gi {dims = dim}
                                         Nothing -> gi)
                              ngiM
       newEs   = stateSetGI (newNgiM,egiM) . stateSetGraph newGraph $ es
