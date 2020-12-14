@@ -191,14 +191,79 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
             then do
                 t <- Gtk.treeModelGetValue model iter 2 >>= fromGValue :: IO Int32
                 (rIndex,mIndex) <- case t of
-                    0 -> return (-1,-1)
                     1 -> do 
                         ri <- Gtk.treeModelGetValue model iter 1 >>= fromGValue :: IO Int32
                         return (ri,-1) 
+                        
                     2 -> do 
                         ri <- Gtk.treeModelGetValue model iter 3 >>= fromGValue :: IO Int32
                         rm <- Gtk.treeModelGetValue model iter 1 >>= fromGValue :: IO Int32
                         return (ri,rm)
+                        
+                    3 -> do 
+                        ri <- Gtk.treeModelGetValue model iter 3 >>= fromGValue :: IO Int32
+                        return (ri,-1)
+                        
+                    4 -> do -- show next 100 items or so
+                        matchesM <- readIORef matchesMap
+                        ri <- Gtk.treeModelGetValue model iter 3 >>= fromGValue :: IO Int32
+                        offset <- Gtk.treeModelGetValue model iter 1 >>= fromGValue :: IO Int32
+                        let rMatches = M.lookup ri matchesM
+                        case rMatches of 
+                            Nothing -> return ()
+                            Just nM -> do
+                                let numMatches = M.size nM
+                                    offset' = 100+(fromIntegral offset)
+                                    matchesL = drop offset' $ M.toList nM
+                                    newCommentEntry = ( (show numMatches) ++ " matches (showing " ++ (show $ offset'+1) ++ "-" ++ (show $ offset'+100) ++ ")", 0, 3, ri)
+                                    newNextEntry = if numMatches-offset' > 100
+                                                    then Just ( "next " ++ (show $ min (numMatches-offset') 100 ) ++ " matches", fromIntegral offset', 4, ri)
+                                                    else Nothing
+                                    newPreviousEntry = ("previous 100 matches", fromIntegral offset', 5, ri)
+                                                             
+                                (_,iterParent) <- Gtk.treeModelIterParent store iter
+                                (_,firstChildIter) <- Gtk.treeModelIterChildren store (Just iterParent)
+                                treeStoreClearCurrrentLevel store firstChildIter
+                                
+                                updateTreeStore store newCommentEntry
+                                case newNextEntry of
+                                    Nothing    -> return ()
+                                    Just entry -> updateTreeStore store entry
+                                updateTreeStore store newPreviousEntry
+                                forM_ (take 100 matchesL) $ \(mid,m) -> updateTreeStore store ("match " ++ (show mid), mid, 2, ri)
+                        return (ri,-1)                       
+                        
+                    5 -> do -- show previous 100
+                        matchesM <- readIORef matchesMap
+                        ri <- Gtk.treeModelGetValue model iter 3 >>= fromGValue :: IO Int32
+                        offset <- Gtk.treeModelGetValue model iter 1 >>= fromGValue :: IO Int32
+                        let rMatches = M.lookup ri matchesM
+                        case rMatches of
+                            Nothing -> return ()
+                            Just nM -> do
+                                let numMatches = M.size nM
+                                    offset' = (fromIntegral offset) - 100
+                                    matchesL = drop offset' $ M.toList nM
+                                    newCommentEntry = ( (show numMatches) ++ " matches (showing " ++ (show $ offset'+1) ++ "-" ++ (show $ offset'+100) ++ ")", 0, 3, ri)
+                                    newNextEntry = ( "next 100 matches", (fromIntegral offset'), 4, ri)
+                                    newPreviousEntry = if offset' >= 100
+                                                        then Just ("previous 100 matches", (fromIntegral offset'), 5, ri)
+                                                        else Nothing
+                                                        
+                                (parentValid,iterParent) <- Gtk.treeModelIterParent store iter
+                                (childValid,firstChildIter) <- Gtk.treeModelIterChildren store (Just iterParent)
+                                treeStoreClearCurrrentLevel store firstChildIter
+                                
+                                updateTreeStore store newCommentEntry
+                                updateTreeStore store newNextEntry
+                                case newPreviousEntry of
+                                    Nothing    -> return ()
+                                    Just entry -> updateTreeStore store entry
+                                forM_ (take 100 matchesL) $ \(mid,m) -> updateTreeStore store ("match " ++ (show mid), mid, 2, ri)
+                                
+                        
+                        return (ri,-1)
+                    _ -> return (-1,-1)
                 writeIORef currentMatchIndex mIndex
                 statesM <- readIORef statesMap
                 --load rule
@@ -210,6 +275,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                 if (currRIndex == rIndex)
                     then return ()
                     else do
+                        -- split GIs into left, right and middle GIs
                         let lngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds l)) ngiM
                             legiM = M.filterWithKey (\k a -> (G.EdgeId k) `elem` (G.edgeIds l)) egiM
                             rngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds r)) ngiM
@@ -511,9 +577,19 @@ findMatches store statesMap hostState typeGraph nacInfoMap nacIDListMap matchesM
                                 map (\(rid,mM) -> 
                                     map (\(mid,m) -> ("match " ++ (show mid), mid, 2 :: Int32, rid) ) $ M.toList mM) $
                                 M.toList matchesM
-        putStrLn $ "there are a total of " ++ (show $ length matchesEntries) ++ "rules matches in the graph"
+        -- Map Int32 ( Map Int32 match )        
+
         Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
-            forM_ (take 100 matchesEntries) $ \entry -> updateTreeStore store entry
+            --forM_ (take 100 matchesEntries) $ \entry -> updateTreeStore store entry
+            forM_ (M.toList matchesM) $ \(rid,nM) -> do
+                let numMatches = M.size nM
+                if numMatches > 100
+                    then do 
+                        updateTreeStore store ((show numMatches) ++ " matches (showing 1-100)", 0, 3, rid)
+                        updateTreeStore store ("next " ++ (show $ min 100 (numMatches - 100) ) ++ " matches",0, 4, rid)
+                    else updateTreeStore store ((show numMatches) ++ " matches", 0, 3, rid)
+                forM_ (take 100 $ M.toList nM) $ \(mid,_) -> updateTreeStore store ("match " ++ (show mid), mid, 2, rid)
+                
             return False
         return ()
 
@@ -708,9 +784,9 @@ applyMatch hostState statesMap rIndex context p m = do
     A tuple representing what is showed in each node of the tree in the treeview
     It contains the informations:
     * name,
-    * id,
-    * type (0 - topic, 1 - rule, 2 - rule match),
-    * parent id (used if type is '2 - rule match').
+    * id (case type is 2) or offset (case type is 4 or 5)
+    * type (0 - topic, 1 - rule, 2 - rule match, 3 - comment about the numer of matches, 4 - next, 5 - previous),
+    * parent id (used if type is >= 2).
 -}
 type ExecGraphEntry = (String, Int32, Int32, Int32)
 
@@ -778,6 +854,9 @@ updateTreeStore' store iter entry@(n,i,t,p) = do
                     if valid
                         then updateInList parentIter
                         else return ()
+            3 -> insertMiscInRule (cid==p) 0
+            4 -> insertMiscInRule (cid==p) 1
+            5 -> insertMiscInRule (cid==p) 1
             _ -> return ()
 
     where
@@ -788,8 +867,19 @@ updateTreeStore' store iter entry@(n,i,t,p) = do
                 else do
                     newIter <- Gtk.treeStoreAppend store (Just parentIter)
                     storeSetGraphEntry store newIter entry
+        insertMiscInRule insertInThis pos = do
+            if insertInThis
+                then do
+                    newIter <- Gtk.treeStoreInsert store (Just iter) pos
+                    storeSetGraphEntry store newIter entry
+                else do
+                    valid <- Gtk.treeModelIterNext store iter
+                    if valid
+                        then updateTreeStore' store iter entry
+                        else return ()
         
-
+            
+-- | remove a rule entry from treeStore.
 removeFromTreeStore :: Gtk.TreeStore -> Int32 -> IO ()
 removeFromTreeStore store index = do
     mIter <- getFirstRuleIter store
@@ -811,8 +901,7 @@ removeFromTreeStore' store iter index = do
                 else return ()
 
 
-
--- remove entries that contains invalid indexes - must pass a list of valid indexes
+-- | remove entries that contains invalid indexes - must pass a list of valid indexes
 removeTrashFromTreeStore :: Gtk.TreeStore -> [Int32] -> IO ()
 removeTrashFromTreeStore store validIndexes = do
     mIter <- getFirstRuleIter store
@@ -830,7 +919,8 @@ removeTrashFromTreeStore' store iter validIndexes = do
         then removeTrashFromTreeStore' store iter validIndexes
         else return ()
 
--- get the GraphStates that are referenciated by the treeStore    
+
+-- | get the GraphStates that are referenciated by the treeStore    
 treeStoreGetRules :: Gtk.TreeStore -> IORef (M.Map Int32 GraphState) -> IO [(Int32,GraphState)]
 treeStoreGetRules store statesMap = do
     mIter <- getFirstRuleIter store
@@ -852,7 +942,8 @@ treeStoreGetRules' store iter statesMap = do
         Nothing -> return states
         Just st -> return $ (index,st) : states
 
--- remove entries of matches from the treeStore
+
+-- | remove all entries of matches (and comments, next and previous commands) from the treeStore
 removeMatchesFromTreeStore :: Gtk.TreeStore -> IO ()
 removeMatchesFromTreeStore store = do
     mIter <- getFirstRuleIter store
@@ -870,8 +961,16 @@ removeMatchesFromTreeStore' store iter = do
                 then removeMatchesFromTreeStore' store childIter
                 else return ()
             Gtk.treeModelIterNext store iter
-        2 -> Gtk.treeStoreRemove store iter
+        _ -> Gtk.treeStoreRemove store iter
     if continue
         then removeMatchesFromTreeStore' store iter
+        else return ()
+        
+-- | clear current level of matches from the treeStore
+treeStoreClearCurrrentLevel :: Gtk.TreeStore -> Gtk.TreeIter -> IO ()
+treeStoreClearCurrrentLevel store iter = do
+    continue <- Gtk.treeStoreRemove store iter
+    if continue
+        then treeStoreClearCurrrentLevel store iter
         else return ()
          
