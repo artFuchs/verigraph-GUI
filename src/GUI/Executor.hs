@@ -184,6 +184,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         return ()
 
     -- when select a rule, change their states
+    treeViewOccupied <- newIORef False
     on treeView #cursorChanged $ do
         selection <- Gtk.treeViewGetSelection treeView
         (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
@@ -205,62 +206,73 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                         return (ri,-1)
                         
                     4 -> do -- show next 100 items or so
-                        matchesM <- readIORef matchesMap
                         ri <- Gtk.treeModelGetValue model iter 3 >>= fromGValue :: IO Int32
-                        offset <- Gtk.treeModelGetValue model iter 1 >>= fromGValue :: IO Int32
-                        let rMatches = M.lookup ri matchesM
-                        case rMatches of 
-                            Nothing -> return ()
-                            Just nM -> do
-                                let numMatches = M.size nM
-                                    offset' = 100+(fromIntegral offset)
-                                    matchesL = drop offset' $ M.toList nM
-                                    newCommentEntry = ( (show numMatches) ++ " matches (showing " ++ (show $ offset'+1) ++ "-" ++ (show $ offset'+100) ++ ")", 0, 3, ri)
-                                    newNextEntry = if numMatches-offset' > 100
-                                                    then Just ( "next " ++ (show $ min (numMatches-offset') 100 ) ++ " matches", fromIntegral offset', 4, ri)
-                                                    else Nothing
-                                    newPreviousEntry = ("previous 100 matches", fromIntegral offset', 5, ri)
-                                                             
-                                (_,iterParent) <- Gtk.treeModelIterParent store iter
-                                (_,firstChildIter) <- Gtk.treeModelIterChildren store (Just iterParent)
-                                treeStoreClearCurrrentLevel store firstChildIter
-                                
-                                updateTreeStore store newCommentEntry
-                                case newNextEntry of
-                                    Nothing    -> return ()
-                                    Just entry -> updateTreeStore store entry
-                                updateTreeStore store newPreviousEntry
-                                forM_ (take 100 matchesL) $ \(mid,m) -> updateTreeStore store ("match " ++ (show mid), mid, 2, ri)
+                        occ <- readIORef treeViewOccupied
+                        if occ
+                            then return ()
+                            else do
+                                matchesM <- readIORef matchesMap
+                                case M.lookup ri matchesM of 
+                                    Nothing -> return ()
+                                    Just nM -> do
+                                        writeIORef treeViewOccupied True
+                                        offset <- Gtk.treeModelGetValue model iter 1 >>= fromGValue :: IO Int32
+                                        let numMatches = M.size nM
+                                            offset' = 100+(fromIntegral offset)
+                                            matchesL = drop offset' $ M.toList nM
+                                            newCommentEntry = ( (show numMatches) ++ " matches (showing " ++ (show $ offset'+1) ++ "-" ++ (show $ min numMatches (offset'+100)) ++ ")", 0, 3, ri)
+                                            newNextEntry = if numMatches-offset' > 100
+                                                            then Just ( "next " ++ (show $ min (numMatches-offset'-100) 100 ) ++ " matches", fromIntegral offset', 4, ri)
+                                                            else Nothing
+                                            newPreviousEntry = ("previous 100 matches", fromIntegral offset', 5, ri)
+
+                                        (_,iterParent) <- Gtk.treeModelIterParent store iter
+                                        (_,firstChildIter) <- Gtk.treeModelIterChildren store (Just iterParent)
+                                        treeStoreClearCurrrentLevel store firstChildIter
+                                        
+                                        updateTreeStore store newCommentEntry
+                                        case newNextEntry of
+                                            Nothing    -> return ()
+                                            Just entry -> updateTreeStore store entry
+                                        updateTreeStore store newPreviousEntry
+                                        forM_ (take 100 matchesL) $ \(mid,m) -> updateTreeStore store ("match " ++ (show mid), mid, 2, ri)
+
+                                        writeIORef treeViewOccupied False
                         return (ri,-1)                       
                         
                     5 -> do -- show previous 100
-                        matchesM <- readIORef matchesMap
                         ri <- Gtk.treeModelGetValue model iter 3 >>= fromGValue :: IO Int32
-                        offset <- Gtk.treeModelGetValue model iter 1 >>= fromGValue :: IO Int32
-                        let rMatches = M.lookup ri matchesM
-                        case rMatches of
-                            Nothing -> return ()
-                            Just nM -> do
-                                let numMatches = M.size nM
-                                    offset' = (fromIntegral offset) - 100
-                                    matchesL = drop offset' $ M.toList nM
-                                    newCommentEntry = ( (show numMatches) ++ " matches (showing " ++ (show $ offset'+1) ++ "-" ++ (show $ offset'+100) ++ ")", 0, 3, ri)
-                                    newNextEntry = ( "next 100 matches", (fromIntegral offset'), 4, ri)
-                                    newPreviousEntry = if offset' >= 100
-                                                        then Just ("previous 100 matches", (fromIntegral offset'), 5, ri)
-                                                        else Nothing
-                                                        
-                                (parentValid,iterParent) <- Gtk.treeModelIterParent store iter
-                                (childValid,firstChildIter) <- Gtk.treeModelIterChildren store (Just iterParent)
-                                treeStoreClearCurrrentLevel store firstChildIter
-                                
-                                updateTreeStore store newCommentEntry
-                                updateTreeStore store newNextEntry
-                                case newPreviousEntry of
-                                    Nothing    -> return ()
-                                    Just entry -> updateTreeStore store entry
-                                forM_ (take 100 matchesL) $ \(mid,m) -> updateTreeStore store ("match " ++ (show mid), mid, 2, ri)
-                                
+                        occ <- readIORef treeViewOccupied
+                        if occ
+                            then return ()
+                            else do
+                                matchesM <- readIORef matchesMap
+                                case M.lookup ri matchesM of
+                                    Nothing -> return ()
+                                    Just nM -> do
+                                        writeIORef treeViewOccupied True
+                                        offset <- Gtk.treeModelGetValue model iter 1 >>= fromGValue :: IO Int32
+                                        let numMatches = M.size nM
+                                            offset' = (fromIntegral offset) - 100
+                                            matchesL = drop offset' $ M.toList nM
+                                            newCommentEntry = ( (show numMatches) ++ " matches (showing " ++ (show $ offset'+1) ++ "-" ++ (show $ offset'+100) ++ ")", 0, 3, ri)
+                                            newNextEntry = ( "next 100 matches", (fromIntegral offset'), 4, ri)
+                                            newPreviousEntry = if offset' >= 100
+                                                                then Just ("previous 100 matches", (fromIntegral offset'), 5, ri)
+                                                                else Nothing
+
+                                        (parentValid,iterParent) <- Gtk.treeModelIterParent store iter
+                                        (childValid,firstChildIter) <- Gtk.treeModelIterChildren store (Just iterParent)
+                                        treeStoreClearCurrrentLevel store firstChildIter
+                                        
+                                        updateTreeStore store newCommentEntry
+                                        updateTreeStore store newNextEntry
+                                        case newPreviousEntry of
+                                            Nothing    -> return ()
+                                            Just entry -> updateTreeStore store entry
+                                        forM_ (take 100 matchesL) $ \(mid,m) -> updateTreeStore store ("match " ++ (show mid), mid, 2, ri)
+                                        
+                                        writeIORef treeViewOccupied False
                         
                         return (ri,-1)
                     _ -> return (-1,-1)
@@ -966,7 +978,7 @@ removeMatchesFromTreeStore' store iter = do
         then removeMatchesFromTreeStore' store iter
         else return ()
         
--- | clear current level of matches from the treeStore
+-- | clear current level of entries from the treeStore
 treeStoreClearCurrrentLevel :: Gtk.TreeStore -> Gtk.TreeIter -> IO ()
 treeStoreClearCurrrentLevel store iter = do
     continue <- Gtk.treeStoreRemove store iter
