@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Generated with glade 3.22.1 -->
+<interface>
+  <requires lib="gtk+" version="3.20"/>
+  <object class="GtkTextTagTable" id="helpTagTable">
+    <child type="tag">
+      <object class="GtkTextTag" id="titleTag">
+        <property name="name">titleTag</property>
+        <property name="font">Bold</property>
+        <property name="size_points">18</property>
+      </object>
+    </child>
+  </object>
+  <object class="GtkTextBuffer" id="textbuffer1">
+    <property name="tag_table">helpTagTable</property>
+    <property name="text" translatable="yes"># Basic Editing
+
+To create a node, click with the right mouse button in a blank space in the canvas.
+
+To create edges, click with the right mouse button in a node while there are other nodes selected.
+
+To select a node, click in it with the left mouse button. It's possible to select multiple elements by holding &lt;SHIFT&gt; while selecting new elements. To remove an element from selection, use the &lt;CTRL&gt; + &lt;SHIFT&gt; combination and click in one of the selected elements.
+
+
+# Inspector Panel
+
+At the right side of the window, there is the inspector panel. The inspector panel content changes according to the context of the editor (i.e, the type of the selected graph plus the current selection).
+
+If there are selected elements, the inspector panel shows and allows to change the properties of those elements. If there aren't any selected elements, the inspector panel will indicate the properties of the next created element.
+
+# Editing the Grammar
+
+First it's needed to specify the TypeGraph. The inspector will display layout options for the elements and the elements can be named. Each node has to have a different name. Two distinct edges can have the same name if they are connected to different nodes.
+
+With the TypeGraph specified, it is possible to specify the InititialGraph and the Rules. The inspector will display possible types for the elements, and in the Rule case the inspector will display operation options for the elements. 
+
+It's possible to specify NACs for the Rules. In a NAC graph, the elements belonging to the left side of the rule have a yellow highlighting. These elements can be merged. Merged elements have a green highlight and can be splitted.
+To merge or split an element, one can use the buttons on the inspector or the "Edit→Merge Elements" and "Edit→Split Elements" menuItems.
+</property>
+  </object>
+  <object class="GtkTextBuffer" id="textbuffer2">
+    <property name="tag_table">helpTagTable</property>
+    <property name="text" translatable="yes">The executor is divided in three areas:
+  
+# Execution area
+
+This area display the host graph, which is modified by the rules of the grammar. 
+On top of this area ther are the control buttons in order: 'stop execution', 'start execution', 'pause execution' and 'execute one step' and a execution speed control that specifies the minimum interval between execution steps.
+To start execution, one can simply press the 'start execution' button. To execute step by step, it's needed to first press the 'stop execution' button to process the possible matches for the initial graph.
+
+
+# Tree View
+
+The tree view in the left displays the rules of the grammar and the matches available for each rule.
+
+On the top level there is the 'Grammar' node. Selecting this node will cause the execution to be random.
+
+On the second level there are the rule nodes. Selecting one of these nodes will cause the execution to apply only that rule while there are matches for it, but the matches will be random.
+
+On the last level there are, in order:
+- a node indicating how many matches the rule have, and the range of matches being displayed (there are a maximun of 100 matches being displayed at the same time). Selecting this node will have a similar effect to selecting the rule node; 
+- two control nodes that have the functionality of showing the next or previous "pages" of nodes;
+-  the matches nodes. Selecting one of those nodes will make the execution to be totally guided by the user. The part of the graph that will be altered will be indiated in yellow in the host graph.
+
+
+# Rule Viewer
+
+When a rule or a third level node is selected in the Tree View, the rule viewer will display the rule.
+
+The rule format can be displayed in the traditional L→R format, or can be displayed with a unique graph, similar to the format used when editing the grammar. In both cases, there is a separate graph for the rule NACs in the left of the rule.
+</property>
+  </object>
+  <object class="GtkTextBuffer" id="textbuffer3">
+    <property name="tag_table">helpTagTable</property>
+    <property name="text" translatable="yes">At the moment, the only analysis supported in the GUI is the critical pair analysis.
+
+To run the analysis, click in the 'Execute Analysis' button. The result of the analysis is displayed in text format as it would be in Verigraph. 
+
+As in verigraph, it is possible to export the result to a .cpx file to be viewed in AGG. To do this, use the folder icon in the top left to specify a path to save the analysis, or write the path in the "file path" text entry and then click in the save icon on the right of the "file path" field</property>
+  </object>
+  <object class="GtkWindow" id="helpWindow">
+    <property name="can_focus">False</property>
+    <property name="default_width">600</property>
+    <property name="default_height">400</property>
+    <child>
+      <placeholder/>
+    </child>
+    <child>
+      <object class="GtkNotebook">
+        <property name="visible">True</property>
+        <property name="can_focus">True</property>
+        <property name="tab_pos">left</property>
+        <child>
+          <object class="GtkScrolledWindow">
+            <property name="visible">True</property>
+            <property name="can_focus">True</property>
+            <property name="shadow_type">in</property>
+            <child>
+              <object class="GtkTextView">
+                <property name="visible">True</property>
+                <property name="can_focus">True</property>
+                <property name="editable">False</property>
+                <property name="wrap_mode">word</property>
+                <property name="buffer">textbuffer1</property>
+              </object>
+            </child>
+          </object>
+        </child>
+        <child type="tab">
+          <object class="GtkLabel">
+            <property name="visible">True</property>
+            <property name="can_focus">False</property>
+            <property name="label" translatable="yes">Editor</property>
+          </object>
+          <packing>
+            <property name="tab_fill">False</property>
+          </packing>
+        </child>
+        <child>
+          <object class="GtkScrolledWindow">
+            <property name="visible">True</property>
+            <property name="can_focus">True</property>
+            <property name="shadow_type">in</property>
+            <child>
+              <object class="GtkTextView">
+                <property name="visible">True</property>
+                <property name="can_focus">True</property>
+                <property name="margin_right">15</property>
+                <property name="wrap_mode">word</property>
+                <property name="buffer">textbuffer2</property>
+              </object>
+            </child>
+          </object>
+          <packing>
+            <property name="position">1</property>
+          </packing>
+        </child>
+        <child type="tab">
+          <object class="GtkLabel">
+            <property name="visible">True</property>
+            <property name="can_focus">False</property>
+            <property name="label" translatable="yes">Execute</property>
+          </object>
+          <packing>
+            <property name="position">1</property>
+            <property name="tab_fill">False</property>
+          </packing>
+        </child>
+        <child>
+          <object class="GtkTextView">
+            <property name="visible">True</property>
+            <property name="can_focus">True</property>
+            <property name="wrap_mode">word</property>
+            <property name="buffer">textbuffer3</property>
+          </object>
+          <packing>
+            <property name="position">2</property>
+          </packing>
+        </child>
+        <child type="tab">
+          <object class="GtkLabel">
+            <property name="visible">True</property>
+            <property name="can_focus">False</property>
+            <property name="label" translatable="yes">Analysis</property>
+          </object>
+          <packing>
+            <property name="position">2</property>
+            <property name="tab_fill">False</property>
+          </packing>
+        </child>
+      </object>
+    </child>
+  </object>
+</interface>
