@@ -90,7 +90,7 @@ startGUI = do
   -- build main window
   (window, tabs, fileItems, editItems, viewItems, helpItems) <- buildMainWindow
   -- set the menubar
-  let [newm,opn,svn,sva,eggx,evgg] = fileItems
+  let [newm,opn,svn,sva,eggx] = fileItems
       [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
       [zin,zut,z50,zdf,z150,z200,vdf] = viewItems
       [hlp,abt] = helpItems
@@ -398,8 +398,7 @@ buildMainWindow = do
   saveItem <- Gtk.builderGetObject builder "save_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   saveAsItem <- Gtk.builderGetObject builder "save_as_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   exportGGXItem <- Gtk.builderGetObject builder "export_ggx_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  exportVGGItem <- Gtk.builderGetObject builder "export_vgg_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  let fileItems = [newItem,openItem,saveItem,saveAsItem,exportGGXItem,exportVGGItem]
+  let fileItems = [newItem,openItem,saveItem,saveAsItem,exportGGXItem]
 
   delItem <- Gtk.builderGetObject builder  "delete_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   undoItem <- Gtk.builderGetObject builder  "undo_item" >>= unsafeCastTo Gtk.MenuItem . fromJust

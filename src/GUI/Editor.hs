@@ -160,7 +160,7 @@ startEditor window store
       )
   
   -- "unpack" menuItems
-  let [newm,opn,svn,sva,eggx,evgg] = fileItems
+  let [newm,opn,svn,sva,eggx] = fileItems
       [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
       [zin,zut,z50,zdf,z150,z200,vdf] = viewItems
 
@@ -1201,7 +1201,7 @@ startEditor window store
     continue <- confirmOperation window store changedProject currentState nacInfoMap fileName storeIORefs
     if continue
       then do
-        mg <- loadFile window loadProject
+        mg <- loadFile window loadProject ("Verigraph-GUI grammar file (.vgg)","*.vgg")
         case mg of
           Nothing -> return ()
           Just (forest,fn) -> do
@@ -1256,7 +1256,7 @@ startEditor window store
     context <- Gtk.widgetGetPangoContext canvas
     updateAllNacs store graphStates nacInfoMap context
     structs <- getStructsToSave store graphStates nacInfoMap
-    saved <- saveFile structs saveProject fileName window True
+    saved <- saveFile structs saveProject fileName window
     if saved
       then do afterSave store window graphStates changesIORefs fileName
       else return ()
@@ -1267,7 +1267,7 @@ startEditor window store
     context <- Gtk.widgetGetPangoContext canvas
     updateAllNacs store graphStates nacInfoMap context
     structs <- getStructsToSave store graphStates nacInfoMap
-    saved <- saveFileAs structs saveProject fileName window True
+    saved <- saveFileAs structs saveProject fileName (Just ".vgg") window True
     if saved
       then afterSave store window graphStates changesIORefs fileName
       else return ()
@@ -1281,16 +1281,7 @@ startEditor window store
     case efstOrderGG of
       Left msg -> showError window (T.pack msg)
       Right fstOrderGG -> do
-        saveFileAs (fstOrderGG,tg) exportGGX fileName window False
-        return ()
-
-  -- export grammar to .vgg (new format containing the grammar)
-  evgg `on` #activate $ do
-    efstOrderGG <- prepToExport store graphStates nacInfoMap
-    case efstOrderGG of
-      Left msg -> showError window (T.pack msg)
-      Right fstOrderGG -> do
-        saveFileAs fstOrderGG exportVGG fileName window False
+        saveFileAs (fstOrderGG,tg) exportGGX fileName (Just ".ggx") window False
         return ()
   
 
@@ -1521,7 +1512,7 @@ confirmOperation window store changedProject currentState nacInfoMap fileName st
     Gtk.ResponseTypeYes -> do
       storeCurrentES window currentState storeIORefs nacInfoMap
       structs <- getStructsToSave store graphStates nacInfoMap
-      saveFile structs saveProject fileName window True -- returns True if saved the file
+      saveFile structs saveProject fileName window -- returns True if saved the file
     _ -> return False
 
 prepToExport :: Gtk.TreeStore

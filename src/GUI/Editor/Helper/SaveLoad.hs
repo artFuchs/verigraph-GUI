@@ -1,9 +1,9 @@
+{-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 module GUI.Editor.Helper.SaveLoad
 ( SaveInfo(..)
 , saveFile
 , saveFileAs
 , exportGGX
-, exportVGG
 , saveProject
 , loadFile
 , loadProject
@@ -49,8 +49,8 @@ data SaveInfo = Topic String | TypeGraph Int32 String GraphState | HostGraph Int
 --------------------------------------------------------------------------------
 -- functions -------------------------------------------------------------------
 
-saveFile :: a -> (a -> String -> IO Bool) -> IORef (Maybe String) -> Gtk.Window -> Bool -> IO Bool
-saveFile x saveF fileName window changeFN = do
+saveFile :: a -> (a -> String -> IO Bool) -> IORef (Maybe String) -> Gtk.Window -> IO Bool
+saveFile x saveF fileName window = do
   fn <- readIORef fileName
   case fn of
     Just path -> do
@@ -60,11 +60,11 @@ saveFile x saveF fileName window changeFN = do
         False -> do
           showError window $ T.pack ("Couldn't write to file." ++ path)
           return False
-    Nothing -> saveFileAs x saveF fileName window changeFN
+    Nothing -> saveFileAs x saveF fileName (Just ".vgg") window True
+    
 
-
-saveFileAs :: a -> (a -> String -> IO Bool) -> IORef (Maybe String) -> Gtk.Window -> Bool -> IO Bool
-saveFileAs x saveF fileName window changeFN = do
+saveFileAs :: a -> (a -> String -> IO Bool) -> IORef (Maybe String) -> Maybe String -> Gtk.Window -> Bool -> IO Bool
+saveFileAs x saveF fileName extension window changeFN = do
   saveD <- createSaveDialog window
   response <- Gtk.dialogRun saveD
   fn <- case toEnum . fromIntegral $  response of
@@ -75,11 +75,14 @@ saveFileAs x saveF fileName window changeFN = do
           Gtk.widgetDestroy saveD
           return Nothing
         Just path -> do
-          tentativa <- saveF x path
-          case tentativa of
+          path' <- case extension of
+            Just ext -> return $ FilePath.replaceExtension path ext
+            Nothing -> return path
+          attempt <- saveF x path'
+          case attempt of
             True -> do
               Gtk.widgetDestroy saveD
-              return $ Just path
+              return $ Just path'
             False -> do
               Gtk.widgetDestroy saveD
               showError window $ T.pack ("Couldn't write to file." ++ path)
@@ -110,7 +113,6 @@ saveProject contents path = do
 
 exportGGX :: (Grammar (TGM.TypedGraphMorphism Info Info), Graph Info Info) -> String -> IO Bool
 exportGGX (fstOrderGG, tg)  path = do
-  let path' = if FilePath.takeExtension path == ".ggx" then path else FilePath.replaceExtension path ".ggx"
   let nods = nodes tg
       edgs = edges tg
       nodeNames = map (\n -> ('N' : (show . fromEnum . nodeId $ n), (infoLabelStr . nodeInfo $ n) ++ "%:[NODE]:" )) nods
@@ -118,52 +120,27 @@ exportGGX (fstOrderGG, tg)  path = do
       names = nodeNames ++ edgeNames
 
   let emptySndOrderGG = grammar (emptyGraphRule (makeTypeGraph tg)) [] [] :: Grammar (RuleMorphism Info Info)
-  let ggName = reverse . takeWhile (/= '/') . drop 4 . reverse $ path'
+  let ggName = reverse . takeWhile (/= '/') . drop 4 . reverse $ path
 
-  writeGrammarFile (fstOrderGG,emptySndOrderGG) ggName names path'
+  writeGrammarFile (fstOrderGG,emptySndOrderGG) ggName names path
   return True
 
-exportVGG :: Grammar (TGM.TypedGraphMorphism Info Info) -> String -> IO Bool
-exportVGG fstOrderGG path = do
-  let path' = if FilePath.takeExtension path == ".vgg" then path else FilePath.replaceExtension path ".vgg"
-
-  -- functions of conversion
-  -- Grammar (TGM.TypedGraphMorphism Info Info) -> Grammar (TGM.TypedGraphMorphism String String)
-  let changeNodes = foldr (\(id,n) l -> (id, n {nodeInfo = Just show <*> (nodeInfo n) }):l) []
-      changeEdges = foldr (\(id,e) l -> (id, e {edgeInfo = Just show <*> (edgeInfo e) }):l) []
-      -- f :: Graph Info Info -> Graph String String
-      f g = g { nodeMap = changeNodes (nodeMap g)
-              , edgeMap = changeEdges (edgeMap g)
-              }
-      -- ff :: TypedGraph Info Info -> TypedGraph String String
-      -- ff :: GraphMorphism (Maybe Info) (Maybe Info) -> GraphMorphism (Maybe String) (Maybe String)
-      ff tg = tg { domainGraph = f (domainGraph tg)
-                 , codomainGraph = f (codomainGraph tg)}
-      -- fff :: TypedGraphMorphism Info Info -> TypedGraphMorphism String String
-      fff tgm = tgm { TGM.domainGraph = ff (TGM.domainGraph tgm)
-                    , TGM.codomainGraph = ff (TGM.codomainGraph tgm)
-                    , TGM.mapping = ff (TGM.mapping tgm)}
-
-  let startGraph = ff (start fstOrderGG)
-
-  let rules = map (\(n, rule) -> (n, rule { leftMorphism = fff (leftMorphism rule)
-                                           , rightMorphism = fff (rightMorphism rule)
-                                           , nacs = map fff (nacs rule) }
-                                  )
-                  ) 
-                  (productions fstOrderGG)
-
-  let cs = [] :: [Constraint (TGM.TypedGraphMorphism String String)]
-
-  let writeVGG = writeFile path' $ show (startGraph, cs, rules) 
-  saveTry <- E.try (writeVGG) :: IO (Either E.IOException ())
-  case saveTry of
-    Left _ -> return False
-    Right _ -> return True
-
-loadFile :: Gtk.Window -> (String -> Maybe a) -> IO (Maybe (a,String))
-loadFile window loadF = do
+loadFile :: Gtk.Window -> (String -> Maybe a) -> (T.Text, T.Text) -> IO (Maybe (a,String))
+loadFile window loadF (filterName, extension) = do
   loadD <- createLoadDialog window
+
+  filter <- Gtk.fileFilterNew
+  Gtk.fileFilterAddPattern filter extension
+  Gtk.fileFilterSetName filter (Just filterName)
+  Gtk.fileChooserAddFilter loadD filter
+  filters <- Gtk.fileChooserListFilters loadD
+
+  allFilter <- Gtk.fileFilterNew
+  Gtk.fileFilterAddPattern allFilter "*"
+  Gtk.fileFilterSetName allFilter (Just "all file formats")
+  Gtk.fileChooserAddFilter loadD allFilter
+
+
   response <- Gtk.dialogRun loadD
   case toEnum . fromIntegral $ response of
     Gtk.ResponseTypeAccept -> do
