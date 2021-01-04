@@ -450,21 +450,25 @@ executeStep :: Gtk.TreeView -> Gtk.TreeStore -> Gtk.CheckButton -> Gtk.DrawingAr
             -> IORef Bool
             -> IO ()
 executeStep treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches = do
-    contextIOR <- newIORef Nothing
     Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
         Gtk.spinnerStart statusSpinner
         Gtk.labelSetText statusLabel "applying match"
-        context <- Gtk.widgetGetPangoContext mainCanvas
-        writeIORef contextIOR (Just context)
         return False
     
     --apply match
-    context <- readIORef contextIOR >>= return . fromJust
-    applyMatchAccordingToLevel hostState statesMap context matchesMap productionMap currentMatchIndex currentRuleIndex
+    applyMatchAccordingToLevel hostState statesMap matchesMap productionMap currentMatchIndex currentRuleIndex
 
     Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
+        hostSt <- readIORef hostState
+        let g = stateGetGraph hostSt
+            (ngi,egi) = stateGetGI hostSt
+        context <- Gtk.widgetGetPangoContext mainCanvas
+        ngi' <- updateNodesGiDims ngi g context
+        modifyIORef hostState $ stateSetGI (ngi',egi)
+        
         --update Canvas
         Gtk.widgetQueueDraw mainCanvas
+        --update treeView cursor
         matchIndex <- readIORef currentMatchIndex
         keepInProd <- Gtk.toggleButtonGetActive keepRuleCheckBtn
         (maybePath,_) <- Gtk.treeViewGetCursor treeView
@@ -612,13 +616,12 @@ findMatches store statesMap hostState typeGraph nacInfoMap nacIDListMap matchesM
 -- the selected level is given by currentMatchIndex and currentRuleIndex
 applyMatchAccordingToLevel :: IORef GraphState 
                             -> IORef (M.Map Int32 GraphState) 
-                            -> P.Context 
                             -> IORef (M.Map Int32 (M.Map Int32 Match)) 
                             -> IORef (M.Map Int32 TGMProduction)
                             -> IORef Int32
                             -> IORef Int32
                             -> IO ()
-applyMatchAccordingToLevel hostState statesMap context matchesMap productionMap currentMatchIndex currentRuleIndex= do
+applyMatchAccordingToLevel hostState statesMap matchesMap productionMap currentMatchIndex currentRuleIndex= do
     matchesM <- readIORef matchesMap
     prodMap  <- readIORef productionMap
     mIndex <- readIORef currentMatchIndex
@@ -631,7 +634,7 @@ applyMatchAccordingToLevel hostState statesMap context matchesMap productionMap 
     -- apply match according to the level selected
     case (prod,match, rIndex, mIndex) of 
         (Just p, Just m, _, _) -> do  -- specified rule, specified match           
-            applyMatch hostState statesMap rIndex context p m
+            applyMatch hostState statesMap rIndex p m
 
         (Just p,Nothing, _, -1) -> do -- specified rule, random match
             let matchesL = M.elems matches
@@ -640,7 +643,7 @@ applyMatchAccordingToLevel hostState statesMap context matchesMap productionMap 
                 else do
                     index <- randomRIO (0, (length matchesL)-1)
                     let m = matchesL!!index
-                    applyMatch hostState statesMap rIndex context p m
+                    applyMatch hostState statesMap rIndex p m
 
         (Nothing,Nothing,-1,-1) -> do -- full random
             let matchesLL = M.toList $ M.map M.elems matchesM
@@ -653,13 +656,13 @@ applyMatchAccordingToLevel hostState statesMap context matchesMap productionMap 
                     index <- randomRIO (0,(length matchesEntries)-1)
                     let (rIndex, m) = matchesEntries!!index
                         p = fromJust $ M.lookup rIndex prodMap                        
-                    applyMatch hostState statesMap rIndex context p m
+                    applyMatch hostState statesMap rIndex p m
         _ -> return ()
 
     
 
-applyMatch :: IORef GraphState -> IORef (M.Map Int32 GraphState) -> Int32 -> P.Context -> TGMProduction -> Match -> IO ()
-applyMatch hostState statesMap rIndex context p m = do
+applyMatch :: IORef GraphState -> IORef (M.Map Int32 GraphState) -> Int32 -> TGMProduction -> Match -> IO ()
+applyMatch hostState statesMap rIndex p m = do
     let (k,n,f,g) = DPO.calculateDPO m p        
         fMapping = TGM.mapping f
         gMapping = TGM.mapping g
@@ -744,7 +747,7 @@ applyMatch hostState statesMap rIndex context p m = do
 
         -- reposition added nodes -----------
         -- 1. find an anchor node foreach added node in R
-        addedNodesInContext = map (\(k,kr) -> (k,kr,G.lookupNodeInContext kr rGraph)) addedNodeIds'
+    let addedNodesInContext = map (\(k,kr) -> (k,kr,G.lookupNodeInContext kr rGraph)) addedNodeIds'
         addedNodesInContext' = map (\(k,kr,nc) -> (k,kr,fromJust nc) ) $ filter (\(_,_,nc) -> not $ null nc) addedNodesInContext
         anchorNodesInR = map (\(k,kr,(n,c)) -> let  nextNodes = [tgt | (_,_,tgt) <- G.outgoingEdges c]
                                                     prevNodes = [src | (src,_,_) <- G.incomingEdges c]
@@ -783,10 +786,8 @@ applyMatch hostState statesMap rIndex context p m = do
                                             gi'' = repositionNode gi' (M.mapKeys fromEnum dgiN',M.empty)
                                         in (k,gi'')
                                         ) addedNodeGIs
-    -- update nodes dimensions
-    addedNodeGIs'' <- updateNodesGiDims (M.mapKeys fromEnum $ M.fromList addedNodeGIs') finalGraph context
 
-    let hgiN = foldr (\(k,gi) m -> M.insert k gi m) (M.mapKeys fromEnum $ dgiN') (M.toList addedNodeGIs'')
+    let hgiN = foldr (\(k,gi) m -> M.insert k gi m) (M.mapKeys fromEnum $ dgiN') (map (\(k,gi) -> (fromEnum k, gi)) addedNodeGIs')
         hgiE = M.mapKeys fromEnum $ foldr (\(k,gi) m -> M.insert k gi m) dgiE' addedEdgeGIs'
         hState = stateSetSelected (addedNodeIds,addedEdgeIds) . stateSetGraph finalGraph . stateSetGI (hgiN,hgiE) $ hostSt
 
