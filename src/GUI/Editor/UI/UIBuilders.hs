@@ -14,6 +14,8 @@ import Data.Maybe
 import Data.GI.Base
 import qualified Data.Text as T
 import Data.GI.Base.ManagedPtr (unsafeCastTo)       
+
+import GUI.Helper.FilePath
                      
 buildEditor :: IO (Gtk.Paned, Gtk.Frame, Gtk.DrawingArea, Gtk.Entry, Gtk.Label
                   , ( Gtk.Box, Gtk.Box, Gtk.ColorButton, Gtk.Box, Gtk.ColorButton
@@ -24,7 +26,8 @@ buildEditor :: IO (Gtk.Paned, Gtk.Frame, Gtk.DrawingArea, Gtk.Entry, Gtk.Label
                       , Gtk.Button, Gtk.Button))
 buildEditor = do
   builder <- new Gtk.Builder []
-  Gtk.builderAddFromFile builder "./Resources/editor.glade"
+  resourcesFolder <- getResourcesFolder
+  Gtk.builderAddFromFile builder $ T.pack (resourcesFolder ++ "editor.glade")
 
   mainPane <- Gtk.builderGetObject builder "mainPane" >>= unsafeCastTo Gtk.Paned . fromJust
   

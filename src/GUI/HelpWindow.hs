@@ -6,15 +6,20 @@ module GUI.HelpWindow (
 
 import qualified GI.Gtk as Gtk
 import           Data.GI.Base
-import           Data.Maybe
 import           Data.GI.Base.ManagedPtr (unsafeCastTo)
+
+import           Data.Maybe
 import           Data.Int
+import qualified Data.Text as T
+
+import           GUI.Helper.FilePath
 
 
 buildHelpWindow :: IO Gtk.Window
 buildHelpWindow = do
   builder <- new Gtk.Builder []
-  Gtk.builderAddFromFile builder "./Resources/helpWindow.glade"
+  resourcesFolder <- getResourcesFolder
+  Gtk.builderAddFromFile builder $ T.pack (resourcesFolder ++ "helpWindow.glade")
 
   helpWindow  <- Gtk.builderGetObject builder "helpWindow"  >>= unsafeCastTo Gtk.Window     . fromJust
   textBuffer1 <- Gtk.builderGetObject builder "textbuffer1" >>= unsafeCastTo Gtk.TextBuffer . fromJust
@@ -60,7 +65,8 @@ buildHelpWindow = do
 buildAboutDialog :: IO ()
 buildAboutDialog = do
   builder <- new Gtk.Builder []
-  Gtk.builderAddFromFile builder "./Resources/aboutWindow.glade"
+  resourcesFolder <- getResourcesFolder
+  Gtk.builderAddFromFile builder $ T.pack (resourcesFolder ++ "aboutWindow.glade")
   dialog  <- Gtk.builderGetObject builder "aboutWin" >>= unsafeCastTo Gtk.AboutDialog. fromJust
   #showAll dialog
   Gtk.dialogRun dialog

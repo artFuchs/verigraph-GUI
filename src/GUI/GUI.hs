@@ -37,8 +37,8 @@ import           GUI.Dialogs
 import           GUI.Editor as Edit
 import qualified GUI.Editor.Helper.TreeStore as Edit
 import qualified GUI.Executor as Exec
+import           GUI.Helper.FilePath
 import           GUI.HelpWindow
-
 
 -- | creates the Graphical User Interface and bind actions to events
 startGUI :: IO()
@@ -386,7 +386,8 @@ startGUI = do
 buildMainWindow :: IO ( Gtk.Window, Gtk.Notebook, [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem])
 buildMainWindow = do
   builder <- new Gtk.Builder []
-  Gtk.builderAddFromFile builder "./Resources/window.glade"
+  resourcesFolder <- getResourcesFolder
+  Gtk.builderAddFromFile builder (T.pack $ resourcesFolder ++ "window.glade")
   window  <- Gtk.builderGetObject builder "window" >>= unsafeCastTo Gtk.Window . fromJust
   tabs    <- Gtk.builderGetObject builder "tabs" >>= unsafeCastTo Gtk.Notebook . fromJust
   

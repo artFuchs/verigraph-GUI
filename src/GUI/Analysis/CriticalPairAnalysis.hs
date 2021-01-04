@@ -35,6 +35,7 @@ import           GUI.Data.Info
 import           GUI.Data.Nac
 import           GUI.Dialogs
 import           GUI.Editor                as Edit
+import           GUI.Helper.FilePath
 import           GUI.Helper.GrammarMaker
 
 import qualified System.FilePath as FilePath
@@ -47,7 +48,8 @@ buildCpaBox :: Gtk.Window
             -> IO (Gtk.Box)
 buildCpaBox window editStore statesMap nacInfoMap = do
   builder <- new Gtk.Builder []
-  Gtk.builderAddFromFile builder "./Resources/cpa.glade"
+  resourcesFolder <- getResourcesFolder
+  Gtk.builderAddFromFile builder $ T.pack (resourcesFolder ++ "cpa.glade")
 
   cpaBox            <- Gtk.builderGetObject builder "cpaBox" >>= unsafeCastTo Gtk.Box . fromJust
   essentialCheckBtn <- Gtk.builderGetObject builder "essentialCheckBtn" >>= unsafeCastTo Gtk.CheckButton . fromJust

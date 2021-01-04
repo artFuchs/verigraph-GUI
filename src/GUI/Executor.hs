@@ -47,6 +47,7 @@ import           GUI.Data.Nac
 import           GUI.Render.Render
 import           GUI.Render.GraphDraw
 import           GUI.Helper.BasicCanvasCallbacks
+import           GUI.Helper.FilePath
 import qualified GUI.Helper.GrammarMaker  as GMker
 import           GUI.Helper.OverlapAvoider
 import           GUI.Helper.Geometry
@@ -66,7 +67,8 @@ buildExecutor :: Gtk.TreeStore
               -> IO (Gtk.Paned, Gtk.DrawingArea, Gtk.ComboBoxText, IORef GraphState, IORef Bool, IORef (M.Map Int32 [(String, Int32)]))
 buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIORef = do
     builder <- new Gtk.Builder []
-    Gtk.builderAddFromFile builder "./Resources/executor.glade"
+    resourcesFolder <- getResourcesFolder
+    Gtk.builderAddFromFile builder $ T.pack (resourcesFolder ++ "executor.glade")
 
     executorPane <- Gtk.builderGetObject builder "executorPane" >>= unsafeCastTo Gtk.Paned . fromJust
 

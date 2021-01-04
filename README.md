@@ -54,6 +54,4 @@ Then to run it, use the command
 ```
 
 # Important
-To run the editor, the program must be executed in the same level of the "app/Resources" folder, as it has the glade file used to build the main window. 
-You may want to copy the "Resources" folder to your workpath.
-This will be fixed later.
+The program searches for the Resources folder (app/Resources in the repository) in the paths "usr/share/verigraph-GUI", "/home/'username'/.local/share/verigraph-GUI" and in the current directory, giving preference for the later. It's recomended to copy the Resources directory to one of the two locations
