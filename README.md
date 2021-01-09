@@ -48,10 +48,14 @@ Then, to install verigraph-GUI, go to the directory where you cloned this reposi
   $ stack install
 ```
 
+You should also copy the folder `./app/Resources/` to `~/.local/share/verigraph-GUI/`, as verigraph-GUI need these files to open. It's optional, but if this is not done you must execute verigraph-GUI in a folder that contains `Resources/`
+
+```bash
+  $ mkdir -r ~/.local/share/verigraph-GUI/
+  $ cp -r ./app/Resources/ ~/.local/share/verigraph-GUI/
+```
+
 Then to run it, use the command
 ```bash
   $ verigraph-GUI
 ```
-
-# Important
-The program searches for the Resources folder (app/Resources in the repository) in the paths "usr/share/verigraph-GUI", "/home/'username'/.local/share/verigraph-GUI" and in the current directory, giving preference for the later. It's recomended to copy the Resources directory to one of the two locations
