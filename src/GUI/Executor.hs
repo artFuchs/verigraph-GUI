@@ -729,9 +729,22 @@ applyMatch hostState statesMap rIndex p m = do
         addedNodeGIs = map (\(k,kr) -> (k,fromJust $ M.lookup (fromEnum kr) rgiN)) addedNodeIds'
         addedEdgeGIs = map (\(k,kr) -> (k,fromJust $ M.lookup (fromEnum kr) rgiE)) addedEdgeIds'
 
-        -- reposition added edges ----------------
+        -- reposition added elements 
+        addedEdgeGIs' = calculateEdgesPositions addedEdgeIds addedEdgeGIs dGraph hGraph gNodeRelation
+        addedNodeGIs' = calculateNodesPositions addedNodeIds' addedNodeGIs rGraph rgiN dgiN' nNodeRelation
+
+    let hgiN = foldr (\(k,gi) m -> M.insert k gi m) (M.mapKeys fromEnum $ dgiN') (map (\(k,gi) -> (fromEnum k, gi)) addedNodeGIs')
+        hgiE = M.mapKeys fromEnum $ foldr (\(k,gi) m -> M.insert k gi m) dgiE' addedEdgeGIs'
+        hState = stateSetSelected (addedNodeIds,addedEdgeIds) . stateSetGraph finalGraph . stateSetGI (hgiN,hgiE) $ hostSt
+
+    writeIORef hostState hState
+
+calculateEdgesPositions :: [G.EdgeId] -> [(G.EdgeId, EdgeGI)] -> G.Graph (Maybe Info) (Maybe Info) -> G.Graph (Maybe Info) (Maybe Info) -> R.Relation G.NodeId -> [(G.EdgeId, EdgeGI)]
+calculateEdgesPositions addedEdgeIds addedEdgeGIs dGraph hGraph gNodeRelation = 
+    addedEdgeGIs'
+    where 
         -- 1. get src and tgt nodes from each edge in intermediary graph D;
-    let addedEdges = M.fromList $ map (\eid -> (eid, fromJust $ G.lookupEdge eid hGraph) ) addedEdgeIds
+        addedEdges = M.fromList $ map (\eid -> (eid, fromJust $ G.lookupEdge eid hGraph) ) addedEdgeIds
         gNodeRelation' = R.inverseRelation gNodeRelation
         addedEdgesPeerIds = M.map (\e -> (R.apply gNodeRelation' $ G.sourceId e, R.apply gNodeRelation' $ G.targetId e)) addedEdges
         -- 2. find what would be the added edges positions in D
@@ -747,9 +760,13 @@ applyMatch hostState statesMap rIndex p m = do
                                             Nothing -> (k,gi)
                                             Just p -> (k,gi {cPosition = p})) addedEdgeGIs
 
-        -- reposition added nodes -----------
-        -- 1. find an anchor node foreach added node in R
-    let addedNodesInContext = map (\(k,kr) -> (k,kr,G.lookupNodeInContext kr rGraph)) addedNodeIds'
+
+calculateNodesPositions :: [(G.NodeId,G.NodeId)] -> [(G.NodeId,NodeGI)] -> G.Graph Info Info -> M.Map Int NodeGI -> M.Map G.NodeId NodeGI  -> R.Relation G.NodeId -> [(G.NodeId,NodeGI)]
+calculateNodesPositions addedNodeIds' addedNodeGIs rGraph rgiN dgiN' nNodeRelation = 
+    addedNodeGIs'
+    where
+         -- 1. find an anchor node foreach added node in R
+        addedNodesInContext = map (\(k,kr) -> (k,kr,G.lookupNodeInContext kr rGraph)) addedNodeIds'
         addedNodesInContext' = map (\(k,kr,nc) -> (k,kr,fromJust nc) ) $ filter (\(_,_,nc) -> not $ null nc) addedNodesInContext
         anchorNodesInR = map (\(k,kr,(n,c)) -> let  nextNodes = [tgt | (_,_,tgt) <- G.outgoingEdges c]
                                                     prevNodes = [src | (src,_,_) <- G.incomingEdges c]
@@ -771,8 +788,8 @@ applyMatch hostState statesMap rIndex p m = do
                                                 relPosition = subPoints (position gi) (position giA)
                                             in (k,krA,relPosition)
                                             ) anchorNodesInR'
+        -- 3. calculate position that the node should have in H
         anchorNodesInH = map (\(k,krA,rpos) -> (k,R.apply nNodeRelation krA,rpos)) relPositions
-        -- 3. calculate position in H
         addedNodePositions = M.fromList 
                                 $ map (\(k,kAs,rpos) -> let gi = case kAs of
                                                                 [] -> Nothing
@@ -789,11 +806,6 @@ applyMatch hostState statesMap rIndex p m = do
                                         in (k,gi'')
                                         ) addedNodeGIs
 
-    let hgiN = foldr (\(k,gi) m -> M.insert k gi m) (M.mapKeys fromEnum $ dgiN') (map (\(k,gi) -> (fromEnum k, gi)) addedNodeGIs')
-        hgiE = M.mapKeys fromEnum $ foldr (\(k,gi) m -> M.insert k gi m) dgiE' addedEdgeGIs'
-        hState = stateSetSelected (addedNodeIds,addedEdgeIds) . stateSetGraph finalGraph . stateSetGI (hgiN,hgiE) $ hostSt
-
-    writeIORef hostState hState
 
 {-| ExecGraphEntry
     A tuple representing what is showed in each node of the tree in the treeview
