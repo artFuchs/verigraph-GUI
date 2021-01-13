@@ -762,8 +762,7 @@ calculateEdgesPositions addedEdgeIds addedEdgeGIs dGraph hGraph gNodeRelation =
 
 
 calculateNodesPositions :: [(G.NodeId,G.NodeId)] -> [(G.NodeId,NodeGI)] -> G.Graph Info Info -> M.Map Int NodeGI -> M.Map G.NodeId NodeGI  -> R.Relation G.NodeId -> [(G.NodeId,NodeGI)]
-calculateNodesPositions addedNodeIds' addedNodeGIs rGraph rgiN dgiN' nNodeRelation = 
-    addedNodeGIs'
+calculateNodesPositions addedNodeIds' addedNodeGIs rGraph rgiN dgiN' nNodeRelation = addedNodeGIs'
     where
          -- 1. find an anchor node foreach added node in R
         addedNodesInContext = map (\(k,kr) -> (k,kr,G.lookupNodeInContext kr rGraph)) addedNodeIds'
@@ -771,31 +770,51 @@ calculateNodesPositions addedNodeIds' addedNodeGIs rGraph rgiN dgiN' nNodeRelati
         anchorNodesInR = map (\(k,kr,(n,c)) -> let  nextNodes = [tgt | (_,_,tgt) <- G.outgoingEdges c]
                                                     prevNodes = [src | (src,_,_) <- G.incomingEdges c]
                                                     nextPreserved = filter (\(n,c) -> (infoOperation $ G.nodeInfo n) == Preserve) nextNodes
-                                                    prevPreserved = filter (\(n,c) -> (infoOperation $ G.nodeInfo n) == Preserve) prevNodes
-                                                    anchorNodeId = case (nextPreserved,prevPreserved,nextNodes,prevNodes) of
-                                                                    ([],[],[],[]) -> Nothing
-                                                                    ([],[],(n,c):ns,_) -> Just (G.nodeId n)
-                                                                    ([],[],[],(n,c):ns) -> Just (G.nodeId n)
-                                                                    ([],(n,c):ns,_,_) -> Just (G.nodeId n)
-                                                                    ((n,c):ns,_,_,_) -> Just (G.nodeId n)
-                                                in (k,kr,anchorNodeId)
+                                                    prevPreserved = filter (\(n,c) -> (infoOperation $ G.nodeInfo n) == Preserve) prevNodes                                                    
+                                                    anchorNodesIds = case (nextPreserved,prevPreserved,nextNodes,prevNodes) of
+                                                        ((n1,c):ns1,(n2,c'):ns2,_,_) -> map G.nodeId [n1,n2]
+                                                        ((n1,c1):(n2,c2):ns,_,_,_) -> map G.nodeId [n1,n2]
+                                                        (_,(n1,c1):(n2,c2):ns,_,_) -> map G.nodeId [n1,n2]
+                                                        ((n,c):ns,_,_,_) -> [G.nodeId n]
+                                                        ([],(n,c):ns,_,_) -> [G.nodeId n]
+                                                        ([],[],(n1,c1):ns1,(n2,c2):ns2) -> map G.nodeId [n1,n2]
+                                                        ([],[],(n1,c1):(n2,c2):ns,_) -> map G.nodeId [n1,n2]
+                                                        ([],[],[],(n1,c1):(n2,c2):ns) -> map G.nodeId [n1,n2]
+                                                        ([],[],(n,c):ns,[]) -> [G.nodeId n]
+                                                        ([],[],[],(n,c):ns) -> [G.nodeId n]
+                                                        _ -> []
+                                                in (k,kr,anchorNodesIds)
                                                 ) addedNodesInContext'
-        anchorNodesInR' = map (\(k,kr,krA) -> (k,kr,fromJust krA)) $ filter (\(k,kr,krA) -> not $ null krA) anchorNodesInR
+        anchorNodesInR' = filter (\(k,kr,krA) -> not $ null krA) anchorNodesInR
         -- 2. calculate the relative position between each added node and it's anchor
-        subPoints (a,b) (c,d) = (a-c,b-d)
-        relPositions = map (\(k,kr,krA) ->  let gi = getNodeGI (fromEnum kr) rgiN
-                                                giA = getNodeGI (fromEnum krA) rgiN
-                                                relPosition = subPoints (position gi) (position giA)
-                                            in (k,krA,relPosition)
-                                            ) anchorNodesInR'
+        subPoint (a,b) (c,d) = (a-c,b-d)
+        positionLists = map (\(k,kr,krAs) -> 
+                            let
+                                posN = position $ getNodeGI (fromEnum kr) rgiN
+                                posAs = map (\krA -> position $ getNodeGI (fromEnum krA) rgiN) krAs 
+                                posList = case posAs of 
+                                    [posA] -> [posN, posA]
+                                    [posA1,posA2] -> [posN, posA1, posA2]
+                                    _ -> []
+                            in  (k,krAs,posList)
+                            ) anchorNodesInR'
         -- 3. calculate position that the node should have in H
-        anchorNodesInH = map (\(k,krA,rpos) -> (k,R.apply nNodeRelation krA,rpos)) relPositions
+        anchorNodesInH = map (\(k,krAs,posF) -> (k,map (R.apply nNodeRelation) krAs,posF)) positionLists
         addedNodePositions = M.fromList 
-                                $ map (\(k,kAs,rpos) -> let gi = case kAs of
-                                                                [] -> Nothing
-                                                                kA:_ -> M.lookup kA dgiN'
-                                                            pos = Just (\gi -> addPoint (position gi) rpos) <*> gi
-                                                        in (k,pos)
+                                $ map (\(k,kAs,posL) -> let posAs = case kAs of
+                                                                [(kA1:_),(kA2:_)] -> map (\kA -> position <$> M.lookup kA dgiN')  (map head kAs)
+                                                                [kA:_] -> [position <$> M.lookup kA dgiN']
+                                                                _ -> []
+                                                            posN = case (posL,posAs) of
+                                                                ([pN,pA],[Just pA']) -> Just $ addPoint pA' (subPoint pN pA)
+                                                                ([pN,pA1,pA2],[Just pA1', Just pA2']) -> 
+                                                                                let angle1 = angle pA1 pA2
+                                                                                    angle2 = angle pA1' pA2'
+                                                                                    (a,d) = toPolarFrom pA1 pN
+                                                                                    dist = d * ( vectorLength ( subPoint pA2' pA1' ) / vectorLength ( subPoint pA2 pA1 ) )
+                                                                                in Just $ pointAt (a + (angle2 - angle1)) dist pA1'
+                                                                _ -> Nothing
+                                                        in (k,posN)
                                                         ) anchorNodesInH
         -- 4. add to GI
         addedNodeGIs' = map (\(k,gi) -> let newPos = M.lookup k addedNodePositions

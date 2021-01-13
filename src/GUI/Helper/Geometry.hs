@@ -5,6 +5,7 @@ module GUI.Helper.Geometry(
 , pointLineDistance
 , addPoint
 , multPoint
+, multPointScalar
 , midPoint
 , pointInsideRectangle
 , circleOverlapsCircle
@@ -17,6 +18,7 @@ module GUI.Helper.Geometry(
 , interpolate
 , normalizeVector
 , vectorLength
+, dotProduct
 ) where
 
 import Data.Fixed
@@ -36,6 +38,10 @@ addPoint (a,b) (c,d) = (a+c,b+d)
 -- | multiply two points
 multPoint :: (Double,Double) -> (Double,Double) -> (Double,Double)
 multPoint (a,b) (c,d) = (a*c,b*d)
+
+-- | multiply point by a scalar number
+multPointScalar :: (Double,Double) -> Double -> (Double,Double)
+multPointScalar (a,b) s = (a*s,b*s)
 
 -- | calculates the center of two points
 midPoint :: (Double,Double) -> (Double,Double) -> (Double,Double)
@@ -85,7 +91,7 @@ circleOverlapsRectangle c@(cx,cy,cr) r@(rx,ry,rw,rh) =
     clampX = clamp cx (rx-rw) (rx+rw)
     clampY = clamp cy (ry-rh) (ry+rh)
 
--- | angle between tow points
+-- | angle between two points
 angle :: (Double,Double) -> (Double,Double) -> Double
 angle (a,b) (c,d) =
   case (dx `compare` 0,dy `compare` 0) of
@@ -123,3 +129,6 @@ normalizeVector (x,y) = (x/l,y/l)
 
 vectorLength :: (Double,Double) -> Double
 vectorLength (x,y) = sqrt $ x*x + y*y
+
+dotProduct ::  (Double,Double) ->  (Double,Double)  -> Double
+dotProduct (x0,y0) (x1,y1) = x0*x1 + y0*y1
