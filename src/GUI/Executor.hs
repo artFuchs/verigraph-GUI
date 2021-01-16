@@ -767,21 +767,15 @@ calculateNodesPositions addedNodeIds' addedNodeGIs rGraph rgiN dgiN' nNodeRelati
          -- 1. find an anchor node foreach added node in R
         addedNodesInContext = map (\(k,kr) -> (k,kr,G.lookupNodeInContext kr rGraph)) addedNodeIds'
         addedNodesInContext' = map (\(k,kr,nc) -> (k,kr,fromJust nc) ) $ filter (\(_,_,nc) -> not $ null nc) addedNodesInContext
-        anchorNodesInR = map (\(k,kr,(n,c)) -> let  nextNodes = [tgt | (_,_,tgt) <- G.outgoingEdges c]
-                                                    prevNodes = [src | (src,_,_) <- G.incomingEdges c]
-                                                    nextPreserved = filter (\(n,c) -> (infoOperation $ G.nodeInfo n) == Preserve) nextNodes
-                                                    prevPreserved = filter (\(n,c) -> (infoOperation $ G.nodeInfo n) == Preserve) prevNodes                                                    
-                                                    anchorNodesIds = case (nextPreserved,prevPreserved,nextNodes,prevNodes) of
-                                                        ((n1,c):ns1,(n2,c'):ns2,_,_) -> map G.nodeId [n1,n2]
-                                                        ((n1,c1):(n2,c2):ns,_,_,_) -> map G.nodeId [n1,n2]
-                                                        (_,(n1,c1):(n2,c2):ns,_,_) -> map G.nodeId [n1,n2]
-                                                        ((n,c):ns,_,_,_) -> [G.nodeId n]
-                                                        ([],(n,c):ns,_,_) -> [G.nodeId n]
-                                                        ([],[],(n1,c1):ns1,(n2,c2):ns2) -> map G.nodeId [n1,n2]
-                                                        ([],[],(n1,c1):(n2,c2):ns,_) -> map G.nodeId [n1,n2]
-                                                        ([],[],[],(n1,c1):(n2,c2):ns) -> map G.nodeId [n1,n2]
-                                                        ([],[],(n,c):ns,[]) -> [G.nodeId n]
-                                                        ([],[],[],(n,c):ns) -> [G.nodeId n]
+        nodeIsPreserved n = (infoOperation $ G.nodeInfo n) == Preserve
+        preservedNodes = filter nodeIsPreserved (G.nodes rGraph)
+        anchorNodesInR = map (\(k,kr,(n,c)) -> let  nextNodes = filter nodeIsPreserved $ map fst $ [tgt | (_,_,tgt) <- G.outgoingEdges c]
+                                                    prevNodes = filter nodeIsPreserved $ map fst $ [src | (src,_,_) <- G.incomingEdges c] 
+                                                    anchorNodesIds = map G.nodeId $ case ( nextNodes ++ prevNodes, preservedNodes) of
+                                                        (n1:n2:_,_) -> [n1,n2]
+                                                        ([n],_) -> [n]
+                                                        ([],n1:n2:_) -> [n1,n2]
+                                                        ([],[n]) -> [n]
                                                         _ -> []
                                                 in (k,kr,anchorNodesIds)
                                                 ) addedNodesInContext'
