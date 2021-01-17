@@ -352,31 +352,40 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     -- when stop button is pressed, reset the host graph to initial state
     on stopBtn #pressed $ do
         writeIORef execStarted False
-        mThread <- readIORef execThread
-        case mThread of
-            Nothing -> return ()
-            Just t -> do 
-                killThread t
-                writeIORef execThread Nothing
-        statesM <- readIORef statesMap
-        let initState = fromMaybe emptyState $ M.lookup 1 statesM
-        writeIORef hostState initState
-        removeMatchesFromTreeStore store
-
         processing <- readIORef processingMatches
+        
         if processing
             then return ()
             else do
+                -- kill execution thread if it's running
+                mThread <- readIORef execThread
+                case mThread of
+                    Nothing -> return ()
+                    Just t -> do 
+                        killThread t
+                        writeIORef execThread Nothing
+                statesM <- readIORef statesMap
+                -- reset the host graph to the initial stage
+                writeIORef hostState $ fromMaybe emptyState ( M.lookup 1 statesM )
+                removeMatchesFromTreeStore store
+                -- load the productions of the treeStore
                 loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap
+                -- process matches
                 execT <- forkFinally (do 
                                         writeIORef processingMatches True
-                                        Gtk.spinnerStart statusSpinner
-                                        Gtk.labelSetText statusLabel "processing matches"
+                                        Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
+                                            Gtk.spinnerStart statusSpinner
+                                            Gtk.labelSetText statusLabel "processing matches"
+                                            return False
                                         findMatches store statesMap hostState typeGraph nacInfoMap nacIDListMap matchesMap productionMap)
                                     (\_ -> do 
                                         writeIORef processingMatches False
-                                        Gtk.spinnerStop statusSpinner
-                                        Gtk.labelSetText statusLabel "")
+                                        Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
+                                            Gtk.spinnerStop statusSpinner
+                                            Gtk.labelSetText statusLabel ""
+                                            return False
+                                        return ()
+                                        )
                 writeIORef execThread $ Just execT
                 return ()
 
@@ -393,6 +402,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                 writeIORef execThread Nothing
                 Gtk.spinnerStop statusSpinner
                 Gtk.labelSetText statusLabel ""
+                
     
     -- when the step button is pressed, apply the match that is selected
     on stepBtn #pressed $ do 
@@ -589,26 +599,26 @@ findMatches store statesMap hostState typeGraph nacInfoMap nacIDListMap matchesM
             matches = map (\(id,prod) -> (id,DPO.findApplicableMatches conf prod obj)) productions
         let matchesM = foldr (\(rid,l) m -> M.insert rid (M.fromList $ zip ([1..] :: [Int32]) l) m) M.empty matches
         writeIORef matchesMap matchesM
-
         -- foreach match, generate a entry
         let matchesEntries = concat $
                                 map (\(rid,mM) -> 
                                     map (\(mid,m) -> ("match " ++ (show mid), mid, 2 :: Int32, rid) ) $ M.toList mM) $
-                                M.toList matchesM
-        -- Map Int32 ( Map Int32 match )        
+                                M.toList matchesM    
 
-        Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
-            --forM_ (take 100 matchesEntries) $ \entry -> updateTreeStore store entry
-            forM_ (M.toList matchesM) $ \(rid,nM) -> do
-                let numMatches = M.size nM
-                if numMatches > 100
-                    then do 
+        forM_ (M.toList matchesM) $ \(rid,nM) -> do
+            let numMatches = M.size nM
+            if numMatches > 100
+                then do 
+                    Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
                         updateTreeStore store ((show numMatches) ++ " matches (showing 1-100)", 0, 3, rid)
                         updateTreeStore store ("next " ++ (show $ min 100 (numMatches - 100) ) ++ " matches",0, 4, rid)
-                    else updateTreeStore store ((show numMatches) ++ " matches", 0, 3, rid)
-                forM_ (take 100 $ M.toList nM) $ \(mid,_) -> updateTreeStore store ("match " ++ (show mid), mid, 2, rid)
-                
-            return False
+                        return False
+                else Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
+                        updateTreeStore store ((show numMatches) ++ " matches", 0, 3, rid)
+                        return False
+            Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
+                forM_ (take 100 $ M.toList nM) $ \(mid,_) -> updateTreeStore store ("match " ++ (show mid), mid, 2, rid)        
+                return False
         return ()
 
 -- apply matches according to the selected level on the treeView.
