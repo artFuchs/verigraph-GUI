@@ -233,12 +233,13 @@ drawRuleSideGraph state sq k = do
         srcN = M.lookup (fromEnum . sourceId $ e) nGI
         egi  = M.lookup (fromEnum . edgeId   $ e) eGI
         label = infoLabelStr (edgeInfo e)
+        selected = (edgeId e) `elem` sEdges
         shouldDrawId = case lookupEdge (edgeId e) k of
                         Just e' -> True
                         Nothing -> False
     case (egi, srcN, dstN) of
       (Just gi, Just src, Just dst) -> do
-          renderEdge gi label src dst False (0,0,0) False (0,0,0)
+          renderEdge gi label src dst selected selectColor False (0,0,0)
           -- draw the IDs of the edges to identify the graph morphism
           if shouldDrawId
             then do
@@ -260,12 +261,13 @@ drawRuleSideGraph state sq k = do
   forM (nodes g) (\n -> do
     let ngi = M.lookup (fromEnum . nodeId $ n) nGI
         label = infoLabelStr (nodeInfo n)
+        selected = (nodeId n) `elem` (sNodes)
         shouldDrawId = case lookupNode (nodeId n) k of
                           Just _ -> True
                           Nothing -> False
     case (ngi) of
       Just gi -> do
-          renderNode gi label False (0,0,0) False (0,0,0)
+          renderNode gi label selected selectColor False (0,0,0)
           -- draw the IDs of the nodes to identify the graph morphism
           if shouldDrawId
             then do

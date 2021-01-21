@@ -144,7 +144,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     setCanvasCallBacks ruleCanvas ruleState typeGraph (Just drawRuleGraph) focusedCanvas focusedStateIORef
     setCanvasCallBacks lCanvas lState kGraph (Just drawRuleSideGraph) focusedCanvas focusedStateIORef
     setCanvasCallBacks rCanvas rState kGraph (Just drawRuleSideGraph) focusedCanvas focusedStateIORef
-    setCanvasCallBacks rCanvas rState kGraph (Just drawRuleSideGraph) focusedCanvas focusedStateIORef
+
 
     (_,mainSqrSel) <- setCanvasCallBacks mainCanvas hostState typeGraph Nothing focusedCanvas focusedStateIORef
     on  mainCanvas #draw $ \context -> do
@@ -591,7 +591,6 @@ findMatches :: Gtk.TreeStore
             -> IORef (M.Map Int32 TGMProduction)
             -> IO ()
 findMatches store hostState typeGraph nacInfoMap nacIDListMap matchesMap productionMap = do
-    writeIORef matchesMap M.empty
     -- prepare initial graph
     g <- readIORef hostState >>= return . stateGetGraph
     typeG <- readIORef typeGraph
