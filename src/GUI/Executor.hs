@@ -158,16 +158,14 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                             let matches = fromMaybe M.empty $ M.lookup rIndex matchesM
                                 match = M.lookup mIndex matches
                             in case match of
-                                Nothing -> ([],[])
-                                Just m ->  (matchedNodes,matchedEdges)
+                                Nothing -> (M.empty,M.empty)
+                                Just m ->  (nMapping,eMapping)
                                         where 
                                             mapping = TGM.mapping m
                                             nRel = GM.nodeRelation mapping
                                             eRel = GM.edgeRelation mapping 
-                                            nMapping = R.mapping nRel
-                                            eMapping = R.mapping eRel
-                                            matchedNodes = concat $ M.elems nMapping 
-                                            matchedEdges = concat $ M.elems eMapping
+                                            nMapping = R.mapping $ R.inverseRelation nRel
+                                            eMapping = R.mapping $ R.inverseRelation eRel
         renderWithContext context $ drawHostGraphWithMatches es sq tg matchedElems
         return False
 

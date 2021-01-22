@@ -11,7 +11,7 @@ import qualified Data.Map as M
 import Control.Monad
 import Graphics.Rendering.Cairo
 
-import Data.Graphs
+import Data.Graphs hiding (null)
 
 import GUI.Data.Info
 import GUI.Data.GraphState
@@ -242,18 +242,7 @@ drawRuleSideGraph state sq k = do
           renderEdge gi label src dst selected selectColor False (0,0,0)
           -- draw the IDs of the edges to identify the graph morphism
           if shouldDrawId
-            then do
-              let (ae,de) = cPosition gi
-                  (x1, y1) = position src
-                  (x2, y2) = position dst
-                  ang = angle (x1,y1) (x2,y2)
-                  pos = pointAt (ae+ang) de (midPoint (x1,y1) (x2,y2))
-              pL <- GRPC.createLayout (show (fromEnum $ edgeId e))
-              desc <- liftIO $ GRP.fontDescriptionFromString "Sans Bold 10"
-              liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
-              setSourceRGB idr idg idb
-              moveTo (fst pos) (snd pos)
-              showLayout pL
+            then drawEdgeId gi (edgeId e) src dst
             else return ()
       _ -> return ())
 
@@ -270,20 +259,7 @@ drawRuleSideGraph state sq k = do
           renderNode gi label selected selectColor False (0,0,0)
           -- draw the IDs of the nodes to identify the graph morphism
           if shouldDrawId
-            then do
-              let pos = case shape gi of
-                        NCircle -> let diam = maximum [fst . dims $ gi, snd . dims $ gi]
-                                   in addPoint (position gi) ((-diam/2), 0)
-                        NRect   -> addPoint (position gi) (-(fst . dims $ gi),0)
-                        NSquare -> let a = maximum [fst . dims $ gi, snd . dims $ gi]
-                                 in addPoint (position gi) ((-a/2),0)
-              --let pos = addPoint (position gi) (-(fst . dims $ gi), -(snd . dims $ gi))
-              pL <- GRPC.createLayout (show (fromEnum $ nodeId n))
-              desc <- liftIO $ GRP.fontDescriptionFromString "Sans Bold 10"
-              liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
-              setSourceRGB idr idg idb
-              moveTo (fst pos) (snd pos)
-              showLayout pL
+            then drawNodeId gi (nodeId n)
             else return ()
       Nothing -> return ())
 
@@ -355,8 +331,8 @@ drawNACGraph state sq tg (nM,eM) = do
   drawSelectionBox sq
   return ()
 
-drawHostGraphWithMatches :: GraphState -> Maybe (Double,Double,Double,Double) -> Graph Info Info -> ([NodeId],[EdgeId]) -> Render ()
-drawHostGraphWithMatches state sq tg matchedElems = do
+drawHostGraphWithMatches :: GraphState -> Maybe (Double,Double,Double,Double) -> Graph Info Info -> (M.Map NodeId [NodeId],M.Map EdgeId [EdgeId]) -> Render ()
+drawHostGraphWithMatches state sq tg (nodeMap, edgeMap) = do
   let g = stateGetGraph state
       (nGI,eGI) = stateGetGI state
       (sNodes,sEdges) = stateGetSelected state
@@ -371,37 +347,47 @@ drawHostGraphWithMatches state sq tg matchedElems = do
   let (idr, idg, idb) = (0.5,0.5,0.5) --(0.57, 0.47, 0)
 
   -- draw the edges
-  forM (edges g) (\e -> do
+  forM (edges g) $ \e -> do
     let dstN = M.lookup (fromEnum . targetId $ e) nGI
         srcN = M.lookup (fromEnum . sourceId $ e) nGI
         egi  = M.lookup (fromEnum . edgeId   $ e) eGI
         selected = (edgeId e) `elem` sEdges
-        matched = (edgeId e) `elem` (snd matchedElems)
+        matchId = head <$> M.lookup (edgeId e) edgeMap
+        matched = not (null matchId)
         color = case (selected,matched) of
                  (False,False) -> (0,0,0)
                  (False,True) -> matchedColor
                  (True,False) -> selectColor
                  (True,True) -> bothColor'
     case (egi, srcN, dstN) of
-      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabelStr (edgeInfo e)) src dst (selected || matched) color False (0,0,0)
-      _ -> return ())
+      (Just gi, Just src, Just dst) -> do 
+          renderEdge gi (infoLabelStr (edgeInfo e)) src dst (selected || matched) color False (0,0,0)
+          case matchId of
+            Just id ->  drawEdgeId gi id src dst
+            _ -> return ()
+      _ -> return ()
 
   -- draw the nodes
-  forM (nodes g) (\n -> do
+  forM (nodes g) $ \n -> do
     let ngi = M.lookup (fromEnum . nodeId $ n) nGI
         info = nodeInfo n
         label = infoLabelStr info
         selected = (nodeId n) `elem` (sNodes)
-        matched = (nodeId n) `elem` (fst matchedElems)
+        matchId = head <$> M.lookup (nodeId n) nodeMap
+        matched = not (null matchId)
         color = case (selected,matched) of
                   (False,False) -> (0,0,0)
                   (False,True) -> matchedColor
                   (True,False) -> selectColor
                   (True,True) -> bothColor'
     case (ngi) of
-      Just gi -> renderNode gi label (selected || matched) color False (0,0,0)
+      Just gi -> do 
+        renderNode gi label (selected || matched) color False (0,0,0)
+        case matchId of
+          Just id ->  drawNodeId gi id
+          _ -> return ()
       Nothing -> return ()
-    )
+    
 
   -- draw the selectionBox
   drawSelectionBox sq
@@ -419,3 +405,37 @@ drawSelectionBox sq = case sq of
     setSourceRGBA 0.29 0.56 0.85 1
     stroke
   Nothing -> return ()
+
+
+drawEdgeId :: EdgeGI -> EdgeId -> NodeGI -> NodeGI -> Render ()
+drawEdgeId gi eid src dst = do
+  let 
+    (idr,idb,idg) = (0.5,0.5,0.5)
+    (ae,de) = cPosition gi
+    (x1, y1) = position src
+    (x2, y2) = position dst
+    ang = angle (x1,y1) (x2,y2)
+    pos = pointAt (ae+ang) de (midPoint (x1,y1) (x2,y2))
+  pL <- GRPC.createLayout (show (fromEnum eid))
+  desc <- liftIO $ GRP.fontDescriptionFromString "Sans Bold 10"
+  liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
+  setSourceRGB idr idg idb
+  moveTo (fst pos) (snd pos)
+  showLayout pL
+
+drawNodeId :: NodeGI -> NodeId -> Render ()
+drawNodeId gi nid = do
+  let 
+    (idr,idb,idg) = (0.5,0.5,0.5)
+    pos = case shape gi of
+              NCircle -> let diam = maximum [fst . dims $ gi, snd . dims $ gi]
+                         in addPoint (position gi) ((-diam/2), 0)
+              NRect   -> addPoint (position gi) (-(fst . dims $ gi),0)
+              NSquare -> let a = maximum [fst . dims $ gi, snd . dims $ gi]
+                         in addPoint (position gi) ((-a/2),0)
+  pL <- GRPC.createLayout (show (fromEnum nid))
+  desc <- liftIO $ GRP.fontDescriptionFromString "Sans Bold 10"
+  liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
+  setSourceRGB idr idg idb
+  moveTo (fst pos) (snd pos)
+  showLayout pL
