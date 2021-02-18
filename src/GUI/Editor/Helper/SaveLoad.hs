@@ -3,10 +3,12 @@ module GUI.Editor.Helper.SaveLoad
 ( SaveInfo(..)
 , saveFile
 , saveFileAs
+, saveVGGX
 , exportGGX
 , saveProject
 , loadFile
 , loadProject
+, loadVGGX
 )where
 
 import qualified GI.Gtk as Gtk
@@ -31,21 +33,17 @@ import Abstract.Rewriting.DPO
 import Rewriting.DPO.TypedGraph
 import Category.TypedGraphRule (RuleMorphism)
 import XML.GGXWriter
+import XML.VGGXWritter
+import XML.VGGXReader
 
 import GUI.Data.GraphicalInfo
 import GUI.Data.GraphState
 import GUI.Data.Info
+import GUI.Data.SaveInfo
 import GUI.Dialogs
 import GUI.Helper.GrammarMaker
 
 
---------------------------------------------------------------------------------
--- structs ---------------------------------------------------------------------
-
-type NList = [(Int,Info)]
-type EList = [(Int,Int,Int,Info)]
-type NACInfo = ((Graph Info Info,GraphicalInfo), (M.Map NodeId NodeId, M.Map EdgeId EdgeId))
-data SaveInfo = Topic String | TypeGraph Int32 String GraphState | HostGraph Int32 String GraphState | RuleGraph Int32 String GraphState Bool | NacGraph Int32 String NACInfo deriving (Show,Read)
 --------------------------------------------------------------------------------
 -- functions -------------------------------------------------------------------
 
@@ -110,6 +108,10 @@ saveProject contents path = do
     Left _ -> return False
     Right _ -> return True
 
+saveVGGX :: Tree.Forest SaveInfo -> String -> IO Bool
+saveVGGX contents path = do 
+  writeVGGX contents path
+  return True
 
 exportGGX :: (Grammar (TGM.TypedGraphMorphism Info Info), Graph Info Info) -> String -> IO Bool
 exportGGX (fstOrderGG, tg)  path = do
@@ -150,8 +152,8 @@ loadFile window loadF (filterName, extension) = do
         Nothing -> do
           return Nothing
         Just path -> do
-          tentativa <- E.try (readFile path) :: IO (Either E.IOException String)
-          case tentativa of
+          result <- E.try (readFile path) :: IO (Either E.IOException String)
+          case result of
             Left _ -> do
               showError window (T.pack "Couldn't open the file")
               return Nothing
@@ -171,3 +173,31 @@ loadProject content = loadedTree
     loadedTree = case reads content :: [(Tree.Forest SaveInfo, String)] of
       [(tree,"")] -> Just tree
       _ -> Nothing
+
+loadVGGX :: Gtk.Window -> IO (Maybe (Tree.Forest SaveInfo,String))
+loadVGGX window = do
+  loadD <- createLoadDialog window
+
+  xmlFilter <- Gtk.fileFilterNew
+  Gtk.fileFilterAddPattern xmlFilter "*.vggx"
+  Gtk.fileFilterSetName xmlFilter (Just "verigraph-gui grammar XML file")
+  Gtk.fileChooserAddFilter loadD xmlFilter
+
+  response <- Gtk.dialogRun loadD
+  case toEnum . fromIntegral $ response of
+    Gtk.ResponseTypeAccept -> do
+      filename <- Gtk.fileChooserGetFilename loadD
+      Gtk.widgetDestroy loadD
+      case filename of
+        Nothing -> do
+          return Nothing
+        Just path -> do
+          result <- E.try (readVGGX path) :: IO (Either E.IOException (Maybe (Tree.Forest SaveInfo)))
+          case result of
+            Left _ -> do
+              showError window (T.pack "Couldn't open the file")
+              return Nothing
+            Right content -> return $ Just (\x -> (x,path)) <*> content
+    _             -> do
+      Gtk.widgetDestroy loadD
+      return Nothing

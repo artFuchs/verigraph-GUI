@@ -160,7 +160,7 @@ startEditor window store
       )
   
   -- "unpack" menuItems
-  let [newm,opn,svn,sva,eggx] = fileItems
+  let [newm,opn,svn,sva,eggx,evggx,ovggx] = fileItems
       [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
       [zin,zut,z50,zdf,z150,z200,vdf] = viewItems
 
@@ -1283,6 +1283,67 @@ startEditor window store
       Right fstOrderGG -> do
         saveFileAs (fstOrderGG,tg) exportGGX fileName (Just ".ggx") window False
         return ()
+
+  evggx `on` #activate $ do
+    storeCurrentES window currentState storeIORefs nacInfoMap
+    context <- Gtk.widgetGetPangoContext canvas
+    updateAllNacs store graphStates nacInfoMap context
+    structs <- getStructsToSave store graphStates nacInfoMap
+    _ <- saveFileAs structs saveVGGX fileName (Just ".vggx") window True
+    return ()
+
+  on ovggx #activate $ do
+    continue <- confirmOperation window store changedProject currentState nacInfoMap fileName storeIORefs
+    if continue
+      then do
+        mg <- loadVGGX window
+        case mg of
+          Nothing -> return ()
+          Just (forest,fn) -> do
+                writeIORef graphStates M.empty
+                Gtk.treeStoreClear store
+                let toGSandStates n = case n of
+                              Topic name -> ((name,0,0,0,False), (0,(-1,emptyState)))
+                              TypeGraph id name es -> ((name,0,id,1,True), (1, (id,es)))
+                              HostGraph id name es -> ((name,0,id,2,True), (2, (id,es)))
+                              RuleGraph id name es a -> ((name,0,id,3,a), (3, (id,es)))
+                              NacGraph id name _ -> ((name,0,id,4,True), (4,(id,emptyState)))
+                let toNACInfos n = case n of
+                              NacGraph id name nacInfo -> (id,nacInfo)
+                              _ -> (0,(DG.empty,(M.empty,M.empty)))
+                    infoForest = map (fmap toGSandStates) forest
+                    nameForest = map (fmap fst) infoForest
+                    statesForest = map (fmap snd) infoForest
+                    statesList = map snd . filter (\st-> fst st /= 0) . concat . map Tree.flatten $ statesForest
+                    nacInfos = filter (\ni -> fst ni /= 0). concat . map Tree.flatten $ map (fmap toNACInfos) forest
+                let putInStore (Tree.Node (name,c,i,t,a) fs) mparent = do
+                        iter <- Gtk.treeStoreAppend store mparent
+                        storeSetGraphStore store iter (name,c,i,t,a,True)
+                        case t of
+                          0 -> mapM_ (\n -> putInStore n (Just iter)) fs
+                          3 -> mapM_ (\n -> putInStore n (Just iter)) fs
+                          _ -> return ()
+                mapM (\n -> putInStore n Nothing) nameForest
+                let (i,es) = if length statesList > 0 then statesList!!0 else (0,emptyState)
+                writeIORef currentState es
+                writeIORef undoStack $ M.fromList [(i,[]) | i <- [0 .. (maximum $ map fst statesList)]]
+                writeIORef redoStack $ M.fromList [(i,[]) | i <- [0 .. (maximum $ map fst statesList)]]
+                let statesMap = M.fromList statesList
+                writeIORef graphStates statesMap
+                writeIORef lastSavedState $ M.map (\es -> (stateGetGraph es, stateGetGI es)) statesMap
+                writeIORef fileName $ Just fn
+                writeIORef currentGraph i
+                writeIORef currentPath [0]
+                writeIORef currentGraphType 1
+                writeIORef mergeMapping Nothing
+                writeIORef nacInfoMap $ M.fromList nacInfos
+                p <- Gtk.treePathNewFromIndices [0]
+                Gtk.treeViewExpandToPath treeview p
+                Gtk.treeViewSetCursor treeview p namesCol False
+                afterSave store window graphStates changesIORefs fileName
+                updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+                Gtk.widgetQueueDraw canvas
+      else return ()
   
 
   -- Edit Menu ---------------------------------------------------------------------------------------------------------------

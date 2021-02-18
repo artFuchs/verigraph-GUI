@@ -40,6 +40,9 @@ import qualified GUI.Executor as Exec
 import           GUI.Helper.FilePath
 import           GUI.HelpWindow
 
+import           GUI.Editor.Helper.SaveLoad
+
+
 -- | creates the Graphical User Interface and bind actions to events
 startGUI :: IO()
 startGUI = do
@@ -90,7 +93,7 @@ startGUI = do
   -- build main window
   (window, tabs, fileItems, editItems, viewItems, helpItems) <- buildMainWindow
   -- set the menubar
-  let [newm,opn,svn,sva,eggx] = fileItems
+  let [newm,opn,svn,sva,eggx,evggx,ovggx] = fileItems
       [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
       [zin,zut,z50,zdf,z150,z200,vdf] = viewItems
       [hlp,abt] = helpItems
@@ -210,11 +213,13 @@ startGUI = do
           gT <- readIORef currentGraphType
           mapM_ (\m -> Gtk.widgetSetSensitive m True) [del,udo,rdo,cpy,pst,cut,sla,sln,sle]
           mapM_ (\m -> Gtk.widgetSetSensitive m (gT == 4)) [mrg,spt]
+          mapM_ (\m -> Gtk.widgetSetSensitive m True) viewItems
           writeIORef focusedCanvas $ Just editorCanvas
           writeIORef focusedStateIORef $ Just editorState
       1 -> do  -- Executor tab
           mapM_ (\m -> Gtk.widgetSetSensitive m True) [sla,sln,sle]
           mapM_ (\m -> Gtk.widgetSetSensitive m False) [del,udo,rdo,cpy,pst,cut,mrg,spt]
+          mapM_ (\m -> Gtk.widgetSetSensitive m True) viewItems
           Gtk.widgetGrabFocus execCanvas
           writeIORef focusedCanvas $ Just execCanvas
           writeIORef focusedStateIORef $ Just execState
@@ -227,12 +232,17 @@ startGUI = do
           
       2 -> do  -- Analysis tab
           mapM_ (\m -> Gtk.widgetSetSensitive m False) editItems
+          mapM_ (\m -> Gtk.widgetSetSensitive m False) viewItems
           writeIORef focusedCanvas $ Nothing
           writeIORef focusedStateIORef $ Nothing
       _ -> return ()     
   
   ----------------------------------------------------------------------------------------------------------------------------
+  -- File Menu ---------------------------------------------------------------------------------------------------------------
+
+  
   -- Edit Menu ---------------------------------------------------------------------------------------------------------------
+
 
   -- delete, undo, redo, copy, paste, cut, merge, split menu items callbacks are defined in Editor.startEditor in Editor.hs
 
@@ -399,7 +409,9 @@ buildMainWindow = do
   saveItem <- Gtk.builderGetObject builder "save_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   saveAsItem <- Gtk.builderGetObject builder "save_as_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   exportGGXItem <- Gtk.builderGetObject builder "export_ggx_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  let fileItems = [newItem,openItem,saveItem,saveAsItem,exportGGXItem]
+  exportVGGXItem <- Gtk.builderGetObject builder "export_vggx_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  openVGGXItem <- Gtk.builderGetObject builder "open_vggx_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+  let fileItems = [newItem,openItem,saveItem,saveAsItem,exportGGXItem,exportVGGXItem,openVGGXItem]
 
   delItem <- Gtk.builderGetObject builder  "delete_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   undoItem <- Gtk.builderGetObject builder  "undo_item" >>= unsafeCastTo Gtk.MenuItem . fromJust

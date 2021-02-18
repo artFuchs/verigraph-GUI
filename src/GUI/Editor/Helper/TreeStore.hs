@@ -43,9 +43,9 @@ import GUI.Data.DiaGraph hiding (empty)
 import qualified GUI.Data.DiaGraph as DG
 import GUI.Data.GraphicalInfo
 import GUI.Data.GraphState
+import GUI.Data.SaveInfo
 import GUI.Helper.GrammarMaker
 import GUI.Editor.Helper.Nac
-import GUI.Editor.Helper.SaveLoad
 import GUI.Helper.GraphValidation
 import GUI.Helper.List
 
