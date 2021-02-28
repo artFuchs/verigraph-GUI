@@ -8,6 +8,7 @@ import           Data.Tree.NTree.TypeDefs
 import           Text.XML.HXT.Core
 import           XML.Utilities
 import           XML.XMLUtilities
+import           Control.Monad
 
 import qualified Control.Exception as E
 
@@ -15,9 +16,11 @@ import qualified Data.Tree as Tree
 import qualified Data.Map as M
 import           Data.Int
 import           Data.Maybe
+import qualified Data.Either as Either
 
 import qualified Data.Graphs as G
 
+import           GUI.Data.DiaGraph
 import           GUI.Data.SaveInfo
 import           GUI.Data.GraphicalInfo
 import           GUI.Data.GraphState
@@ -27,194 +30,310 @@ import           GUI.Data.Nac (MergeMapping)
 
 
 readVGGX :: String -> IO (Maybe (Tree.Forest SaveInfo))
-readVGGX fileName = do 
+readVGGX fileName = do
     -- read grammar
     typeGraph <- readTypeGraph fileName
     case typeGraph of
-        Just tg -> do 
-            hostGraph <- readHostGraph fileName
+        Just tg -> do
+            hg <- readHostGraph fileName
             rules <- readRules fileName
-            let hg = fromMaybe (Tree.Node (HostGraph 1 "initialGraph" (emptyState)) []) hostGraph
             return $ Just [tg,hg,rules]
-        Nothing -> return Nothing
-    
-    
+        Nothing -> do
+            putStrLn "Critical Error: failed to load TypeGraph -> parsing of the grammar failed"
+            return Nothing
+
+
 readTypeGraph :: String -> IO (Maybe (Tree.Tree SaveInfo))
 readTypeGraph fileName = do
-    typeGraph <- runX $ parseXML fileName >>> parseTypeGraph
-    case typeGraph of 
+    typeGraphWithLogs <- runX $ parseXML fileName >>> parseTypeGraph
+    case typeGraphWithLogs of
         [] -> return $ Nothing
-        tg:_ -> return $ Just (Tree.Node tg [])
+        (logs,tg):_ -> do
+            forM_ logs putStrLn
+            return $ Just (Tree.Node tg [])
 
-readHostGraph :: String -> IO (Maybe (Tree.Tree SaveInfo))
+readHostGraph :: String -> IO (Tree.Tree SaveInfo)
 readHostGraph fileName = do
-    hostGraph <- runX $ parseXML fileName >>> parseHostGraph
-    case hostGraph of
-        [] -> return Nothing 
-        hg:_ -> return $ Just (Tree.Node hg [])
+    hostGraphWithLogs <- runX $ parseXML fileName >>> parseHostGraph
+    case hostGraphWithLogs of
+        [] -> return (Tree.Node (HostGraph 1 "initialGraph" (emptyState)) [])
+        (logs,hg):_ -> do
+            forM_ logs putStrLn
+            return (Tree.Node hg [])
 
 readRules :: String -> IO (Tree.Tree SaveInfo)
 readRules fileName = do
-    rules <- runX $ parseXML fileName >>> atTag "Rules" >>> parseRule
+    rulesOrLogs <- runX $ parseXML fileName >>> atTag "Rules" >>> parseRule
+    let rules = map snd $ Either.rights rulesOrLogs
+        criticalLogs = Either.lefts rulesOrLogs
+        lessCriticalLogs = concat $ map fst $ Either.rights rulesOrLogs
+    forM_ (criticalLogs ++ lessCriticalLogs) putStrLn
     return $ Tree.Node (Topic "Rules") rules
 
-parseTypeGraph :: ArrowXml cat => cat (NTree XNode) SaveInfo
+parseTypeGraph :: ArrowXml cat => cat (NTree XNode) ([String],SaveInfo)
 parseTypeGraph = atTag "TypeGraph" >>>
     proc tg -> do
         name <- getAttrValue "name" -< tg
-        id <- getAttrValue "id" -< tg
-        graph <- parseGraph -< tg
-        layouts <- parseLayouts -< tg
-        returnA -< TypeGraph (read id) name (emptyState {stateGetGraph = graph, stateGetGI = layouts})
+        idStr <- getAttrValue "id" -< tg
+        (diagramLogs,(graph,layouts)) <- parseDiagram -< tg
+        let gId = fromMaybe 0 $ parseId idStr fromIntegral :: Int32
+            logs = if null diagramLogs
+                    then []
+                    else ("typeGraph " ++ idStr ++ " (" ++ name ++ ")"):diagramLogs
+        returnA -< (diagramLogs, TypeGraph gId name (emptyState {stateGetGraph = graph, stateGetGI = layouts}))
 
-parseHostGraph :: ArrowXml cat => cat (NTree XNode) SaveInfo
+parseHostGraph :: ArrowXml cat => cat (NTree XNode) ([String],SaveInfo)
 parseHostGraph = atTag "HostGraph" >>>
     proc hg -> do
         name <- getAttrValue "name" -< hg
-        id <- getAttrValue "id" -< hg
-        graph <- parseGraph -< hg
-        layouts <- parseLayouts -< hg
-        returnA -< HostGraph (read id) name (emptyState {stateGetGraph = graph, stateGetGI = layouts})
+        idStr <- getAttrValue "id" -< hg
+        (diagramLogs,(graph,layouts)) <- parseDiagram -< hg
+        let gId = fromMaybe 1 $ parseId idStr fromIntegral :: Int32
+            logs = if null diagramLogs
+                        then []
+                        else ("HostGraph " ++ idStr ++ " (" ++ name ++ ")"):diagramLogs
+        returnA -< (diagramLogs, HostGraph gId name (emptyState {stateGetGraph = graph, stateGetGI = layouts}))
 
-parseRule :: ArrowXml cat => cat (NTree XNode) (Tree.Tree SaveInfo)
+parseRule :: ArrowXml cat => cat (NTree XNode) (Either String ([String],Tree.Tree SaveInfo))
 parseRule = atTag "Rule" >>>
-    proc rl -> do 
+    proc rl -> do
         name <- getAttrValue "name" -< rl
-        id <- getAttrValue "id" -< rl
-        active <- getAttrValue "active" -< rl
+        idStr <- getAttrValue "id" -< rl
+        aStr <- getAttrValue "active" -< rl
         g <- (getChildren >>> isElem >>> hasName "Graph") -< rl
-        graph <- parseGraph -< g
-        layouts <- parseLayouts -< g
-        nacs <- listA parseNac -< rl
-        let ruleState = emptyState {stateGetGraph = graph, stateGetGI = layouts}
-            ruleSI = RuleGraph (read id) name ruleState (read active)
+        (diagramLogs,(graph,layouts)) <- parseDiagram -< g
+        nacsOrLogs <- listA parseNac -< rl
+        let gId = parseId idStr fromIntegral :: Maybe Int32
+            ruleState = emptyState {stateGetGraph = graph, stateGetGI = layouts}
+            active = parseBool aStr
+            nacs = map snd $ Either.rights nacsOrLogs
+            nacLogs = filter (not . null) $ Either.lefts nacsOrLogs ++ (concat $ map fst $ Either.rights nacsOrLogs)
             nacForest = map (\nac -> Tree.Node nac []) nacs
-        returnA -< Tree.Node ruleSI nacForest
+            struct = case gId of
+                        Just i -> let logs = if null diagramLogs && null nacLogs
+                                                then []
+                                                else ("Rule " ++ idStr ++ " (" ++ name ++ ")"):(map (\str -> '-':str) $ diagramLogs ++ nacLogs)
+                                  in Right (logs ,Tree.Node (RuleGraph i name ruleState active) nacForest)
+                        Nothing -> Left $ "Failed to load Rule: Couldn't parse Rule ID. (id = " ++ idStr ++ ", name = " ++ name ++ ")."
+        returnA -< struct
 
-parseNac :: ArrowXml cat => cat (NTree XNode) SaveInfo
-parseNac = atTag "NAC" >>> 
+parseNac :: ArrowXml cat => cat (NTree XNode) (Either String ([String], SaveInfo))
+parseNac = atTag "NAC" >>>
     proc nac -> do
-        id <- getAttrValue "id" -< nac
-        name <- getAttrValue "name" -< nac 
-        graph <- parseGraph -< nac 
-        layouts <- parseLayouts -< nac 
-        mergeMap <- parseMergeMapping -< nac 
-        returnA -< NacGraph (read id) name ((graph,layouts), mergeMap)
+        idStr <- getAttrValue "id" -< nac
+        name <- getAttrValue "name" -< nac
+        (diagramLogs,(graph,layouts)) <- parseDiagram -< nac
+        mergeMap <- parseMergeMapping -< nac
+        let gId = parseId idStr fromIntegral :: Maybe Int32
+            struct = case gId of
+                        Just i -> let logs = if null diagramLogs
+                                                then []
+                                                else ("NAC " ++ idStr ++ " (" ++ name ++ ")"):(map (\str -> '-':str) diagramLogs)
+                                  in Right (logs, NacGraph i name ((graph,layouts), mergeMap))
+                        Nothing ->  Left $ "Failed to load NAC: Couldn't parse NAC ID. (id = " ++ idStr ++ ", name = " ++ name ++ ")."
+        returnA -< struct
+
 
 parseMergeMapping :: ArrowXml cat => cat (NTree XNode) MergeMapping
 parseMergeMapping = atTag "MergeMapping" >>>
-    proc mMap -> do 
-        nodes <- listA parseNodeMapping -< mMap
-        edges <- listA parseEdgeMapping -< mMap
+    proc mergeMap -> do
+        mNodes <- listA parseNodeMapping -< mergeMap
+        mEdges <- listA parseEdgeMapping -< mergeMap
+        let nodes = map fromJust . filter isJust $ mNodes
+            edges = map fromJust . filter isJust $ mEdges
         returnA -< (M.fromList nodes, M.fromList edges)
 
-parseNodeMapping :: ArrowXml cat => cat (NTree XNode) (G.NodeId, G.NodeId)
+parseNodeMapping :: ArrowXml cat => cat (NTree XNode) (Maybe (G.NodeId, G.NodeId))
 parseNodeMapping = atTag "NodeMapping" >>>
     proc nMap -> do
-        src <- getAttrValue "src" -< nMap 
-        tgt <- getAttrValue "tgt" -< nMap 
-        returnA -< (G.NodeId (read src), G.NodeId (read tgt))
+        src <- getAttrValue "src" -< nMap
+        tgt <- getAttrValue "tgt" -< nMap
+        let srcId = parseId src G.NodeId
+            tgtId = parseId tgt G.NodeId
+        returnA -< (\x y -> (x,y)) <$> srcId <*> tgtId
 
-parseEdgeMapping :: ArrowXml cat => cat (NTree XNode) (G.EdgeId, G.EdgeId)
+parseEdgeMapping :: ArrowXml cat => cat (NTree XNode) (Maybe (G.EdgeId, G.EdgeId))
 parseEdgeMapping = atTag "EdgeMapping" >>>
     proc eMap -> do
-        src <- getAttrValue "src" -< eMap 
-        tgt <- getAttrValue "tgt" -< eMap 
-        returnA -< (G.EdgeId (read src), G.EdgeId (read tgt))
+        src <- getAttrValue "src" -< eMap
+        tgt <- getAttrValue "tgt" -< eMap
+        let srcId = parseId src G.EdgeId
+            tgtId = parseId tgt G.EdgeId
+        returnA -< (\x y -> (x,y)) <$> srcId <*> tgtId
 
-parseGraph :: ArrowXml cat => cat (NTree XNode) (G.Graph Info Info)
-parseGraph = atTag "Graph" >>> 
-    proc g -> do 
-        nodes <- listA parseNode -< g
-        edges <- listA parseEdge -< g
-        let graph = G.fromNodesAndEdges nodes edges
-        returnA -< graph
+parseDiagram :: ArrowXml cat => cat (NTree XNode) ([String], (G.Graph Info Info, GraphicalInfo))
+parseDiagram = proc x -> do
+    (graphLogs, graph) <- parseGraph -< x
+    (layoutsLogs, layouts) <- parseLayouts -< x
+    returnA -< (graphLogs ++ layoutsLogs, (graph,layouts))
 
-parseNode :: ArrowXml cat => cat (NTree XNode) (G.Node Info)
+parseGraph :: ArrowXml cat => cat (NTree XNode) ([String],G.Graph Info Info)
+parseGraph = atTag "Graph" >>>
+    proc g -> do
+        nodesOrLogs <- listA parseNode -< g
+        edgesOrLogs <- listA parseEdge -< g
+        let nodesWithLogs = Either.rights nodesOrLogs
+            edgesWithLogs = Either.rights edgesOrLogs
+            (nodesLogs,nodes) = (concat $ map fst nodesWithLogs, map snd nodesWithLogs)
+            (edgesLogs,edges) = (concat $ map fst edgesWithLogs, map snd edgesWithLogs)
+            criticalLogs = Either.lefts nodesOrLogs ++ Either.lefts edgesOrLogs
+            logs = filter (not . null) (criticalLogs ++ nodesLogs ++ edgesLogs)
+            graph = G.fromNodesAndEdges nodes edges
+        returnA -< (logs,graph)
+
+parseNode :: ArrowXml cat => cat (NTree XNode) (Either String ([String], G.Node Info))
 parseNode = atTag "Node" >>>
     proc n -> do
-        id <- getAttrValue "id" -< n
-        let nid = G.NodeId (read id)
-        info <- parseInfo -< n
-        returnA -< G.Node nid info
+        idStr <- getAttrValue "id" -< n
+        let nid = parseId idStr G.NodeId
+        (infoLog,info) <- parseInfo -< n
+        returnA -< case nid of
+                    Just i -> Right (infoLog, G.Node i info)
+                    Nothing -> Left $ "Failed to load Node. Could not parse Node ID"
 
-parseEdge :: ArrowXml cat => cat (NTree XNode) (G.Edge Info)
+parseEdge :: ArrowXml cat => cat (NTree XNode) (Either String ([String], (G.Edge Info)))
 parseEdge = atTag "Edge" >>>
-    proc e -> do 
-        id <- getAttrValue "id" -< e
-        src <- getAttrValue "source" -< e 
+    proc e -> do
+        idStr <- getAttrValue "id" -< e
+        src <- getAttrValue "source" -< e
         tgt <- getAttrValue "target" -< e
-        let eid = G.EdgeId (read id)
-            srcId = G.NodeId (read src)
-            tgtId = G.NodeId (read tgt)
-        info <- parseInfo -< e
-        returnA -< G.Edge eid srcId tgtId info 
+        let eid = parseId idStr G.EdgeId
+            srcId = parseId src G.NodeId
+            tgtId = parseId tgt G.NodeId
+        (infoLog, info) <- parseInfo -< e
+        returnA -< case (eid,srcId,tgtId) of
+                        (Just e, Just s, Just t) -> Right (infoLog, G.Edge e s t info)
+                        _ ->  Left $ "Failed to load Edge. Could not parse the ID of the Edge or of one of it's connected Nodes."
 
-parseInfo :: ArrowXml cat => cat (NTree XNode) Info
+parseInfo :: ArrowXml cat => cat (NTree XNode) ([String],Info)
 parseInfo = atTag "Info" >>>
     proc i -> do
         locked <- getAttrValue "locked" -< i
         itype <- getAttrValue "type" -< i
         operation <- getAttrValue "operation" -< i
-        label <- parseInfoLabel -< i
-        returnA -< Info.empty 
-                        { infoLocked = (read locked)
-                        , infoOperation = (read operation)
-                        , infoType = itype
-                        , infoLabel = label
-                        }
+        (log,label) <- parseInfoLabel -< i
+        let info = Info.empty
+                    { infoLocked = parseBool locked
+                    , infoOperation = parseInfoOperation operation
+                    , infoType = itype
+                    , infoLabel = label
+                    }
+        returnA -< (log,info)
 
-parseInfoLabel :: ArrowXml cat => cat (NTree XNode) InfoLabel
+-- parse a label
+parseInfoLabel :: ArrowXml cat => cat (NTree XNode) ([String],InfoLabel)
 parseInfoLabel = atTag "Label" >>>
     proc l -> do
         isGroup <- getAttrValue "group" -< l
-        let isGroup' = case reads isGroup :: [(Bool, String)] of 
-                            [(tval,_)] -> tval
-                            _ -> False
-        
+        let isGroup' = parseBool isGroup
+
         text <- getAttrValue "text" -< l
-        elements <- listA parseLabelElements -< l
-        returnA -< if isGroup' 
-                    then LabelGroup elements
-                    else Label text 
+        elementsOrLogs <- listA parseLabelElements -< l
+        let (logs,elements) = (filter (not . null) $ Either.lefts elementsOrLogs, Either.rights elementsOrLogs)
+            labelWithLog = if isGroup'
+                            then (logs, LabelGroup elements)
+                            else ([], Label text)
+        returnA -< labelWithLog
 
-
-parseLabelElements :: ArrowXml cat => cat (NTree XNode) (Int,String)
+-- parse elements of a LabelGroup
+parseLabelElements :: ArrowXml cat => cat (NTree XNode) (Either String (Int,String))
 parseLabelElements = atTag "LabelElement" >>>
     proc e -> do
-        text <- getAttrValue "text" -< e 
-        id <- getAttrValue "id" -< e 
-        returnA -< (read id, text)
+        text <- getAttrValue "text" -< e
+        idStr <- getAttrValue "id" -< e
+        let struct = case parseId idStr id of
+                            Nothing -> Left $ "Failed to load LabelElement. Could not parse Element ID "
+                            Just i -> Right (i, text)
+        returnA -< struct
 
-parseLayouts :: ArrowXml cat => cat (NTree XNode) GraphicalInfo
+-- parse layouts, returning a list of possible error logs and the layouts for the graph (GraphicalInfo)
+parseLayouts :: ArrowXml cat => cat (NTree XNode) ([String],GraphicalInfo)
 parseLayouts = atTag "Graph" >>>
     proc g -> do
-        nlayouts <- listA parseNodeLayout -< g
-        elayouts <- listA parseEdgeLayout -< g
-        returnA -< (M.fromList nlayouts, M.fromList elayouts)
+        nlayoutsOrLogs <- listA parseNodeLayout -< g
+        elayoutsOrLogs <- listA parseEdgeLayout -< g
+        let nlayouts = Either.rights nlayoutsOrLogs
+            elayouts = Either.rights elayoutsOrLogs
+            nlogs = Either.lefts nlayoutsOrLogs
+            elogs = Either.lefts elayoutsOrLogs
+        returnA -< (nlogs++elogs,(M.fromList nlayouts, M.fromList elayouts))
 
-parseNodeLayout :: ArrowXml cat => cat (NTree XNode) (Int, NodeGI)
-parseNodeLayout = atTag "Node" >>> 
-    proc n -> do 
-        id <- getAttrValue "id" -< n
+-- parse a node layout (NodeGI), returning a log string in case of error
+-- values are set to defaults in case their parse fails
+parseNodeLayout :: ArrowXml cat => cat (NTree XNode) (Either String (Int, NodeGI))
+parseNodeLayout = atTag "Node" >>>
+    proc n -> do
+        idStr <- getAttrValue "id" -< n
         l <- atTag "NodeLayout" -< n
-        pos <- getAttrValue "position" -< l
-        fColor <- getAttrValue "fillColor" -< l 
-        lColor <- getAttrValue "lineColor" -< l 
-        dims    <- getAttrValue "dimension" -< l 
-        shape  <- getAttrValue "shape" -< l
-        let gi = NodeGI (read pos) (read fColor) (read lColor) (read dims) (read shape)
-        returnA -< (read id, gi)
+        posStr <- getAttrValue "position" -< l
+        fColorStr <- getAttrValue "fillColor" -< l
+        lColorStr <- getAttrValue "lineColor" -< l
+        dimsStr    <- getAttrValue "dimension" -< l
+        shapeStr  <- getAttrValue "shape" -< l
 
-parseEdgeLayout :: ArrowXml cat => cat (NTree XNode) (Int, EdgeGI)
+        let struct = case parseId idStr id of
+                        Nothing -> Left "Failed to load NodeLayout. Could not parse Node ID."
+                        Just i ->
+                            let pos = fromMaybe (0,0) $ parseDoublePair posStr
+                                fColor = fromMaybe (1,1,1) $ parseDoubleTriple fColorStr
+                                lColor = fromMaybe (0,0,0) $ parseDoubleTriple lColorStr
+                                dims = fromMaybe (20,20) $ parseDoublePair dimsStr
+                                shape = parseNodeShape shapeStr
+                                in Right (i, NodeGI pos fColor lColor dims shape)
+        returnA -< struct
+
+-- parse a edge layout (EdgeGI), returning a log string in case of error
+parseEdgeLayout :: ArrowXml cat => cat (NTree XNode) (Either String (Int, EdgeGI))
 parseEdgeLayout = atTag "Edge" >>>
     proc e -> do
-        id <- getAttrValue "id" -< e
+        idStr <- getAttrValue "id" -< e
         l <- atTag "EdgeLayout" -< e
-        pos <- getAttrValue "position" -< l 
-        col <- getAttrValue "color" -< l
-        style <- getAttrValue "style" -< l 
-        let gi = EdgeGI (read pos) (read col) (read style)
-        returnA -< (read id, gi)
+        posStr <- getAttrValue "position" -< l
+        colStr <- getAttrValue "color" -< l
+        styleStr <- getAttrValue "style" -< l
+        let struct = case parseId idStr id of
+                        Nothing -> Left "Failed to load EdgeLayout. Could not parse Edge ID."
+                        Just i ->
+                            let pos = fromMaybe (0,0) $ parseDoublePair posStr
+                                col = fromMaybe (0,0,0) $ parseDoubleTriple colStr
+                                style = parseEdgeStyle styleStr
+                            in Right (i, EdgeGI pos col style)
+        returnA -< struct
 
-    
+
+-- auxiliar parsing functions to simple types and structures -- parsing can fail returning nothing
+parseId :: Num a => String -> (Int -> a) -> Maybe a
+parseId str f = case reads str :: [(Int,String)] of
+                [(num,_)] -> Just $ f num
+                _ -> Nothing
+
+parseDoublePair :: String -> Maybe (Double,Double)
+parseDoublePair str = case reads str :: [((Double,Double),String)] of
+                        [((a,b),_)] -> Just (a,b)
+                        _ -> Nothing
+
+parseDoubleTriple :: String -> Maybe (Double,Double,Double)
+parseDoubleTriple str = case reads str :: [((Double,Double,Double),String)] of
+                        [((a,b,c),_)] -> Just (a,b,c)
+                        _ -> Nothing
+
+-- parse functions for simple types -- upon failure returns a default value
+parseBool :: String -> Bool
+parseBool str = case reads str :: [(Bool,String)] of
+                    [(b,_)] -> b
+                    _ -> False
+
+parseInfoOperation :: String -> InfoOperation
+parseInfoOperation str = case reads str :: [(InfoOperation,String)] of
+                            [(op,_)] -> op
+                            _ -> Preserve
+
+parseEdgeStyle :: String -> EdgeStyle
+parseEdgeStyle str = case reads str :: [(EdgeStyle,String)] of
+                [(style,_)] -> style
+                _ -> ENormal
+
+parseNodeShape :: String -> NodeShape
+parseNodeShape str = case reads str :: [(NodeShape,String)] of
+                [(shape,_)] -> shape
+                _ -> NCircle
