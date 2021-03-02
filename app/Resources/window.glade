@@ -73,21 +73,6 @@
                         <property name="use_underline">True</property>
                       </object>
                     </child>
-                    <child>
-                      <object class="GtkMenuItem" id="export_vggx_item">
-                        <property name="visible">True</property>
-                        <property name="can_focus">False</property>
-                        <property name="label" translatable="yes">Export as ._vggx</property>
-                        <property name="use_underline">True</property>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkMenuItem" id="open_vggx_item">
-                        <property name="visible">True</property>
-                        <property name="can_focus">False</property>
-                        <property name="label" translatable="yes">Open .vggx</property>
-                      </object>
-                    </child>
                   </object>
                 </child>
               </object>
@@ -179,6 +164,7 @@
                         <property name="can_focus">False</property>
                         <property name="label">Select _Nodes</property>
                         <property name="use_underline">True</property>
+                        <accelerator key="n" signal="activate" modifiers="GDK_CONTROL_MASK"/>
                       </object>
                     </child>
                     <child>
@@ -186,6 +172,7 @@
                         <property name="can_focus">False</property>
                         <property name="label">Select _Edges</property>
                         <property name="use_underline">True</property>
+                        <accelerator key="e" signal="activate" modifiers="GDK_CONTROL_MASK"/>
                       </object>
                     </child>
                     <child>

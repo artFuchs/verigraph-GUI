@@ -55,12 +55,12 @@ startGUI = do
   statesMap       <- newIORef (M.empty :: M.Map Int32 GraphState)
   currentPath     <- newIORef [0] -- indexes of the path of the current graph in the TreeStore
   currentGraph    <- newIORef (0 :: Int32) -- index of the current graph
-  {- number specifying the type of the current graph 
+  {- number specifying the type of the current graph
      (see possible values in the module GUI.Helper.TreeStore, lines 52 - 61) -}
   currentGraphType <- newIORef (1 :: Int32)
   writeIORef statesMap $ M.fromList [(a,emptyState) | a <- [0 .. 2]]
   let storeIORefs = (statesMap,currentPath,currentGraph,currentGraphType)
-  
+
   -- variables to keep track of changes
   changedProject  <- newIORef False -- set this flag as True when the graph is changed somehow
   changedGraph    <- newIORef [False] -- when modify a graph, set the flag in the 'currentGraph' to True
@@ -77,7 +77,7 @@ startGUI = do
   -- Diagraph from the rule - togetter with lhs it make the editor state
   nacInfoMap    <- newIORef (M.empty :: M.Map Int32 (DiaGraph, MergeMapping))
   mergeMapping  <- newIORef (Nothing :: Maybe MergeMapping) -- current merge mapping. important to undo/redo with nacs
-  let nacIORefs = (nacInfoMap, mergeMapping)  
+  let nacIORefs = (nacInfoMap, mergeMapping)
 
   -- canvas and state which the menu items actions should apply to
   focusedCanvas <- newIORef (Nothing :: Maybe Gtk.DrawingArea)
@@ -93,7 +93,7 @@ startGUI = do
   -- build main window
   (window, tabs, fileItems, editItems, viewItems, helpItems) <- buildMainWindow
   -- set the menubar
-  let [newm,opn,svn,sva,eggx,evggx,ovggx] = fileItems
+  let [newm,opn,svn,sva,eggx] = fileItems
       [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
       [zin,zut,z50,zdf,z150,z200,vdf] = viewItems
       [hlp,abt] = helpItems
@@ -124,19 +124,19 @@ startGUI = do
   -- set the tabs
   editorTabLabel <- new Gtk.Label [#label := "Editor"]
   Gtk.notebookAppendPage tabs editorPane (Just editorTabLabel)
-  
+
   execTabLabel <- new Gtk.Label [#label := "Execute"]
   Gtk.notebookAppendPage tabs execPane (Just execTabLabel)
 
   analysisTabLabel <- new Gtk.Label [#label := "Analysis"]
-  Gtk.notebookAppendPage tabs cpaBox (Just analysisTabLabel)    
-                    
+  Gtk.notebookAppendPage tabs cpaBox (Just analysisTabLabel)
+
 
 
   ----------------------------------------------------------------------------------------------------------------------------
   --------  EVENT BINDINGS  --------------------------------------------------------------------------------------------------
   ----------------------------------------------------------------------------------------------------------------------------
-  
+
   -- update execStore (TreeStore of Executor module) based on editStore (TreeStore of Editor module) -------------------------
   -- when a editStore row changes, update the execStore
   after editStore #rowChanged $ \path iter -> do
@@ -192,19 +192,19 @@ startGUI = do
           return (i:next)
 
     (hasRules, fstRuleIter) <- Gtk.treeModelGetIterFromString editStore "2:0"
-    if hasRules 
-      then do 
-        ruleIndexes <- getIndexes fstRuleIter 
+    if hasRules
+      then do
+        ruleIndexes <- getIndexes fstRuleIter
         Exec.removeTrashFromTreeStore execStore ruleIndexes
       else Exec.removeTrashFromTreeStore execStore []
-    
-    
 
-    
-    
-      
 
-    
+
+
+
+
+
+
   on tabs #switchPage $ \page pageNum -> do
     -- update statesMap with the information of editorState
     Edit.storeCurrentES window editorState storeIORefs nacInfoMap
@@ -229,18 +229,18 @@ startGUI = do
             else do
               initState <- readIORef statesMap >>= return . fromMaybe emptyState . M.lookup 1
               writeIORef execState initState
-          
+
       2 -> do  -- Analysis tab
           mapM_ (\m -> Gtk.widgetSetSensitive m False) editItems
           mapM_ (\m -> Gtk.widgetSetSensitive m False) viewItems
           writeIORef focusedCanvas $ Nothing
           writeIORef focusedStateIORef $ Nothing
-      _ -> return ()     
-  
+      _ -> return ()
+
   ----------------------------------------------------------------------------------------------------------------------------
   -- File Menu ---------------------------------------------------------------------------------------------------------------
 
-  
+
   -- Edit Menu ---------------------------------------------------------------------------------------------------------------
 
 
@@ -305,7 +305,7 @@ startGUI = do
     focusStateIORef  <- readIORef focusedStateIORef
     case (focusCanvas, focusStateIORef) of
       (_,Nothing) -> return ()
-      (Just canvas, Just fState) -> do        
+      (Just canvas, Just fState) -> do
         modifyIORef fState (\st -> let z = stateGetZoom st * 0.9 in if z >= 0.5 then stateSetZoom z st else st)
         Gtk.widgetQueueDraw canvas
 
@@ -315,7 +315,7 @@ startGUI = do
     focusStateIORef  <- readIORef focusedStateIORef
     case (focusCanvas, focusStateIORef) of
       (_,Nothing) -> return ()
-      (Just canvas, Just fState) -> do        
+      (Just canvas, Just fState) -> do
         modifyIORef fState (\es -> stateSetZoom 0.5 es )
         Gtk.widgetQueueDraw canvas
 
@@ -325,7 +325,7 @@ startGUI = do
     focusStateIORef  <- readIORef focusedStateIORef
     case (focusCanvas, focusStateIORef) of
       (_,Nothing) -> return ()
-      (Just canvas, Just fState) -> do        
+      (Just canvas, Just fState) -> do
         modifyIORef fState (\es -> stateSetZoom 1.0 es )
         Gtk.widgetQueueDraw canvas
 
@@ -335,7 +335,7 @@ startGUI = do
     focusStateIORef  <- readIORef focusedStateIORef
     case (focusCanvas, focusStateIORef) of
       (_,Nothing) -> return ()
-      (Just canvas, Just fState) -> do        
+      (Just canvas, Just fState) -> do
         modifyIORef fState (\es -> stateSetZoom 1.5 es )
         Gtk.widgetQueueDraw canvas
 
@@ -345,7 +345,7 @@ startGUI = do
     focusStateIORef  <- readIORef focusedStateIORef
     case (focusCanvas, focusStateIORef) of
       (_,Nothing) -> return ()
-      (Just canvas, Just fState) -> do        
+      (Just canvas, Just fState) -> do
         modifyIORef fState (\es -> stateSetZoom 2.0 es )
         Gtk.widgetQueueDraw canvas
 
@@ -355,7 +355,7 @@ startGUI = do
     focusStateIORef  <- readIORef focusedStateIORef
     case (focusCanvas, focusStateIORef) of
       (_,Nothing) -> return ()
-      (Just canvas, Just fState) -> do        
+      (Just canvas, Just fState) -> do
         modifyIORef fState (\es -> stateSetZoom 1 $ stateSetPan (0,0) es )
         Gtk.widgetQueueDraw canvas
 
@@ -377,7 +377,7 @@ startGUI = do
         return False
       else return True
 
-  
+
 
   -- start the Gtk main loop -------------------------------------------------------------------------------------------------
   Gtk.main
@@ -400,7 +400,7 @@ buildMainWindow = do
   Gtk.builderAddFromFile builder (T.pack $ resourcesFolder ++ "window.glade")
   window  <- Gtk.builderGetObject builder "window" >>= unsafeCastTo Gtk.Window . fromJust
   tabs    <- Gtk.builderGetObject builder "tabs" >>= unsafeCastTo Gtk.Notebook . fromJust
-  
+
   -- menubar
   menubar  <- Gtk.builderGetObject builder "menubar" >>= unsafeCastTo Gtk.MenuBar . fromJust
 
@@ -409,9 +409,7 @@ buildMainWindow = do
   saveItem <- Gtk.builderGetObject builder "save_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   saveAsItem <- Gtk.builderGetObject builder "save_as_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   exportGGXItem <- Gtk.builderGetObject builder "export_ggx_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  exportVGGXItem <- Gtk.builderGetObject builder "export_vggx_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  openVGGXItem <- Gtk.builderGetObject builder "open_vggx_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  let fileItems = [newItem,openItem,saveItem,saveAsItem,exportGGXItem,exportVGGXItem,openVGGXItem]
+  let fileItems = [newItem,openItem,saveItem,saveAsItem,exportGGXItem]
 
   delItem <- Gtk.builderGetObject builder  "delete_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   undoItem <- Gtk.builderGetObject builder  "undo_item" >>= unsafeCastTo Gtk.MenuItem . fromJust

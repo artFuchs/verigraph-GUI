@@ -3,12 +3,9 @@ module GUI.Editor.Helper.SaveLoad
 ( SaveInfo(..)
 , saveFile
 , saveFileAs
-, saveVGGX
+, exportAs
 , exportGGX
-, saveProject
 , loadFile
-, loadProject
-, loadVGGX
 )where
 
 import qualified GI.Gtk as Gtk
@@ -43,28 +40,39 @@ import GUI.Data.SaveInfo
 import GUI.Dialogs
 import GUI.Helper.GrammarMaker
 
-
---------------------------------------------------------------------------------
--- functions -------------------------------------------------------------------
-
-saveFile :: a -> (a -> String -> IO Bool) -> IORef (Maybe String) -> Gtk.Window -> IO Bool
-saveFile x saveF fileName window = do
+-- save a forest of SaveInfo
+saveFile :: Tree.Forest SaveInfo -> IORef (Maybe String) -> Gtk.Window -> IO Bool
+saveFile saveInfo fileName window = do
   fn <- readIORef fileName
   case fn of
     Just path -> do
-      tentativa <- saveF x path
-      case tentativa of
+      let extension = FilePath.takeExtension path
+      attempt <- case extension of
+                    ".vgg" -> saveVGG saveInfo path
+                    _ -> saveVGGX saveInfo path
+      case attempt of
         True -> return True
         False -> do
-          showError window $ T.pack ("Couldn't write to file." ++ path)
+          showError window $ T.pack ("Couldn't write to file. " ++ path)
           return False
-    Nothing -> saveFileAs x saveF fileName (Just ".vgg") window True
-    
+    Nothing -> saveFileAs saveInfo fileName window
 
-saveFileAs :: a -> (a -> String -> IO Bool) -> IORef (Maybe String) -> Maybe String -> Gtk.Window -> Bool -> IO Bool
-saveFileAs x saveF fileName extension window changeFN = do
+saveFileAs :: Tree.Forest SaveInfo-> IORef (Maybe String) -> Gtk.Window -> IO Bool
+saveFileAs saveInfo fileName window = do
   saveD <- createSaveDialog window
+
+  vggxFilter <- Gtk.fileFilterNew
+  Gtk.fileFilterAddPattern vggxFilter "*.vggx"
+  Gtk.fileFilterSetName vggxFilter (Just "Verigraph-GUI Grammar XML (.vggx)")
+  Gtk.fileChooserAddFilter saveD vggxFilter
+
+  vggFilter <- Gtk.fileFilterNew
+  Gtk.fileFilterAddPattern vggFilter "*.vgg"
+  Gtk.fileFilterSetName vggFilter (Just "Verigraph-GUI Grammar (.vgg) [Deprecated]")
+  Gtk.fileChooserAddFilter saveD vggFilter
+
   response <- Gtk.dialogRun saveD
+
   fn <- case toEnum . fromIntegral $  response of
     Gtk.ResponseTypeAccept -> do
       filename <- Gtk.fileChooserGetFilename saveD
@@ -73,30 +81,40 @@ saveFileAs x saveF fileName extension window changeFN = do
           Gtk.widgetDestroy saveD
           return Nothing
         Just path -> do
-          path' <- case extension of
-            Just ext -> return $ FilePath.replaceExtension path ext
-            Nothing -> return path
-          attempt <- saveF x path'
+          fileFilter <- Gtk.fileChooserGetFilter saveD
+          filterName <- case fileFilter of
+                          Just ff -> Gtk.fileFilterGetName ff
+                          Nothing -> return Nothing
+          let extension = case FilePath.takeExtension path of
+                        ".vgg" -> ".vgg"
+                        ".vggx" -> ".vggx"
+                        _ -> case filterName of
+                                Just "Verigraph-GUI Grammar XML (.vggx)" -> ".vggx"
+                                Just "Verigraph-GUI Grammar (.vgg) [Deprecated]" -> ".vgg"
+                                Nothing -> ".vggx"
+          let path' = FilePath.replaceExtension path extension
+          attempt <- case extension of
+              ".vgg" -> saveVGG saveInfo path'
+              ".vggx" -> saveVGGX saveInfo path'
+          Gtk.widgetDestroy saveD
           case attempt of
-            True -> do
-              Gtk.widgetDestroy saveD
-              return $ Just path'
+            True -> return $ Just path'
             False -> do
-              Gtk.widgetDestroy saveD
-              showError window $ T.pack ("Couldn't write to file." ++ path)
+              showError window $ T.pack ("Couldn't write to file." ++ path')
               return Nothing
     _  -> do
       Gtk.widgetDestroy saveD
       return Nothing
-  case (changeFN, fn) of
-    (True, Just path) -> do
+
+  -- change fileName
+  case fn of
+    Just path -> do
       writeIORef fileName (Just path)
       return True
-    _ -> return False
+    Nothing -> return False
 
-
-saveProject :: Tree.Forest SaveInfo -> String -> IO Bool
-saveProject contents path = do
+saveVGG :: Tree.Forest SaveInfo -> String -> IO Bool
+saveVGG contents path = do
   let nodeContents g = map (\(Node nid info) -> (fromEnum nid, info)) (nodes g)
       edgeContents g = map (\(Edge eid srcid tgtid info) -> (fromEnum eid, fromEnum srcid, fromEnum tgtid, info)) (edges g)
       nodeContents' es = nodeContents (stateGetGraph es)
@@ -109,12 +127,39 @@ saveProject contents path = do
     Right _ -> return True
 
 saveVGGX :: Tree.Forest SaveInfo -> String -> IO Bool
-saveVGGX contents path = do 
+saveVGGX contents path = do
   writeVGGX contents path
   return True
 
+-- save a structure that isn't SaveInfo
+exportAs :: a -> (a -> String -> IO Bool) -> Gtk.Window -> IO Bool
+exportAs x saveF window = do
+  saveD <- createSaveDialog window
+  response <- Gtk.dialogRun saveD
+  case toEnum . fromIntegral $  response of
+    Gtk.ResponseTypeAccept -> do
+      filename <- Gtk.fileChooserGetFilename saveD
+      case filename of
+        Nothing -> do
+          Gtk.widgetDestroy saveD
+          return False
+        Just path -> do
+          attempt <- saveF x path
+          Gtk.widgetDestroy saveD
+          if not attempt
+            then showError window $ T.pack ("Couldn't write to file." ++ path)
+            else return ()
+          return attempt
+    _  -> do
+      Gtk.widgetDestroy saveD
+      return False
+
+--
 exportGGX :: (Grammar (TGM.TypedGraphMorphism Info Info), Graph Info Info) -> String -> IO Bool
 exportGGX (fstOrderGG, tg)  path = do
+  let path' = if FilePath.hasExtension path && FilePath.takeExtension path == ".ggx"
+                then path
+                else FilePath.addExtension path ".ggx"
   let nods = nodes tg
       edgs = edges tg
       nodeNames = map (\n -> ('N' : (show . fromEnum . nodeId $ n), (infoLabelStr . nodeInfo $ n) ++ "%:[NODE]:" )) nods
@@ -122,26 +167,29 @@ exportGGX (fstOrderGG, tg)  path = do
       names = nodeNames ++ edgeNames
 
   let emptySndOrderGG = grammar (emptyGraphRule (makeTypeGraph tg)) [] [] :: Grammar (RuleMorphism Info Info)
-  let ggName = reverse . takeWhile (/= '/') . drop 4 . reverse $ path
+  let ggName = reverse . takeWhile (/= '/') . reverse $ path
 
-  writeGrammarFile (fstOrderGG,emptySndOrderGG) ggName names path
+  writeGrammarFile (fstOrderGG,emptySndOrderGG) ggName names path'
   return True
 
-loadFile :: Gtk.Window -> (String -> Maybe a) -> (T.Text, T.Text) -> IO (Maybe (a,String))
-loadFile window loadF (filterName, extension) = do
+loadFile :: Gtk.Window -> IO (Maybe (Tree.Forest SaveInfo,String))
+loadFile window = do
   loadD <- createLoadDialog window
-
-  filter <- Gtk.fileFilterNew
-  Gtk.fileFilterAddPattern filter extension
-  Gtk.fileFilterSetName filter (Just filterName)
-  Gtk.fileChooserAddFilter loadD filter
-  filters <- Gtk.fileChooserListFilters loadD
 
   allFilter <- Gtk.fileFilterNew
   Gtk.fileFilterAddPattern allFilter "*"
-  Gtk.fileFilterSetName allFilter (Just "all file formats")
+  Gtk.fileFilterSetName allFilter (Just "all files")
   Gtk.fileChooserAddFilter loadD allFilter
 
+  vggxFilter <- Gtk.fileFilterNew
+  Gtk.fileFilterAddPattern vggxFilter "*.vggx"
+  Gtk.fileFilterSetName vggxFilter (Just "Verigraph-GUI Grammar XML (.vggx)")
+  Gtk.fileChooserAddFilter loadD vggxFilter
+
+  vggFilter <- Gtk.fileFilterNew
+  Gtk.fileFilterAddPattern vggFilter "*.vgg"
+  Gtk.fileFilterSetName vggFilter (Just "Verigraph-GUI Grammar (.vgg) [Deprecated]")
+  Gtk.fileChooserAddFilter loadD vggFilter
 
   response <- Gtk.dialogRun loadD
   case toEnum . fromIntegral $ response of
@@ -152,52 +200,33 @@ loadFile window loadF (filterName, extension) = do
         Nothing -> do
           return Nothing
         Just path -> do
-          result <- E.try (readFile path) :: IO (Either E.IOException String)
-          case result of
-            Left _ -> do
-              showError window (T.pack "Couldn't open the file")
-              return Nothing
-            Right content -> case loadF content of
-              Nothing -> do
-                showError window (T.pack "Couldn't read the file")
-                return Nothing
-              Just x -> return $ Just (x, path)
+          case FilePath.takeExtension path of
+            ".vgg" -> loadVGG window path
+            ".vggx" -> loadVGGX window path
+            _ -> loadVGGX window path
     _             -> do
       Gtk.widgetDestroy loadD
       return Nothing
 
 
-loadProject :: String -> Maybe (Tree.Forest SaveInfo)
-loadProject content = loadedTree
-  where
-    loadedTree = case reads content :: [(Tree.Forest SaveInfo, String)] of
-      [(tree,"")] -> Just tree
-      _ -> Nothing
-
-loadVGGX :: Gtk.Window -> IO (Maybe (Tree.Forest SaveInfo,String))
-loadVGGX window = do
-  loadD <- createLoadDialog window
-
-  xmlFilter <- Gtk.fileFilterNew
-  Gtk.fileFilterAddPattern xmlFilter "*.vggx"
-  Gtk.fileFilterSetName xmlFilter (Just "verigraph-gui grammar XML file")
-  Gtk.fileChooserAddFilter loadD xmlFilter
-
-  response <- Gtk.dialogRun loadD
-  case toEnum . fromIntegral $ response of
-    Gtk.ResponseTypeAccept -> do
-      filename <- Gtk.fileChooserGetFilename loadD
-      Gtk.widgetDestroy loadD
-      case filename of
-        Nothing -> do
-          return Nothing
-        Just path -> do
-          result <- E.try (readVGGX path) :: IO (Either E.IOException (Maybe (Tree.Forest SaveInfo)))
-          case result of
-            Left _ -> do
-              showError window (T.pack "Couldn't open the file")
-              return Nothing
-            Right content -> return $ Just (\x -> (x,path)) <*> content
-    _             -> do
-      Gtk.widgetDestroy loadD
+loadVGG :: Gtk.Window -> String -> IO (Maybe (Tree.Forest SaveInfo, String))
+loadVGG window path = do
+  result <- E.try (readFile path) :: IO (Either E.IOException String)
+  case result of
+    Left _ -> do
+      showError window (T.pack "Couldn't open the file.")
       return Nothing
+    Right content -> case reads content :: [(Tree.Forest SaveInfo, String)] of
+      [(tree,"")] -> return $ Just (tree, path)
+      _ -> do
+        showError window (T.pack "Couldn't read the file.")
+        return Nothing
+
+loadVGGX :: Gtk.Window -> String -> IO (Maybe (Tree.Forest SaveInfo,String))
+loadVGGX window path = do
+  result <- E.try (readVGGX path) :: IO (Either E.SomeException (Maybe (Tree.Forest SaveInfo)))
+  case result of
+    Left e -> do
+      showError window (T.pack (show e))
+      return Nothing
+    Right content -> return $ Just (\x -> (x,path)) <*> content

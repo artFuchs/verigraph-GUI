@@ -83,20 +83,20 @@ type NacIORefs        = ( IORef (M.Map Int32 (DiaGraph, MergeMapping)), IORef (M
 --  Editor Construction  --------------------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------------------------------------
 
-{- | Create the editor widgets (the treeView at left, the canvas at center and the inpector panel at right) 
+{- | Create the editor widgets (the treeView at left, the canvas at center and the inpector panel at right)
     and set the callbacks for them.
     Returns the gtkPaned parent to those widgets.
 -}
 startEditor :: Gtk.Window -> Gtk.TreeStore
-               -> IORef (Maybe String) -> IORef (Graph Info Info) 
+               -> IORef (Maybe String) -> IORef (Graph Info Info)
                -> StoreIORefs -> ChangesIORefs -> NacIORefs
                -> [Gtk.MenuItem] -> [Gtk.MenuItem] -> [Gtk.MenuItem]
                -> IORef (Maybe Gtk.DrawingArea) -> IORef (Maybe (IORef GraphState))
                -> IO (Gtk.Paned, Gtk.DrawingArea, IORef GraphState)
 startEditor window store
-            fileName typeGraph 
-            storeIORefs changesIORefs nacIORefs 
-            fileItems editItems viewItems 
+            fileName typeGraph
+            storeIORefs changesIORefs nacIORefs
+            fileItems editItems viewItems
             focusedCanvas focusedStateIORef = do
 
   -- create the ui of the editor
@@ -158,9 +158,9 @@ startEditor window store
         (Just r, _) -> set r [#visible := False]
         _ -> return ()
       )
-  
+
   -- "unpack" menuItems
-  let [newm,opn,svn,sva,eggx,evggx,ovggx] = fileItems
+  let [newm,opn,svn,sva,eggx] = fileItems
       [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
       [zin,zut,z50,zdf,z150,z200,vdf] = viewItems
 
@@ -174,7 +174,7 @@ startEditor window store
   ----------------------------------------------------------------------------------------------------------------------------
   -- IORefs  -----------------------------------------------------------------------------------------------------------------
   ----------------------------------------------------------------------------------------------------------------------------
-  
+
   -- variables used to edit
   currentState    <- newIORef emptyState -- current state: the necessary info to draw the selected graph
   oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
@@ -195,15 +195,15 @@ startEditor window store
   redoStack       <- newIORef (M.empty :: M.Map Int32 ChangeStack)
 
   -- variables for typeInference
-  {-  
+  {-
       Possible types that a node can have in a typed graph.
-      Each node type is identified by a string 
-       and specifies a pair with a NodeGI and the position of the entry in the comboBox 
+      Each node type is identified by a string
+       and specifies a pair with a NodeGI and the position of the entry in the comboBox
   -}
   possibleNodeTypes   <- newIORef ( M.empty :: M.Map String (NodeGI, Int32))
-  {-  
+  {-
       Possible types that an edge can have in a typed graph.
-      Each edge type is identified by a string and specifies a pair with a map of EdgeGI, 
+      Each edge type is identified by a string and specifies a pair with a map of EdgeGI,
        which keys are a pair of Strings (Source, Target), and the position in the comboBox
   -}
   possibleEdgeTypes   <- newIORef ( M.empty :: M.Map String (M.Map (String, String) EdgeGI, Int32))
@@ -211,7 +211,7 @@ startEditor window store
   possibleSelectableEdgeTypes <- newIORef (M.empty :: M.Map String (M.Map (String, String) EdgeGI, Int32))
   currentNodeType     <- newIORef ( Nothing :: Maybe String)
   currentEdgeType     <- newIORef ( Nothing :: Maybe String)
-  
+
 
   -- "unpack" IORefs
   let (graphStates,currentPath,currentGraph,currentGraphType) = storeIORefs
@@ -237,12 +237,12 @@ startEditor window store
           4 -> setCurrentValidFlag store currentState typeGraph currentPath
           _ -> return ()
 
-  
-  
+
+
   ----------------------------------------------------------------------------------------------------------------------------
   -- Event Bindings for the Canvas -------------------------------------------------------------------------------------------
   ----------------------------------------------------------------------------------------------------------------------------
-  
+
   -- drawing event
   on canvas #draw $ \context -> do
     es <- readIORef currentState
@@ -277,7 +277,7 @@ startEditor window store
     es <- readIORef currentState
     gType <- readIORef currentGraphType
     tg <- readIORef typeGraph
-    
+
     if gType > 1
       then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es tg []
       else return ()
@@ -367,7 +367,7 @@ startEditor window store
               auto <- Gtk.toggleButtonGetActive autoLabelECheckBtn
               es <- readIORef currentState
               tg <- readIORef typeGraph
-              pet <- readIORef possibleEdgeTypes 
+              pet <- readIORef possibleEdgeTypes
               pet' <- return $ M.map fst pet
 
               -- create edges infering their types
@@ -387,16 +387,16 @@ startEditor window store
                                                         Just sm -> case M.lookup (srcType,tgtType) sm of
                                                                       Nothing -> ("", cEstyle, cColor)
                                                                       Just gi -> (t, style gi, color gi)
-                  (es', createdEdges) = 
-                            foldr (\(src, mt) (es,eids) -> 
+                  (es', createdEdges) =
+                            foldr (\(src, mt) (es,eids) ->
                                       let srcId = nodeId src
                                           (t,estyle,color) = checkType mt (infoType $ nodeInfo src)
                                           es' = createEdge es srcId nid (infoSetType I.empty t) auto estyle color
                                           eids' = (snd $ stateGetSelected es') ++ eids
                                       in (es',eids'))
                               (es,[]) edgesTs
-              
-              writeIORef currentState $ stateSetSelected ([],createdEdges) es' 
+
+              writeIORef currentState $ stateSetSelected ([],createdEdges) es'
 
               if gType > 1
                 then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es' tg createdEdges
@@ -482,7 +482,7 @@ startEditor window store
       1 -> do
         writeIORef movingGI False
         let (sNodes, sEdges) = stateGetSelected es
-        case (length sNodes > 0 || length sEdges > 0) of 
+        case (length sNodes > 0 || length sEdges > 0) of
           True -> do
             if gType > 1
               then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es tg sEdges
@@ -508,7 +508,7 @@ startEditor window store
       (False,False,'\65535') -> Gtk.menuItemActivate del
       (_,_,'1') -> do
         gType <- readIORef currentGraphType
-        if gType == 2 
+        if gType == 2
           then do
             cShape <- readIORef currentShape
             cColor <- readIORef currentC
@@ -525,12 +525,12 @@ startEditor window store
                 case mngi of
                   Nothing -> return ("", cShape, cColor, cLColor)
                   Just gi -> return (t, shape gi, fillColor gi, lineColor gi)
-            
+
             st <- readIORef currentState
             let desiredNum = 1024
                 columsNum = 32
                 g = stateGetGraph st
-                firstId = fromEnum $ head $ newNodes g 
+                firstId = fromEnum $ head $ newNodes g
             forM_ [firstId..(firstId + desiredNum - 1)] $ \i -> do
               let x = 50 * (((i - firstId) `mod` columsNum) + 1)
                   y = 50 * (((i - firstId) `quot` columsNum) + 1)
@@ -541,7 +541,7 @@ startEditor window store
 
             setChangeFlags window store changedProject changedGraph currentPath currentGraph True
             setCurrentValidFlag store currentState typeGraph currentPath
-            
+
 
           else return ()
 
@@ -556,7 +556,7 @@ startEditor window store
   ----------------------------------------------------------------------------------------------------------------------------
   -- Event Bindings for the Inspector Panel  ---------------------------------------------------------------------------------
   ----------------------------------------------------------------------------------------------------------------------------
-  
+
   on nameEntry #keyPressEvent $ \eventKey -> do
     k <- get eventKey #keyval >>= return . chr . fromIntegral
     --if it's Return or Enter (Numpad), then change the name of the selected elements
@@ -580,7 +580,7 @@ startEditor window store
     -- infere the types of edge(s) connected to the renamed node(s)
     typesE <- readIORef possibleEdgeTypes
     tg <- readIORef typeGraph
-    let 
+    let
       typesE' = M.map fst typesE
       es'' = infereEdgesTypesAfterNodeChange es' tg typesE'
 
@@ -759,7 +759,7 @@ startEditor window store
         typeInfo <- Gtk.comboBoxTextGetActiveText nodeTypeCBox >>= return . T.unpack
         typeNGI <- readIORef possibleNodeTypes >>= return . fst . fromJust . M.lookup typeInfo
         es <- readIORef currentState
-        
+
         let (sNids,sEids) = stateGetSelected es
             g = stateGetGraph es
             -- foreach selected node, change their types
@@ -769,7 +769,7 @@ startEditor window store
             giM = stateGetGI es
             g' = foldr (\nid g -> updateNodePayload nid g (\info -> infoSetType info typeInfo)) g acceptableSNids
             newNGI = foldr  (\nid giM -> let ngi = getNodeGI (fromEnum nid) giM
-                                         in M.insert (fromEnum nid) (typeNGI {position = position ngi, dims = dims ngi}) giM) 
+                                         in M.insert (fromEnum nid) (typeNGI {position = position ngi, dims = dims ngi}) giM)
                             (fst giM)
                             acceptableSNids
             es' = stateSetGraph g' . stateSetGI (newNGI, snd giM) $ es
@@ -778,8 +778,8 @@ startEditor window store
         typesE <- readIORef possibleEdgeTypes >>= return . M.map fst
         tg <- readIORef typeGraph
         let es'' = infereEdgesTypesAfterNodeChange es' tg typesE
-          
-        if gt == 4 
+
+        if gt == 4
           then do
             nacInfoM <- readIORef nacInfoMap
             index <- readIORef currentGraph
@@ -815,10 +815,10 @@ startEditor window store
                                                       Just e -> not $ infoLocked (edgeInfo e)) sEids
                 edgesInContext = map (\eid -> fromJust $ lookupEdgeInContext eid g) acceptableSEids
 
-                changeEdgeGI ((src,_),e,(tgt,_)) giM = 
+                changeEdgeGI ((src,_),e,(tgt,_)) giM =
                       let eid = fromEnum $ edgeId e
                           egi = getEdgeGI eid giM
-                      in case M.lookup (infoType $ nodeInfo src, infoType $ nodeInfo tgt) pET of 
+                      in case M.lookup (infoType $ nodeInfo src, infoType $ nodeInfo tgt) pET of
                               Nothing -> giM
                               Just typeGI -> M.insert eid (typeGI {cPosition = cPosition egi}) giM
                 newEGI = foldr changeEdgeGI (snd giM) edgesInContext
@@ -898,7 +898,7 @@ startEditor window store
         case (cIndex == index, gType) of
           -- case the selection did not change, just update the path
           (True, _)  -> writeIORef currentPath path
-          
+
           -- case the selection in the treeview is just a Topic, do nothing
           (False, 0) -> return ()
 
@@ -919,7 +919,7 @@ startEditor window store
                 -- load lhs diagraph
                 (lhs,lgi) <- getParentLHSDiaGraph store path graphStates
                 let lhsIsValid = isGraphValid lhs tg
-                
+
                 case lhsIsValid of
                   False -> do
                     showError window "Parent rule have type errors. Please, correct them before loading nacGraph."
@@ -981,7 +981,7 @@ startEditor window store
                                   tgtType = infoType $ nodeInfo tgt
                   ge (i,et,currentState,tt,gi) = case M.lookup et pet of
                                   Nothing -> (i,gi)
-                                  Just (sm,_) -> case M.lookup (currentState,tt) sm of 
+                                  Just (sm,_) -> case M.lookup (currentState,tt) sm of
                                     Nothing -> (i,gi)
                                     Just gi' -> (i, gi' {cPosition = cPosition gi})
                   newNodeGI = M.fromList . map gn . map fn $ nodes g
@@ -1090,7 +1090,7 @@ startEditor window store
             modifyIORef graphStates $ M.delete index
             Gtk.treeStoreRemove store iter
             return ()
-          4 -> do 
+          4 -> do
             removeNac iter
             return ()
           _ -> showError window "Selected Graph is not a NAC or a Rule."
@@ -1122,7 +1122,7 @@ startEditor window store
                 gi = stateGetGI es
                 ngi' = M.filterWithKey (\k a -> (NodeId k) `elem` (nodeIds lhs)) (fst gi)
                 egi' = M.filterWithKey (\k a -> (EdgeId k) `elem` (edgeIds lhs)) (snd gi)
-                nodeMap = M.empty 
+                nodeMap = M.empty
                 edgeMap = M.empty
                 newKey = if M.size states > 0 then maximum (M.keys states) + 1 else 0
             n <- Gtk.treeModelIterNChildren store (Just iterR)
@@ -1170,7 +1170,7 @@ startEditor window store
   ----------------------------------------------------------------------------------------------------------------------------
 
   -- File Menu Items ---------------------------------------------------------------------------------------------------------
-  
+
   -- new project
   on newm #activate $ do
     continue <- confirmOperation window store changedProject currentState nacInfoMap fileName storeIORefs
@@ -1195,13 +1195,13 @@ startEditor window store
         set window [#title := "Verigraph-GUI"]
         Gtk.widgetQueueDraw canvas
       else return ()
-  
+
   -- open project
   on opn #activate $ do
     continue <- confirmOperation window store changedProject currentState nacInfoMap fileName storeIORefs
     if continue
       then do
-        mg <- loadFile window loadProject ("Verigraph-GUI grammar file (.vgg)","*.vgg")
+        mg <- loadFile window
         case mg of
           Nothing -> return ()
           Just (forest,fn) -> do
@@ -1256,7 +1256,7 @@ startEditor window store
     context <- Gtk.widgetGetPangoContext canvas
     updateAllNacs store graphStates nacInfoMap context
     structs <- getStructsToSave store graphStates nacInfoMap
-    saved <- saveFile structs saveProject fileName window
+    saved <- saveFile structs fileName window
     if saved
       then do afterSave store window graphStates changesIORefs fileName
       else return ()
@@ -1267,7 +1267,7 @@ startEditor window store
     context <- Gtk.widgetGetPangoContext canvas
     updateAllNacs store graphStates nacInfoMap context
     structs <- getStructsToSave store graphStates nacInfoMap
-    saved <- saveFileAs structs saveProject fileName (Just ".vgg") window True
+    saved <- saveFileAs structs fileName window
     if saved
       then afterSave store window graphStates changesIORefs fileName
       else return ()
@@ -1281,70 +1281,8 @@ startEditor window store
     case efstOrderGG of
       Left msg -> showError window (T.pack msg)
       Right fstOrderGG -> do
-        saveFileAs (fstOrderGG,tg) exportGGX fileName (Just ".ggx") window False
+        exportAs (fstOrderGG,tg) exportGGX window
         return ()
-
-  evggx `on` #activate $ do
-    storeCurrentES window currentState storeIORefs nacInfoMap
-    context <- Gtk.widgetGetPangoContext canvas
-    updateAllNacs store graphStates nacInfoMap context
-    structs <- getStructsToSave store graphStates nacInfoMap
-    _ <- saveFileAs structs saveVGGX fileName (Just ".vggx") window True
-    return ()
-
-  on ovggx #activate $ do
-    continue <- confirmOperation window store changedProject currentState nacInfoMap fileName storeIORefs
-    if continue
-      then do
-        mg <- loadVGGX window
-        case mg of
-          Nothing -> return ()
-          Just (forest,fn) -> do
-                writeIORef graphStates M.empty
-                Gtk.treeStoreClear store
-                let toGSandStates n = case n of
-                              Topic name -> ((name,0,0,0,False), (0,(-1,emptyState)))
-                              TypeGraph id name es -> ((name,0,id,1,True), (1, (id,es)))
-                              HostGraph id name es -> ((name,0,id,2,True), (2, (id,es)))
-                              RuleGraph id name es a -> ((name,0,id,3,a), (3, (id,es)))
-                              NacGraph id name _ -> ((name,0,id,4,True), (4,(id,emptyState)))
-                let toNACInfos n = case n of
-                              NacGraph id name nacInfo -> (id,nacInfo)
-                              _ -> (0,(DG.empty,(M.empty,M.empty)))
-                    infoForest = map (fmap toGSandStates) forest
-                    nameForest = map (fmap fst) infoForest
-                    statesForest = map (fmap snd) infoForest
-                    statesList = map snd . filter (\st-> fst st /= 0) . concat . map Tree.flatten $ statesForest
-                    nacInfos = filter (\ni -> fst ni /= 0). concat . map Tree.flatten $ map (fmap toNACInfos) forest
-                let putInStore (Tree.Node (name,c,i,t,a) fs) mparent = do
-                        iter <- Gtk.treeStoreAppend store mparent
-                        storeSetGraphStore store iter (name,c,i,t,a,True)
-                        case t of
-                          0 -> mapM_ (\n -> putInStore n (Just iter)) fs
-                          3 -> mapM_ (\n -> putInStore n (Just iter)) fs
-                          _ -> return ()
-                mapM (\n -> putInStore n Nothing) nameForest
-                let (i,es) = if length statesList > 0 then statesList!!0 else (0,emptyState)
-                writeIORef currentState es
-                writeIORef undoStack $ M.fromList [(i,[]) | i <- [0 .. (maximum $ map fst statesList)]]
-                writeIORef redoStack $ M.fromList [(i,[]) | i <- [0 .. (maximum $ map fst statesList)]]
-                let statesMap = M.fromList statesList
-                writeIORef graphStates statesMap
-                writeIORef lastSavedState $ M.map (\es -> (stateGetGraph es, stateGetGI es)) statesMap
-                writeIORef fileName $ Just fn
-                writeIORef currentGraph i
-                writeIORef currentPath [0]
-                writeIORef currentGraphType 1
-                writeIORef mergeMapping Nothing
-                writeIORef nacInfoMap $ M.fromList nacInfos
-                p <- Gtk.treePathNewFromIndices [0]
-                Gtk.treeViewExpandToPath treeview p
-                Gtk.treeViewSetCursor treeview p namesCol False
-                afterSave store window graphStates changesIORefs fileName
-                updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
-                Gtk.widgetQueueDraw canvas
-      else return ()
-  
 
   -- Edit Menu ---------------------------------------------------------------------------------------------------------------
 
@@ -1485,7 +1423,7 @@ startEditor window store
         index <- readIORef currentGraph
         nacInfoM <- readIORef nacInfoMap
         let nacInfo = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup index nacInfoM
-            
+
         -- merge elements
         merging <- mergeNACElements es nacInfo tg context
 
@@ -1554,15 +1492,15 @@ startEditor window store
 -- it does the checking and if no, ask the user if them want to save.
 -- returns True if there's no changes, if the user don't wanted to save or if he wanted and the save operation was successfull
 -- returns False if the user wanted to save and the save operation failed or opted to cancel.
-confirmOperation :: Gtk.Window 
-                 -> Gtk.TreeStore 
+confirmOperation :: Gtk.Window
+                 -> Gtk.TreeStore
                  -> IORef Bool
                  -> IORef GraphState
                  -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
                  -> IORef (Maybe String)
                  -> StoreIORefs
                  -> IO Bool
-confirmOperation window store changedProject currentState nacInfoMap fileName storeIORefs@(graphStates,_,_,_)= do 
+confirmOperation window store changedProject currentState nacInfoMap fileName storeIORefs@(graphStates,_,_,_)= do
   changed <- readIORef changedProject
   response <- if changed
     then createConfirmDialog window "The project was changed, do you want to save?"
@@ -1573,7 +1511,7 @@ confirmOperation window store changedProject currentState nacInfoMap fileName st
     Gtk.ResponseTypeYes -> do
       storeCurrentES window currentState storeIORefs nacInfoMap
       structs <- getStructsToSave store graphStates nacInfoMap
-      saveFile structs saveProject fileName window -- returns True if saved the file
+      saveFile structs fileName window -- returns True if saved the file
     _ -> return False
 
 prepToExport :: Gtk.TreeStore
@@ -1589,28 +1527,28 @@ prepToExport store graphStates nacInfoMap = do
   rules <- getRules store graphStates nacInfoMap
   let rulesNames = map (\(_,_,name) -> name) rules
       rulesNnacs = map (\(r,ns,_) -> (r,ns)) rules
-  
+
   let efstOrderGG = makeGrammar tg hg rulesNnacs rulesNames
   return efstOrderGG
 
 
 
- 
+
 
 
 
 -- update the active typegraph if the corresponding diagraph is valid, set it as empty if not
-updateTG :: IORef GraphState 
-          -> IORef (Graph Info Info) 
+updateTG :: IORef GraphState
+          -> IORef (Graph Info Info)
           -> IORef (M.Map String (NodeGI, Int32))
-          -> IORef (M.Map String (M.Map (String, String) EdgeGI, Int32)) 
+          -> IORef (M.Map String (M.Map (String, String) EdgeGI, Int32))
           -> IORef (M.Map String (M.Map (String, String) EdgeGI, Int32))
           -> IORef (M.Map Int32 GraphState)
           -> Gtk.ComboBoxText
           -> Gtk.ComboBoxText
           -> Gtk.TreeStore
           -> IO ()
-updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store = 
+updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store =
   do
     es <- readIORef currentState
     -- check if all edges and nodes have different names
@@ -1630,7 +1568,7 @@ updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSele
                   -- generate a mapping of node labels to node GIs
                   nodeNames2GI = sortBy (comparing fst) $ map (\(Node nid info) -> (infoLabelStr info, getNodeGI (fromEnum nid) ngiM)) (nodes g)
                   -- generate a mapping of edge labels to a submapping of (source node label, target node label) to edge GIs
-                  edgeNames2SubMap = M.toList $ 
+                  edgeNames2SubMap = M.toList $
                                       foldr (\(Edge eid s t info) m ->
                                             let srcType = infoLabelStr . nodeInfo . fromJust $ lookupNode s g
                                                 tgtType = infoLabelStr . nodeInfo . fromJust $ lookupNode t g
@@ -1661,15 +1599,15 @@ updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSele
 updateComboBoxText :: Gtk.ComboBoxText -> [T.Text] -> IO ()
 updateComboBoxText cbox texts = do
     -- clean comboBox values
-    Gtk.comboBoxTextRemoveAll cbox  
+    Gtk.comboBoxTextRemoveAll cbox
     -- populate cbox
     forM_ texts $ \t -> Gtk.comboBoxTextAppendText cbox t
 
-changeEdgeTypeCBoxByContext :: IORef (M.Map String (M.Map (String,String)EdgeGI,Int32)) 
+changeEdgeTypeCBoxByContext :: IORef (M.Map String (M.Map (String,String)EdgeGI,Int32))
                             -> IORef (M.Map String (M.Map (String,String)EdgeGI,Int32))
                             -> Gtk.ComboBoxText
-                            -> GraphState 
-                            -> Graph Info Info 
+                            -> GraphState
+                            -> Graph Info Info
                             -> [EdgeId]
                             -> IO ()
 changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es tg sEdges = do
@@ -1679,7 +1617,7 @@ changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTy
         updateComboBoxText edgeTypeCBox (map T.pack $ M.keys pET)
   case (G.null tg, sEdges) of
     -- typegraph is null -> impossible to do anything
-    (True,_) -> return () 
+    (True,_) -> return ()
     -- no edge selected -> all edge types are selectable
     (False, []) -> defaultAction
     -- one edge selected -> modify comboboxes to show what kind of types this edge can have
@@ -1687,7 +1625,7 @@ changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTy
       let g = stateGetGraph es
       case lookupEdge eid g of
         Just e -> do
-          let 
+          let
             mSrc = lookupNode (sourceId e) g
             mTgt = lookupNode (targetId e) g
           case (mSrc,mTgt) of
@@ -1699,7 +1637,7 @@ changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTy
                 pEST' = snd $ M.mapAccum posF 0 pEST
               writeIORef possibleSelectableEdgeTypes pEST'
               updateComboBoxText edgeTypeCBox (map T.pack $ M.keys pEST')
-            _ -> do 
+            _ -> do
               putStrLn "Error: lookupNode returning Nothing"
               print e
               print g
@@ -1718,7 +1656,7 @@ changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTy
           case ends of
             (False,_) -> (False,Nothing)
             (True,Nothing) -> dfRes
-            (True,Just (s,t)) -> 
+            (True,Just (s,t)) ->
               let
                 srcMatch = case mSrc of
                   Nothing -> False
@@ -1733,10 +1671,10 @@ changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTy
             dfRes = case (mSrc,mTgt) of
                       (Just s, Just t) -> (True,Just (s,t))
                       _ -> (False,Nothing)
-        
+
         endings = foldr checkEndings (True,Nothing) edgs
       case endings of
-        -- all selected edges have source and target nodes of same types -> 
+        -- all selected edges have source and target nodes of same types ->
         --      modify comboboxes to show what kind of types these edges can have
         (True,Just (src,tgt)) -> do
           let
@@ -1758,7 +1696,7 @@ createNode' currentState info autoNaming pos nshape color lcolor context = do
       info' = if infoLabelStr info == "" && autoNaming then infoSetLabel info (show $ fromEnum nid) else info
   dim <- getStringDims (infoVisible info') context Nothing
   writeIORef currentState $ createNode es pos dim info' nshape color lcolor
-  
+
   return nid
 
 
@@ -1771,7 +1709,7 @@ storeCurrentES window currentState (graphStates, _, currentGraph, currentGraphTy
   modifyIORef graphStates $ M.insert index es
   gtype <- readIORef currentGraphType
   -- if the current graph is a NAC, then update the nacInfo
-  if gtype == 4 
+  if gtype == 4
     then do
       nacInfo <- readIORef nacInfoMap >>= return . M.lookup index
       case nacInfo of
@@ -1782,14 +1720,14 @@ storeCurrentES window currentState (graphStates, _, currentGraph, currentGraphTy
     else return ()
 
 
-afterSave :: Gtk.TreeStore 
-          -> Gtk.Window 
-          -> IORef (M.Map Int32 GraphState) 
+afterSave :: Gtk.TreeStore
+          -> Gtk.Window
+          -> IORef (M.Map Int32 GraphState)
           -> ChangesIORefs
           -> IORef (Maybe String)
           -> IO ()
-afterSave store window graphStates (changedProject, changedGraph, lastSavedState) fileName  = 
-        do  
+afterSave store window graphStates (changedProject, changedGraph, lastSavedState) fileName  =
+        do
           -- update changes IORefs so that the project appear as not changed
           writeIORef changedProject False
           states <- readIORef graphStates
@@ -1805,7 +1743,3 @@ afterSave store window graphStates (changedProject, changedGraph, lastSavedState
           case filename of
             Nothing -> set window [#title := "Verigraph-GUI"]
             Just fn -> set window [#title := T.pack ("Verigraph-GUI - " ++ fn)]
-
-
-
-

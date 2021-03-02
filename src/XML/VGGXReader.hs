@@ -39,7 +39,7 @@ readVGGX fileName = do
             rules <- readRules fileName
             return $ Just [tg,hg,rules]
         Nothing -> do
-            putStrLn "Critical Error: failed to load TypeGraph -> parsing of the grammar failed"
+            error "Critical Error: failed to load TypeGraph -> parsing of the grammar failed"
             return Nothing
 
 
