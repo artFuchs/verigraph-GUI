@@ -1,5 +1,8 @@
 # Changelog for graph-editor-gi-gtk
 
+0.2.0.1 ... 0.2.0.2
+    - changed default format for verigraph-GUI grammar from .vgg to .vggx (XML)
+
 0.2.0.0 ... 0.2.0.1
     - new nodes being positioned in relation to two other nodes instead of one.
     - fixed bug where application freezes when selecting a rule while analising matches.
@@ -9,4 +12,4 @@
     - UI with tabs
     - implemented executor
     - changed help window
-    - bug fixes
+    - lots of bug fixes

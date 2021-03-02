@@ -4,6 +4,13 @@ A graph-grammar editor that's intended to be used in the [verigraph tool](https:
 For now, it can export a .ggx file (default file format for AGG).
 The editor in this repository makes use of the module Data.Graphs from the Verigraph source.
 
+# Important
+
+Changed file format from .vgg to .vggx (XML). .vgg files are now deprecated and this option will be removed in the near future. If you are working on a grammar in Verigraph-GUI, save it as .vggx from now on. You can still load and save .vgg files for now.
+
+This is needed as .vgg is a simply show of the structures used inside verigraph-GUI, and keeping it like this prevents me from changing them, which is something that will have to be done soon.
+
+
 # Installation
 
 ## Dependences
