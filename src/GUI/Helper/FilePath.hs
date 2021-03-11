@@ -1,4 +1,4 @@
-module GUI.Helper.FilePath 
+module GUI.Helper.FilePath
 ( getResourcesFolder )
 where
 
@@ -18,3 +18,4 @@ getResourcesFolder = do
     (_   ,_    ,True ) -> "./Resources/"
     (_   ,True ,False) -> localDir
     (True,False ,False) -> globalDir
+    _ -> error "Resources folder not found."
