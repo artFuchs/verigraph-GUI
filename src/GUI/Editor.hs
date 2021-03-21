@@ -1274,15 +1274,21 @@ startEditor window store
 
   -- export grammar to .ggx (AGG format)
   eggx `on` #activate $ do
-    efstOrderGG <- prepToExport store graphStates nacInfoMap
-    sts <- readIORef graphStates
-    let tes= fromJust $ M.lookup 0 sts
-        tg = stateGetGraph tes
-    case efstOrderGG of
-      Left msg -> showError window (T.pack msg)
-      Right fstOrderGG -> do
-        exportAs (fstOrderGG,tg) exportGGX window
-        return ()
+    storeCurrentES window currentState storeIORefs nacInfoMap
+    context <- Gtk.widgetGetPangoContext canvas
+    updateAllNacs store graphStates nacInfoMap context
+    structs <- getStructsToSave store graphStates nacInfoMap
+    exportAs structs exportGGX2 window
+    return ()
+    -- efstOrderGG <- prepToExport store graphStates nacInfoMap
+    -- sts <- readIORef graphStates
+    -- let tes= fromJust $ M.lookup 0 sts
+    --     tg = stateGetGraph tes
+    -- case efstOrderGG of
+    --   Left msg -> showError window (T.pack msg)
+    --   Right fstOrderGG -> do
+    --     exportAs (fstOrderGG,tg) exportGGX window
+    --     return ()
 
   -- Edit Menu ---------------------------------------------------------------------------------------------------------------
 

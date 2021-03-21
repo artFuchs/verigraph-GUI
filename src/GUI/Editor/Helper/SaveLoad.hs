@@ -5,6 +5,7 @@ module GUI.Editor.Helper.SaveLoad
 , saveFileAs
 , exportAs
 , exportGGX
+, exportGGX2
 , loadFile
 )where
 
@@ -30,6 +31,7 @@ import Abstract.Rewriting.DPO
 import Rewriting.DPO.TypedGraph
 import Category.TypedGraphRule (RuleMorphism)
 import XML.GGXWriter
+import XML.GGXWriter2
 import XML.VGGXWritter
 import XML.VGGXReader
 
@@ -170,6 +172,11 @@ exportGGX (fstOrderGG, tg)  path = do
   let ggName = reverse . takeWhile (/= '/') . reverse $ path
 
   writeGrammarFile (fstOrderGG,emptySndOrderGG) ggName names path'
+  return True
+
+exportGGX2 :: Tree.Forest SaveInfo -> String -> IO Bool
+exportGGX2 saveInfo path = do
+  writeGGX saveInfo path
   return True
 
 loadFile :: Gtk.Window -> IO (Maybe (Tree.Forest SaveInfo,String))
