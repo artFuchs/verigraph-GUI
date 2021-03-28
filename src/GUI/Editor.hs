@@ -775,7 +775,7 @@ startEditor window store
                                              in M.insert (fromEnum nid) (typeNGI {position = position ngi, dims = dims ngi}) giM)
                                 (fst giM)
                                 acceptableSNids
-                es' = stateSetGraph g' . stateSetGI (newNGI, snd giM) $ es
+                es' = stateSetGraph g' . stateSetGI (newNGI, snd giM) . stateSetSelected (acceptableSNids,sEids) $ es
 
                 -- foreach changed node, change the type of the edges connected to it
             typesE <- readIORef possibleEdgeTypes >>= return . M.map fst
