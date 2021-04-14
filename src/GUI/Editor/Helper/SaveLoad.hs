@@ -32,6 +32,7 @@ import Rewriting.DPO.TypedGraph
 import Category.TypedGraphRule (RuleMorphism)
 import XML.GGXWriter
 import XML.GGXWriter2
+import XML.GGXReader2
 import XML.VGGXWritter
 import XML.VGGXReader
 
@@ -198,6 +199,11 @@ loadFile window = do
   Gtk.fileFilterSetName vggFilter (Just "Verigraph-GUI Grammar (.vgg) [Deprecated]")
   Gtk.fileChooserAddFilter loadD vggFilter
 
+  ggxFilter <- Gtk.fileFilterNew
+  Gtk.fileFilterAddPattern ggxFilter "*.ggx"
+  Gtk.fileFilterSetName ggxFilter (Just "AGG XML [Not fully supported]")
+  Gtk.fileChooserAddFilter loadD ggxFilter
+
   response <- Gtk.dialogRun loadD
   case toEnum . fromIntegral $ response of
     Gtk.ResponseTypeAccept -> do
@@ -210,6 +216,7 @@ loadFile window = do
           case FilePath.takeExtension path of
             ".vgg" -> loadVGG window path
             ".vggx" -> loadVGGX window path
+            ".ggx" -> importGGX window path
             _ -> loadVGGX window path
     _             -> do
       Gtk.widgetDestroy loadD
@@ -232,6 +239,16 @@ loadVGG window path = do
 loadVGGX :: Gtk.Window -> String -> IO (Maybe (Tree.Forest SaveInfo,String))
 loadVGGX window path = do
   result <- E.try (readVGGX path) :: IO (Either E.SomeException (Maybe (Tree.Forest SaveInfo)))
+  case result of
+    Left e -> do
+      showError window (T.pack (show e))
+      return Nothing
+    Right content -> return $ Just (\x -> (x,path)) <*> content
+
+
+importGGX :: Gtk.Window -> String -> IO (Maybe (Tree.Forest SaveInfo, String))
+importGGX window path = do
+  result <- E.try (readGGX path) :: IO (Either E.SomeException (Maybe (Tree.Forest SaveInfo)))
   case result of
     Left e -> do
       showError window (T.pack (show e))

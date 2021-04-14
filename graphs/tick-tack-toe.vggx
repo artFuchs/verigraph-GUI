@@ -1,0 +1,691 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document version="0.2">
+  <Grammar>
+    <TypeGraph id="0" name="TypeGraph">
+      <Graph>
+        <Nodes>
+          <Node id="7">
+            <Info locked="False" type="" operation="Preserve">
+              <Label text="judge" group="False"/>
+            </Info>
+            <NodeLayout position="(228.6348876953125,33.183135986328125)" fillColor="(0.45098039215686275,0.8235294117647058,8.627450980392157e-2)" lineColor="(0.0,0.0,0.0)" dimension="(40.0,21.0)" shape="NRect"/>
+          </Node>
+          <Node id="5">
+            <Info locked="False" type="" operation="Preserve">
+              <Label text="x turn" group="False"/>
+            </Info>
+            <NodeLayout position="(52.2333984375,139.75791931152344)" fillColor="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" lineColor="(0.0,0.0,0.0)" dimension="(42.0,21.0)" shape="NRect"/>
+          </Node>
+          <Node id="6">
+            <Info locked="False" type="" operation="Preserve">
+              <Label text="O turn" group="False"/>
+            </Info>
+            <NodeLayout position="(421.6197509765625,140.11985778808594)" fillColor="(0.9294117647058824,0.8313725490196079,0.0)" lineColor="(0.0,0.0,0.0)" dimension="(44.0,21.0)" shape="NRect"/>
+          </Node>
+          <Node id="4">
+            <Info locked="False" type="" operation="Preserve">
+              <Label text="turn" group="False"/>
+            </Info>
+            <NodeLayout position="(227.50323486328125,138.47152709960938)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(30.0,21.0)" shape="NRect"/>
+          </Node>
+          <Node id="3">
+            <Info locked="False" type="" operation="Preserve">
+              <Label text="O" group="False"/>
+            </Info>
+            <NodeLayout position="(432.1373291015625,329.91448974609375)" fillColor="(0.9294117647058824,0.8313725490196079,0.0)" lineColor="(0.0,0.0,0.0)" dimension="(14.0,21.0)" shape="NCircle"/>
+          </Node>
+          <Node id="2">
+            <Info locked="False" type="" operation="Preserve">
+              <Label text="X" group="False"/>
+            </Info>
+            <NodeLayout position="(44.327362060546875,331.1490173339844)" fillColor="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" lineColor="(0.0,0.0,0.0)" dimension="(13.0,21.0)" shape="NCircle"/>
+          </Node>
+          <Node id="1">
+            <Info locked="False" type="" operation="Preserve">
+              <Label text="square" group="False"/>
+            </Info>
+            <NodeLayout position="(223.95831298828125,331.8889465332031)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(48.0,21.0)" shape="NSquare"/>
+          </Node>
+        </Nodes>
+        <Edges>
+          <Edge id="10" source="7" target="6">
+            <Info locked="False" type="" operation="Preserve">
+              <Label text="checking" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+          </Edge>
+          <Edge id="9" source="7" target="5">
+            <Info locked="False" type="9" operation="Preserve">
+              <Label text="checking" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+          </Edge>
+          <Edge id="8" source="4" target="7">
+            <Info locked="False" type="of" operation="Preserve">
+              <Label text="of" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+          </Edge>
+          <Edge id="7" source="4" target="6">
+            <Info locked="False" type="" operation="Preserve">
+              <Label text="of" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+          </Edge>
+          <Edge id="6" source="4" target="5">
+            <Info locked="False" type="of" operation="Preserve">
+              <Label text="of" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+          </Edge>
+          <Edge id="5" source="1" target="1">
+            <Info locked="False" type="" operation="Preserve">
+              <Label text="conn_diag" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,110.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+          </Edge>
+          <Edge id="4" source="1" target="1">
+            <Info locked="False" type="" operation="Preserve">
+              <Label text="conn_y" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,80.0)" color="(0.45098039215686275,0.8235294117647058,8.627450980392157e-2)" style="ENormal"/>
+          </Edge>
+          <Edge id="1" source="1" target="1">
+            <Info locked="False" type="" operation="Preserve">
+              <Label text="conn_x" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,50.0)" color="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" style="ENormal"/>
+          </Edge>
+          <Edge id="3" source="3" target="1">
+            <Info locked="False" type="" operation="Preserve">
+              <Label text="in" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+          </Edge>
+          <Edge id="2" source="2" target="1">
+            <Info locked="False" type="in" operation="Preserve">
+              <Label text="in" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+          </Edge>
+        </Edges>
+      </Graph>
+    </TypeGraph>
+    <HostGraph id="1" name="InitialGraph">
+      <Graph>
+        <Nodes>
+          <Node id="10">
+            <Info locked="False" type="turn" operation="Preserve">
+              <Label text="turn" group="False"/>
+            </Info>
+            <NodeLayout position="(413.3624267578125,156.18333435058594)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(30.0,21.0)" shape="NRect"/>
+          </Node>
+          <Node id="13">
+            <Info locked="False" type="judge" operation="Preserve">
+              <Label text="judge" group="False"/>
+            </Info>
+            <NodeLayout position="(412.9776611328125,80.9873046875)" fillColor="(0.45098039215686275,0.8235294117647058,8.627450980392157e-2)" lineColor="(0.0,0.0,0.0)" dimension="(40.0,21.0)" shape="NRect"/>
+          </Node>
+          <Node id="12">
+            <Info locked="False" type="O turn" operation="Preserve">
+              <Label text="O turn" group="False"/>
+            </Info>
+            <NodeLayout position="(538.40869140625,157.33473205566406)" fillColor="(0.9294117647058824,0.8313725490196079,0.0)" lineColor="(0.0,0.0,0.0)" dimension="(44.0,21.0)" shape="NRect"/>
+          </Node>
+          <Node id="11">
+            <Info locked="False" type="x turn" operation="Preserve">
+              <Label text="x turn" group="False"/>
+            </Info>
+            <NodeLayout position="(268.8265380859375,158.18304443359375)" fillColor="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" lineColor="(0.0,0.0,0.0)" dimension="(42.0,21.0)" shape="NRect"/>
+          </Node>
+          <Node id="1">
+            <Info locked="False" type="square" operation="Preserve">
+              <Label text="1" group="False"/>
+            </Info>
+            <NodeLayout position="(268.97265625,266.2239074707031)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NSquare"/>
+          </Node>
+          <Node id="2">
+            <Info locked="False" type="square" operation="Preserve">
+              <Label text="2" group="False"/>
+            </Info>
+            <NodeLayout position="(407.6171875,264.6156311035156)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NSquare"/>
+          </Node>
+          <Node id="3">
+            <Info locked="False" type="square" operation="Preserve">
+              <Label text="3" group="False"/>
+            </Info>
+            <NodeLayout position="(543.9132690429688,263.28656005859375)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NSquare"/>
+          </Node>
+          <Node id="4">
+            <Info locked="False" type="square" operation="Preserve">
+              <Label text="4" group="False"/>
+            </Info>
+            <NodeLayout position="(269.79779052734375,389.1437683105469)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NSquare"/>
+          </Node>
+          <Node id="5">
+            <Info locked="False" type="square" operation="Preserve">
+              <Label text="5" group="False"/>
+            </Info>
+            <NodeLayout position="(410.3046875,386.95782470703125)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NSquare"/>
+          </Node>
+          <Node id="6">
+            <Info locked="False" type="square" operation="Preserve">
+              <Label text="6" group="False"/>
+            </Info>
+            <NodeLayout position="(545.8656616210938,384.4464111328125)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NSquare"/>
+          </Node>
+          <Node id="7">
+            <Info locked="False" type="square" operation="Preserve">
+              <Label text="7" group="False"/>
+            </Info>
+            <NodeLayout position="(268.49237060546875,514.1517028808594)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NSquare"/>
+          </Node>
+          <Node id="8">
+            <Info locked="False" type="square" operation="Preserve">
+              <Label text="8" group="False"/>
+            </Info>
+            <NodeLayout position="(415.08831787109375,512.5533752441406)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NSquare"/>
+          </Node>
+          <Node id="9">
+            <Info locked="False" type="square" operation="Preserve">
+              <Label text="9" group="False"/>
+            </Info>
+            <NodeLayout position="(544.8593139648438,514.5111389160156)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NSquare"/>
+          </Node>
+        </Nodes>
+        <Edges>
+          <Edge id="22" source="4" target="7">
+            <Info locked="False" type="conn_y" operation="Preserve">
+              <Label text="" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.45098039215686275,0.8235294117647058,8.627450980392157e-2)" style="ENormal"/>
+          </Edge>
+          <Edge id="21" source="1" target="4">
+            <Info locked="False" type="conn_y" operation="Preserve">
+              <Label text="" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.45098039215686275,0.8235294117647058,8.627450980392157e-2)" style="ENormal"/>
+          </Edge>
+          <Edge id="25" source="2" target="5">
+            <Info locked="False" type="conn_y" operation="Preserve">
+              <Label text="" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.45098039215686275,0.8235294117647058,8.627450980392157e-2)" style="ENormal"/>
+          </Edge>
+          <Edge id="26" source="5" target="8">
+            <Info locked="False" type="conn_y" operation="Preserve">
+              <Label text="" group="False"/>
+            </Info>
+            <EdgeLayout position="(0.8261534179900176,1.0434399818951845)" color="(0.45098039215686275,0.8235294117647058,8.627450980392157e-2)" style="ENormal"/>
+          </Edge>
+          <Edge id="30" source="6" target="9">
+            <Info locked="False" type="conn_y" operation="Preserve">
+              <Label text="" group="False"/>
+            </Info>
+            <EdgeLayout position="(0.7776196727888605,1.0434399818951845)" color="(0.45098039215686275,0.8235294117647058,8.627450980392157e-2)" style="ENormal"/>
+          </Edge>
+          <Edge id="29" source="3" target="6">
+            <Info locked="False" type="conn_y" operation="Preserve">
+              <Label text="" group="False"/>
+            </Info>
+            <EdgeLayout position="(0.801469594884286,1.0434399818951845)" color="(0.45098039215686275,0.8235294117647058,8.627450980392157e-2)" style="ENormal"/>
+          </Edge>
+          <Edge id="10" source="2" target="3">
+            <Info locked="False" type="conn_x" operation="Preserve">
+              <Label text="" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" style="ENormal"/>
+          </Edge>
+          <Edge id="9" source="1" target="2">
+            <Info locked="False" type="conn_x" operation="Preserve">
+              <Label text="" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" style="ENormal"/>
+          </Edge>
+          <Edge id="13" source="4" target="5">
+            <Info locked="False" type="conn_x" operation="Preserve">
+              <Label text="" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" style="ENormal"/>
+          </Edge>
+          <Edge id="14" source="5" target="6">
+            <Info locked="False" type="conn_x" operation="Preserve">
+              <Label text="" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" style="ENormal"/>
+          </Edge>
+          <Edge id="18" source="8" target="9">
+            <Info locked="False" type="conn_x" operation="Preserve">
+              <Label text="" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" style="ENormal"/>
+          </Edge>
+          <Edge id="17" source="7" target="8">
+            <Info locked="False" type="conn_x" operation="Preserve">
+              <Label text="" group="False"/>
+            </Info>
+            <EdgeLayout position="(2.316003963639991,1.2821489413751193)" color="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" style="ENormal"/>
+          </Edge>
+          <Edge id="33" source="10" target="11">
+            <Info locked="False" type="of" operation="Preserve">
+              <Label text="" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+          </Edge>
+          <Edge id="1" source="1" target="5">
+            <Info locked="False" type="conn_diag" operation="Preserve">
+              <Label text="" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+          </Edge>
+          <Edge id="2" source="5" target="9">
+            <Info locked="False" type="conn_diag" operation="Preserve">
+              <Label text="" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+          </Edge>
+          <Edge id="5" source="3" target="5">
+            <Info locked="False" type="conn_diag" operation="Preserve">
+              <Label text="" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+          </Edge>
+          <Edge id="6" source="5" target="7">
+            <Info locked="False" type="conn_diag" operation="Preserve">
+              <Label text="" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+          </Edge>
+        </Edges>
+      </Graph>
+    </HostGraph>
+    <Rules>
+      <Rule id="2" name="addX" active="True">
+        <Graph>
+          <Nodes>
+            <Node id="5">
+              <Info locked="False" type="judge" operation="Preserve">
+                <Label text="judge" group="False"/>
+              </Info>
+              <NodeLayout position="(229.43502807617188,46.87818908691406)" fillColor="(0.45098039215686275,0.8235294117647058,8.627450980392157e-2)" lineColor="(0.0,0.0,0.0)" dimension="(40.0,21.0)" shape="NRect"/>
+            </Node>
+            <Node id="2">
+              <Info locked="False" type="turn" operation="Preserve">
+                <Label text="turn" group="False"/>
+              </Info>
+              <NodeLayout position="(228.37173461914063,125.26626586914063)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(30.0,21.0)" shape="NRect"/>
+            </Node>
+            <Node id="4">
+              <Info locked="False" type="X" operation="Preserve">
+                <Label text="X" group="False"/>
+              </Info>
+              <NodeLayout position="(174.93545532226563,237.22210693359375)" fillColor="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" lineColor="(0.0,0.0,0.0)" dimension="(13.0,21.0)" shape="NCircle"/>
+            </Node>
+            <Node id="1">
+              <Info locked="False" type="square" operation="Preserve">
+                <Label text="" group="False"/>
+              </Info>
+              <NodeLayout position="(226.02621459960938,268.99908447265625)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(4.0,19.0)" shape="NSquare"/>
+            </Node>
+            <Node id="3">
+              <Info locked="False" type="x turn" operation="Preserve">
+                <Label text="x_turn" group="False"/>
+              </Info>
+              <NodeLayout position="(101.98492431640625,123.989013671875)" fillColor="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" lineColor="(0.0,0.0,0.0)" dimension="(45.0,21.0)" shape="NRect"/>
+            </Node>
+          </Nodes>
+          <Edges>
+            <Edge id="2" source="4" target="1">
+              <Info locked="False" type="in" operation="Preserve">
+                <Label text="" group="False"/>
+              </Info>
+              <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+            </Edge>
+            <Edge id="3" source="2" target="5">
+              <Info locked="False" type="of" operation="Create">
+                <Label text="" group="False"/>
+              </Info>
+              <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+            </Edge>
+            <Edge id="4" source="5" target="3">
+              <Info locked="False" type="checking" operation="Create">
+                <Label text="" group="False"/>
+              </Info>
+              <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+            </Edge>
+            <Edge id="1" source="2" target="3">
+              <Info locked="False" type="of" operation="Delete">
+                <Label text="" group="False"/>
+              </Info>
+              <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+            </Edge>
+          </Edges>
+        </Graph>
+        <NACs/>
+      </Rule>
+      <Rule id="3" name="addO" active="True">
+        <Graph>
+          <Nodes>
+            <Node id="3">
+              <Info locked="False" type="O" operation="Preserve">
+                <Label text="X" group="False"/>
+              </Info>
+              <NodeLayout position="(134.39764404296875,239.13726806640625)" fillColor="(0.9294117647058824,0.8313725490196079,0.0)" lineColor="(0.0,0.0,0.0)" dimension="(13.0,21.0)" shape="NCircle"/>
+            </Node>
+            <Node id="5">
+              <Info locked="False" type="O turn" operation="Preserve">
+                <Label text="O turn" group="False"/>
+              </Info>
+              <NodeLayout position="(306.5196838378906,131.8179168701172)" fillColor="(0.9294117647058824,0.8313725490196079,0.0)" lineColor="(0.0,0.0,0.0)" dimension="(44.0,21.0)" shape="NRect"/>
+            </Node>
+            <Node id="1">
+              <Info locked="False" type="judge" operation="Preserve">
+                <Label text="judge" group="False"/>
+              </Info>
+              <NodeLayout position="(188.897216796875,48.79335021972656)" fillColor="(0.45098039215686275,0.8235294117647058,8.627450980392157e-2)" lineColor="(0.0,0.0,0.0)" dimension="(40.0,21.0)" shape="NRect"/>
+            </Node>
+            <Node id="2">
+              <Info locked="False" type="turn" operation="Preserve">
+                <Label text="turn" group="False"/>
+              </Info>
+              <NodeLayout position="(187.83392333984375,127.18142700195313)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(30.0,21.0)" shape="NRect"/>
+            </Node>
+            <Node id="4">
+              <Info locked="False" type="square" operation="Preserve">
+                <Label text="" group="False"/>
+              </Info>
+              <NodeLayout position="(185.4884033203125,270.91424560546875)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(4.0,19.0)" shape="NSquare"/>
+            </Node>
+          </Nodes>
+          <Edges>
+            <Edge id="1" source="3" target="4">
+              <Info locked="False" type="in" operation="Preserve">
+                <Label text="" group="False"/>
+              </Info>
+              <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+            </Edge>
+            <Edge id="4" source="1" target="5">
+              <Info locked="False" type="checking" operation="Create">
+                <Label text="" group="False"/>
+              </Info>
+              <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+            </Edge>
+            <Edge id="3" source="2" target="5">
+              <Info locked="False" type="of" operation="Delete">
+                <Label text="" group="False"/>
+              </Info>
+              <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+            </Edge>
+            <Edge id="2" source="2" target="1">
+              <Info locked="False" type="of" operation="Create">
+                <Label text="" group="False"/>
+              </Info>
+              <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+            </Edge>
+          </Edges>
+        </Graph>
+        <NACs/>
+      </Rule>
+      <Rule id="4" name="passTurnToO" active="True">
+        <Graph>
+          <Nodes>
+            <Node id="4">
+              <Info locked="False" type="O turn" operation="Preserve">
+                <Label text="O turn" group="False"/>
+              </Info>
+              <NodeLayout position="(320.6278076171875,116.78309631347656)" fillColor="(0.9294117647058824,0.8313725490196079,0.0)" lineColor="(0.0,0.0,0.0)" dimension="(44.0,21.0)" shape="NRect"/>
+            </Node>
+            <Node id="2">
+              <Info locked="False" type="turn" operation="Preserve">
+                <Label text="turn" group="False"/>
+              </Info>
+              <NodeLayout position="(170.08261108398438,117.66954040527344)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(30.0,21.0)" shape="NRect"/>
+            </Node>
+            <Node id="1">
+              <Info locked="False" type="x turn" operation="Preserve">
+                <Label text="X turn" group="False"/>
+              </Info>
+              <NodeLayout position="(31.410186767578125,118.73139953613281)" fillColor="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" lineColor="(0.0,0.0,0.0)" dimension="(43.0,21.0)" shape="NRect"/>
+            </Node>
+            <Node id="3">
+              <Info locked="False" type="judge" operation="Preserve">
+                <Label text="judge" group="False"/>
+              </Info>
+              <NodeLayout position="(172.16195678710938,26.658096313476563)" fillColor="(0.45098039215686275,0.8235294117647058,8.627450980392157e-2)" lineColor="(0.0,0.0,0.0)" dimension="(40.0,21.0)" shape="NRect"/>
+            </Node>
+          </Nodes>
+          <Edges>
+            <Edge id="4" source="2" target="4">
+              <Info locked="False" type="of" operation="Create">
+                <Label text="" group="False"/>
+              </Info>
+              <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+            </Edge>
+            <Edge id="2" source="2" target="3">
+              <Info locked="False" type="of" operation="Delete">
+                <Label text="" group="False"/>
+              </Info>
+              <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+            </Edge>
+            <Edge id="3" source="3" target="1">
+              <Info locked="False" type="checking" operation="Delete">
+                <Label text="" group="False"/>
+              </Info>
+              <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+            </Edge>
+          </Edges>
+        </Graph>
+        <NACs>
+          <NAC id="6" name="X_win_hor">
+            <Graph>
+              <Nodes>
+                <Node id="10">
+                  <Info locked="False" type="X" operation="Preserve">
+                    <Label text="X" group="False"/>
+                  </Info>
+                  <NodeLayout position="(319.9444580078125,349.6041564941406)" fillColor="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" lineColor="(0.0,0.0,0.0)" dimension="(13.0,21.0)" shape="NCircle"/>
+                </Node>
+                <Node id="9">
+                  <Info locked="False" type="X" operation="Preserve">
+                    <Label text="X" group="False"/>
+                  </Info>
+                  <NodeLayout position="(169.51922607421875,355.0222473144531)" fillColor="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" lineColor="(0.0,0.0,0.0)" dimension="(13.0,21.0)" shape="NCircle"/>
+                </Node>
+                <Node id="8">
+                  <Info locked="False" type="X" operation="Preserve">
+                    <Label text="X" group="False"/>
+                  </Info>
+                  <NodeLayout position="(41.08131408691406,353.2166748046875)" fillColor="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" lineColor="(0.0,0.0,0.0)" dimension="(13.0,21.0)" shape="NCircle"/>
+                </Node>
+                <Node id="7">
+                  <Info locked="False" type="square" operation="Preserve">
+                    <Label text="3" group="False"/>
+                  </Info>
+                  <NodeLayout position="(316.89788818359375,258.9128723144531)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NSquare"/>
+                </Node>
+                <Node id="6">
+                  <Info locked="False" type="square" operation="Preserve">
+                    <Label text="2" group="False"/>
+                  </Info>
+                  <NodeLayout position="(175.37091064453125,257.3785400390625)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NSquare"/>
+                </Node>
+                <Node id="5">
+                  <Info locked="False" type="square" operation="Preserve">
+                    <Label text="1" group="False"/>
+                  </Info>
+                  <NodeLayout position="(41.48829650878906,257.6880798339844)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NSquare"/>
+                </Node>
+              </Nodes>
+              <Edges>
+                <Edge id="5" source="6" target="7">
+                  <Info locked="False" type="conn_x" operation="Preserve">
+                    <Label text="" group="False"/>
+                  </Info>
+                  <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" style="ENormal"/>
+                </Edge>
+                <Edge id="4" source="5" target="6">
+                  <Info locked="False" type="conn_x" operation="Preserve">
+                    <Label text="" group="False"/>
+                  </Info>
+                  <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" style="ENormal"/>
+                </Edge>
+                <Edge id="8" source="10" target="7">
+                  <Info locked="False" type="in" operation="Preserve">
+                    <Label text="" group="False"/>
+                  </Info>
+                  <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+                </Edge>
+                <Edge id="7" source="9" target="6">
+                  <Info locked="False" type="in" operation="Preserve">
+                    <Label text="" group="False"/>
+                  </Info>
+                  <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+                </Edge>
+                <Edge id="6" source="8" target="5">
+                  <Info locked="False" type="in" operation="Preserve">
+                    <Label text="" group="False"/>
+                  </Info>
+                  <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+                </Edge>
+              </Edges>
+            </Graph>
+            <MergeMapping>
+              <Nodes/>
+              <Edges/>
+            </MergeMapping>
+          </NAC>
+          <NAC id="7" name="X_win_ver">
+            <Graph>
+              <Nodes>
+                <Node id="10">
+                  <Info locked="False" type="X" operation="Preserve">
+                    <Label text="X" group="False"/>
+                  </Info>
+                  <NodeLayout position="(285.33148193359375,351.81329345703125)" fillColor="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" lineColor="(0.0,0.0,0.0)" dimension="(13.0,21.0)" shape="NCircle"/>
+                </Node>
+                <Node id="9">
+                  <Info locked="False" type="X" operation="Preserve">
+                    <Label text="X" group="False"/>
+                  </Info>
+                  <NodeLayout position="(178.8740234375,348.0332946777344)" fillColor="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" lineColor="(0.0,0.0,0.0)" dimension="(13.0,21.0)" shape="NCircle"/>
+                </Node>
+                <Node id="8">
+                  <Info locked="False" type="X" operation="Preserve">
+                    <Label text="X" group="False"/>
+                  </Info>
+                  <NodeLayout position="(45.18568420410156,353.2005615234375)" fillColor="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" lineColor="(0.0,0.0,0.0)" dimension="(13.0,21.0)" shape="NCircle"/>
+                </Node>
+                <Node id="7">
+                  <Info locked="False" type="square" operation="Preserve">
+                    <Label text="3" group="False"/>
+                  </Info>
+                  <NodeLayout position="(301.01751708984375,258.5792236328125)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NSquare"/>
+                </Node>
+                <Node id="6">
+                  <Info locked="False" type="square" operation="Preserve">
+                    <Label text="2" group="False"/>
+                  </Info>
+                  <NodeLayout position="(174.47955322265625,260.3931579589844)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NSquare"/>
+                </Node>
+                <Node id="5">
+                  <Info locked="False" type="square" operation="Preserve">
+                    <Label text="1" group="False"/>
+                  </Info>
+                  <NodeLayout position="(47.096435546875,261.0419616699219)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NSquare"/>
+                </Node>
+              </Nodes>
+              <Edges>
+                <Edge id="8" source="10" target="7">
+                  <Info locked="False" type="in" operation="Preserve">
+                    <Label text="" group="False"/>
+                  </Info>
+                  <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+                </Edge>
+                <Edge id="7" source="9" target="6">
+                  <Info locked="False" type="in" operation="Preserve">
+                    <Label text="" group="False"/>
+                  </Info>
+                  <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+                </Edge>
+                <Edge id="6" source="8" target="5">
+                  <Info locked="False" type="in" operation="Preserve">
+                    <Label text="" group="False"/>
+                  </Info>
+                  <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+                </Edge>
+                <Edge id="5" source="6" target="7">
+                  <Info locked="False" type="conn_y" operation="Preserve">
+                    <Label text="" group="False"/>
+                  </Info>
+                  <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.45098039215686275,0.8235294117647058,8.627450980392157e-2)" style="ENormal"/>
+                </Edge>
+                <Edge id="4" source="5" target="6">
+                  <Info locked="False" type="conn_y" operation="Preserve">
+                    <Label text="" group="False"/>
+                  </Info>
+                  <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.45098039215686275,0.8235294117647058,8.627450980392157e-2)" style="ENormal"/>
+                </Edge>
+              </Edges>
+            </Graph>
+            <MergeMapping>
+              <Nodes/>
+              <Edges/>
+            </MergeMapping>
+          </NAC>
+        </NACs>
+      </Rule>
+      <Rule id="5" name="passTurnToX" active="True">
+        <Graph>
+          <Nodes>
+            <Node id="2">
+              <Info locked="False" type="turn" operation="Preserve">
+                <Label text="turn" group="False"/>
+              </Info>
+              <NodeLayout position="(169.58580017089844,123.15766906738281)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(30.0,21.0)" shape="NRect"/>
+            </Node>
+            <Node id="4">
+              <Info locked="False" type="x turn" operation="Preserve">
+                <Label text="X turn" group="False"/>
+              </Info>
+              <NodeLayout position="(41.43035888671875,120.32806396484375)" fillColor="(0.9372549019607843,0.1607843137254902,0.1607843137254902)" lineColor="(0.0,0.0,0.0)" dimension="(43.0,21.0)" shape="NRect"/>
+            </Node>
+            <Node id="3">
+              <Info locked="False" type="O turn" operation="Preserve">
+                <Label text="O turn" group="False"/>
+              </Info>
+              <NodeLayout position="(319.7809753417969,120.19737243652344)" fillColor="(0.9294117647058824,0.8313725490196079,0.0)" lineColor="(0.0,0.0,0.0)" dimension="(44.0,21.0)" shape="NRect"/>
+            </Node>
+            <Node id="1">
+              <Info locked="False" type="judge" operation="Preserve">
+                <Label text="judge" group="False"/>
+              </Info>
+              <NodeLayout position="(171.66514587402344,32.14622497558594)" fillColor="(0.45098039215686275,0.8235294117647058,8.627450980392157e-2)" lineColor="(0.0,0.0,0.0)" dimension="(40.0,21.0)" shape="NRect"/>
+            </Node>
+          </Nodes>
+          <Edges>
+            <Edge id="3" source="2" target="4">
+              <Info locked="False" type="of" operation="Create">
+                <Label text="" group="False"/>
+              </Info>
+              <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+            </Edge>
+            <Edge id="2" source="2" target="1">
+              <Info locked="False" type="of" operation="Delete">
+                <Label text="" group="False"/>
+              </Info>
+              <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+            </Edge>
+            <Edge id="1" source="1" target="3">
+              <Info locked="False" type="checking" operation="Delete">
+                <Label text="" group="False"/>
+              </Info>
+              <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+            </Edge>
+          </Edges>
+        </Graph>
+        <NACs/>
+      </Rule>
+    </Rules>
+  </Grammar>
+</Document>
+
