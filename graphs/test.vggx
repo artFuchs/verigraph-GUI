@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document version="0.2">
+  <Grammar>
+    <TypeGraph id="0" name="TypeGraph">
+      <Graph>
+        <Nodes>
+          <Node id="1">
+            <Info locked="False" type="" operation="Preserve">
+              <Label text="1" group="False"/>
+            </Info>
+            <NodeLayout position="(131.279052734375,145.63409423828125)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NCircle"/>
+          </Node>
+        </Nodes>
+        <Edges>
+          <Edge id="1" source="1" target="1">
+            <Info locked="False" type="" operation="Preserve">
+              <Label text="1" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,50.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+          </Edge>
+        </Edges>
+      </Graph>
+    </TypeGraph>
+    <HostGraph id="1" name="InitialGraph">
+      <Graph>
+        <Nodes>
+          <Node id="3">
+            <Info locked="False" type="1" operation="Preserve">
+              <Label text="3" group="False"/>
+            </Info>
+            <NodeLayout position="(110.4554443359375,416.8651123046875)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NCircle"/>
+          </Node>
+          <Node id="2">
+            <Info locked="False" type="1" operation="Preserve">
+              <Label text="2" group="False"/>
+            </Info>
+            <NodeLayout position="(264.776611328125,233.90481567382813)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NCircle"/>
+          </Node>
+          <Node id="1">
+            <Info locked="False" type="1" operation="Preserve">
+              <Label text="1" group="False"/>
+            </Info>
+            <NodeLayout position="(127.70864868164063,75.7210693359375)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NCircle"/>
+          </Node>
+        </Nodes>
+        <Edges>
+          <Edge id="2" source="2" target="3">
+            <Info locked="False" type="1" operation="Preserve">
+              <Label text="2" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+          </Edge>
+          <Edge id="1" source="1" target="2">
+            <Info locked="False" type="1" operation="Preserve">
+              <Label text="1" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+          </Edge>
+        </Edges>
+      </Graph>
+    </HostGraph>
+    <Rules>
+      <Rule id="2" name="Rule0" active="True">
+        <Graph>
+          <Nodes/>
+          <Edges/>
+        </Graph>
+        <NACs/>
+      </Rule>
+    </Rules>
+  </Grammar>
+</Document>
+
