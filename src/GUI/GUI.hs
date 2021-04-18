@@ -39,6 +39,8 @@ import qualified GUI.Editor.Helper.TreeStore as Edit
 import qualified GUI.Executor as Exec
 import           GUI.Helper.FilePath
 import           GUI.HelpWindow
+import           GUI.Helper.GrammarMaker
+import           GUI.Helper.StateSpace
 
 import           GUI.Editor.Helper.SaveLoad
 
@@ -91,12 +93,13 @@ startGUI = do
   Gtk.init Nothing
 
   -- build main window
-  (window, tabs, fileItems, editItems, viewItems, helpItems) <- buildMainWindow
+  (window, tabs, (fileItems:editItems:viewItems:helpItems:analysisItems:[])) <- buildMainWindow
   -- set the menubar
   let [newm,opn,svn,sva,eggx] = fileItems
       [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
       [zin,zut,z50,zdf,z150,z200,vdf] = viewItems
       [hlp,abt] = helpItems
+      [genss] = analysisItems
   #showAll window
 
   -- build help window
@@ -367,6 +370,13 @@ startGUI = do
   -- about
   on abt #activate $ buildAboutDialog
 
+  -- analysis
+  on genss #activate $ do
+    eGG <- Edit.prepToExport editStore statesMap nacInfoMap
+    case eGG of
+      Left msg -> showError window (T.pack msg)
+      Right grammar -> generateStateSpace grammar
+
   -- event bindings for the main window --------------------------------------------------------------------------------------
   -- when click in the close button, the application must close
   on window #deleteEvent $ return $ do
@@ -376,7 +386,6 @@ startGUI = do
         Gtk.mainQuit
         return False
       else return True
-
 
 
   -- start the Gtk main loop -------------------------------------------------------------------------------------------------
@@ -393,7 +402,7 @@ startGUI = do
 -- GUI Definition ------------------------------------------------------------------------------------------------------------
 ------------------------------------------------------------------------------------------------------------------------------
 
-buildMainWindow :: IO ( Gtk.Window, Gtk.Notebook, [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem], [Gtk.MenuItem])
+buildMainWindow :: IO ( Gtk.Window, Gtk.Notebook, [[Gtk.MenuItem]])
 buildMainWindow = do
   builder <- new Gtk.Builder []
   resourcesFolder <- getResourcesFolder
@@ -437,4 +446,6 @@ buildMainWindow = do
   aboutItem <- Gtk.builderGetObject builder  "about_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   let helpItems = [helpItem, aboutItem]
 
-  return ( window, tabs, fileItems, editItems, viewItems, helpItems)
+  genStateSpaceItem <- Gtk.builderGetObject builder  "gen_state_space_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
+
+  return ( window, tabs, [fileItems, editItems, viewItems, helpItems, [genStateSpaceItem]])
