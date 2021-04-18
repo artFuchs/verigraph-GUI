@@ -295,25 +295,35 @@
               <Edges/>
             </MergeMapping>
           </NAC>
-          <NAC id="13" name="Avoid Loops">
+          <NAC id="14" name="Captured">
             <Graph>
               <Nodes>
-                <Node id="2">
-                  <Info locked="True" type="place" operation="Preserve">
-                    <Label group="True">
-                      <LabelElement id="0" text="2"/>
-                      <LabelElement id="1" text="1"/>
-                    </Label>
+                <Node id="4">
+                  <Info locked="True" type="ghost" operation="Preserve">
+                    <Label text="g" group="False"/>
                   </Info>
-                  <NodeLayout position="(127.32882690429688,150.120361328125)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,38.0)" shape="NSquare"/>
+                  <NodeLayout position="(131.86636352539063,54.44175720214844)" fillColor="(0.20392156862745098,0.396078431372549,0.6431372549019608)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NCircle"/>
+                </Node>
+                <Node id="1">
+                  <Info locked="True" type="place" operation="Preserve">
+                    <Label text="1" group="False"/>
+                  </Info>
+                  <NodeLayout position="(43.783935546875,140.0844268798828)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NSquare"/>
                 </Node>
               </Nodes>
-              <Edges/>
+              <Edges>
+                <Edge id="3" source="4" target="1">
+                  <Info locked="False" type="in" operation="Preserve">
+                    <Label text="3" group="False"/>
+                  </Info>
+                  <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="EPointed"/>
+                </Edge>
+              </Edges>
             </Graph>
             <MergeMapping>
               <Nodes>
-                <NodeMapping src="1" tgt="2"/>
-                <NodeMapping src="2" tgt="2"/>
+                <NodeMapping src="1" tgt="1"/>
+                <NodeMapping src="4" tgt="4"/>
               </Nodes>
               <Edges/>
             </MergeMapping>
@@ -461,6 +471,51 @@
             <MergeMapping>
               <Nodes>
                 <NodeMapping src="2" tgt="2"/>
+                <NodeMapping src="4" tgt="4"/>
+              </Nodes>
+              <Edges/>
+            </MergeMapping>
+          </NAC>
+          <NAC id="15" name="Captured">
+            <Graph>
+              <Nodes>
+                <Node id="4">
+                  <Info locked="True" type="pacman" operation="Preserve">
+                    <Label text="p" group="False"/>
+                  </Info>
+                  <NodeLayout position="(285.5540466308594,77.16020202636719)" fillColor="(0.9294117647058824,0.8313725490196079,0.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NCircle"/>
+                </Node>
+                <Node id="1">
+                  <Info locked="True" type="place" operation="Preserve">
+                    <Label text="1" group="False"/>
+                  </Info>
+                  <NodeLayout position="(222.21783447265625,175.06692504882813)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NSquare"/>
+                </Node>
+                <Node id="5">
+                  <Info locked="False" type="pill" operation="Preserve">
+                    <Label text="5" group="False"/>
+                  </Info>
+                  <NodeLayout position="(164.0338134765625,78.50888061523438)" fillColor="(0.6784313725490196,0.4980392156862745,0.6588235294117647)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NCircle"/>
+                </Node>
+              </Nodes>
+              <Edges>
+                <Edge id="5" source="4" target="1">
+                  <Info locked="False" type="in" operation="Preserve">
+                    <Label text="5" group="False"/>
+                  </Info>
+                  <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="EPointed"/>
+                </Edge>
+                <Edge id="4" source="4" target="5">
+                  <Info locked="False" type="eaten" operation="Preserve">
+                    <Label text="4" group="False"/>
+                  </Info>
+                  <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="EPointed"/>
+                </Edge>
+              </Edges>
+            </Graph>
+            <MergeMapping>
+              <Nodes>
+                <NodeMapping src="1" tgt="1"/>
                 <NodeMapping src="4" tgt="4"/>
               </Nodes>
               <Edges/>
