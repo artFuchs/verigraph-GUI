@@ -1,3 +1,8 @@
+{--|
+This module provides functions to create a DPO.Grammar from the diagrams made in the editor.
+The grammar made can be used to make analysis and generate a state space
+--}
+
 module GUI.Helper.GrammarMaker (
   makeGrammar
 , graphToRuleGraphs
