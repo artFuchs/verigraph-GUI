@@ -40,7 +40,7 @@ import qualified GUI.Executor as Exec
 import           GUI.Helper.FilePath
 import           GUI.HelpWindow
 import           GUI.Helper.GrammarMaker
-import           GUI.Helper.StateSpace
+import           GUI.Analysis.StateSpace
 
 import           GUI.Editor.Helper.SaveLoad
 
@@ -123,6 +123,7 @@ startGUI = do
 
   -- start analysis module
   cpaBox <- buildCpaBox window editStore statesMap nacInfoMap
+  ssBox <- buildStateSpaceBox window editStore genss focusedCanvas focusedStateIORef statesMap nacInfoMap
 
   -- set the tabs
   editorTabLabel <- new Gtk.Label [#label := "Editor"]
@@ -133,6 +134,9 @@ startGUI = do
 
   analysisTabLabel <- new Gtk.Label [#label := "Analysis"]
   Gtk.notebookAppendPage tabs cpaBox (Just analysisTabLabel)
+
+  stateSpaceTabLabel <- new Gtk.Label [#label := "State Space"]
+  Gtk.notebookAppendPage tabs ssBox (Just stateSpaceTabLabel)
 
 
 
@@ -370,12 +374,7 @@ startGUI = do
   -- about
   on abt #activate $ buildAboutDialog
 
-  -- analysis
-  on genss #activate $ do
-    eGG <- Edit.prepToExport editStore statesMap nacInfoMap
-    case eGG of
-      Left msg -> showError window (T.pack msg)
-      Right grammar -> generateStateSpace grammar
+
 
   -- event bindings for the main window --------------------------------------------------------------------------------------
   -- when click in the close button, the application must close
