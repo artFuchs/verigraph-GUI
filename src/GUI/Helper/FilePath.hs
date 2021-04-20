@@ -10,7 +10,8 @@ import           System.FilePath
 getResourcesFolder :: IO FilePath
 getResourcesFolder = do
   let globalDir = "/usr/share/verigraph-GUI/Resources/"
-  localDir <- getCurrentDirectory >>= \p -> return $ joinPath (take 3 $ splitPath p) ++ ".local/share/verigraph-GUI/Resources/"
+  localDir <- getCurrentDirectory >>= \p -> return $ joinPath $ (take 3 $ splitPath p) ++ [".local/share/verigraph-GUI/Resources/"]
+  print localDir
   globalDirExists <- doesDirectoryExist globalDir
   localDirExists  <- doesDirectoryExist localDir
   haveResourcesHere <- doesDirectoryExist "./Resources/"
