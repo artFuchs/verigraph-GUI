@@ -1,13 +1,18 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
-module GUI.Analysis.StateSpace (
+module GUI.Analysis.ModelChecker (
   buildStateSpaceBox
 ) where
 
-
+-- GTK modules
 import qualified GI.Gtk as Gtk
 import qualified GI.Gdk as Gdk
 import           Data.GI.Base
 
+-- modules needed for threads
+import           Control.Concurrent
+import qualified GI.GLib as GLib
+
+-- Haskell structures
 import           Data.IORef
 import           Data.Int
 import           Data.Maybe
@@ -16,6 +21,7 @@ import qualified Data.Text                          as T
 import qualified Data.Map                           as M
 import qualified Data.Set                           as Set
 
+-- verigraph structures
 import qualified  Abstract.Category                 as Cat
 import qualified  Abstract.Rewriting.DPO            as DPO
 import qualified  Abstract.Rewriting.DPO.StateSpace as SS
@@ -24,6 +30,7 @@ import qualified  Data.TypedGraph.Morphism          as TGM
 import qualified  Data.TypedGraph                   as TG
 import            Rewriting.DPO.TypedGraph
 
+-- GUI modules
 import            GUI.Data.Info hiding (empty)
 import qualified  GUI.Data.Info as Info
 import            GUI.Data.Nac
@@ -31,6 +38,7 @@ import            GUI.Data.DiaGraph
 import            GUI.Data.GraphState
 import            GUI.Data.GraphicalInfo
 import            GUI.Helper.BasicCanvasCallbacks
+import            GUI.Helper.GraphicalInfo
 import            GUI.Helper.GrammarMaker
 import            GUI.Helper.FilePath
 import            GUI.Dialogs
@@ -57,6 +65,7 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
   mainBox <- Gtk.builderGetObject builder "main_box" >>= unsafeCastTo Gtk.Box . fromJust
   generateBtn <- Gtk.builderGetObject builder "generate_button" >>= unsafeCastTo Gtk.Button . fromJust
   stopBtn <- Gtk.builderGetObject builder "stop_button" >>= unsafeCastTo Gtk.Button . fromJust
+  depthSpinBtn <- Gtk.builderGetObject builder "depth_spin_button" >>= unsafeCastTo Gtk.SpinButton . fromJust
   statusSpinner <- Gtk.builderGetObject builder "status_spinner" >>= unsafeCastTo Gtk.Spinner . fromJust
   statusLabel <- Gtk.builderGetObject builder "status_label" >>= unsafeCastTo Gtk.Label . fromJust
   canvas <- Gtk.builderGetObject builder "canvas" >>= unsafeCastTo Gtk.DrawingArea . fromJust
@@ -75,30 +84,18 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
     case eGG of
       Left msg -> showError window (T.pack msg)
       Right grammar -> do
+        depth <- Gtk.spinButtonGetValueAsInt depthSpinBtn >>= return . fromIntegral
         let initialGraph = DPO.start grammar
             mconf = (DPO.MorphismsConfig Cat.monic) :: DPO.MorphismsConfig (TGM.TypedGraphMorphism Info Info)
-            (initialStates, stateSpace) = exploreStateSpace mconf 10 grammar [("initialGraph",initialGraph)]
-            -- add nodes and edges to the diagram
-            addLevel levels (a,b) = case M.lookup a levels of
-                                      Nothing -> M.insert b 1 $ M.insert a 0 levels
-                                      Just l -> M.alter
-                                                (\mx -> case mx of
-                                                          Nothing -> Just (l+1)
-                                                          Just x -> Just (min x (l+1)))
-                                                b levels
-            nidsWithLevels = Set.foldl addLevel (M.singleton 0 0) (SS.transitions stateSpace) :: M.Map Int Int
-            organizeLevels a l levels = case M.lookup l levels of
-                                      Nothing -> M.insert l [a] levels
-                                      Just ls -> M.insert l (ls++[a]) levels
-            levels = M.foldrWithKey organizeLevels (M.empty) nidsWithLevels :: M.Map Int [Int]
-            nodeWithPos nid posX posY = (G.Node (G.NodeId nid) (infoSetLabel Info.empty (show nid)), (fromIntegral posX, fromIntegral posY))
-            addNodeInLevel l nids nds =
-              foldr (\(nid,posX) ls -> (nodeWithPos nid posX (l*50)):ls ) nds (zip nids [0,50..])
-            nds = M.foldrWithKey addNodeInLevel [] levels
-            ndsGIs = M.fromList $ map (\(n,pos) -> (fromEnum $ G.nodeId n, newNodeGI {position = pos})) nds
-            g = G.fromNodesAndEdges (map fst nds) []
-            st = stateSetGI (ndsGIs,M.empty) $ stateSetGraph g $ emptyState
-            st' = Set.foldr (\(a,b) st -> createEdge st (G.NodeId a) (G.NodeId b) (infoSetLabel Info.empty (show (a,b))) False ENormal (0,0,0)) st (SS.transitions stateSpace)
+            (initialStates, stateSpace) = exploreStateSpace mconf depth grammar [("initialGraph",initialGraph)]
+            st = generateGraphState initialStates stateSpace
+            (ngi,egi) = stateGetGI st
+            g = stateGetGraph st
+
+        context <- Gtk.widgetGetPangoContext canvas
+        ngi' <- updateNodesGiDims ngi g context
+        st' <- return $ stateSetGI (ngi',egi) st
+
         writeIORef ssGraphState st'
         Gtk.widgetQueueDraw canvas
 
@@ -122,6 +119,35 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
       return False
 
   return mainBox
+
+generateGraphState :: [Int] -> Space Info Info -> GraphState
+generateGraphState initialStates stateSpace = st'
+  where
+    addLevel levels (a,b) = case M.lookup a levels of
+                              Nothing -> M.insert b 1 $ M.insert a 0 levels
+                              Just l -> M.alter
+                                        (\mx -> case mx of
+                                                  Nothing -> Just (l+1)
+                                                  Just x -> Just (min x (l+1)))
+                                        b levels
+    nidsWithLevels = Set.foldl addLevel (M.singleton 0 0) (SS.transitions stateSpace) :: M.Map Int Int
+    organizeLevels a l levels = case M.lookup l levels of
+                              Nothing -> M.insert l [a] levels
+                              Just ls -> M.insert l (ls++[a]) levels
+    levels = M.foldrWithKey organizeLevels (M.empty) nidsWithLevels :: M.Map Int [Int]
+    getStatePredicates nid = fromMaybe [] $ snd <$> (IntMap.lookup nid (SS.states stateSpace))
+    nodeWithPos nid posX posY =
+      let
+        predicates = getStatePredicates nid
+        label = init $ unlines $ ("state " ++ show nid ++ "\n"):predicates
+      in
+        (G.Node (G.NodeId nid) (infoSetLabel Info.empty label), (fromIntegral posX, fromIntegral posY))
+    addNodeInLevel l nids nds = foldr (\(nid,posX) ls -> (nodeWithPos nid posX (l*50)):ls ) nds (zip nids [0,50..])
+    nds = M.foldrWithKey addNodeInLevel [] levels
+    ndsGIs = M.fromList $ map (\(n,pos) -> (fromEnum $ G.nodeId n, newNodeGI {position = pos, shape = NRect})) nds
+    g = G.fromNodesAndEdges (map fst nds) []
+    st = stateSetGI (ndsGIs,M.empty) $ stateSetGraph g $ emptyState
+    st' = Set.foldr (\(a,b) st -> createEdge st (G.NodeId a) (G.NodeId b) (infoSetLabel Info.empty (show (a,b))) False ENormal (0,0,0)) st (SS.transitions stateSpace)
 
 
 -- definitions taken from Verigraph CLI/ModelChecker.hs -------------------------------------------------------------
