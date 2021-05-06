@@ -40,7 +40,7 @@ import qualified GUI.Executor as Exec
 import           GUI.Helper.FilePath
 import           GUI.HelpWindow
 import           GUI.Helper.GrammarMaker
-import           GUI.Analysis.StateSpace
+import           GUI.Analysis.ModelChecker
 
 import           GUI.Editor.Helper.SaveLoad
 
