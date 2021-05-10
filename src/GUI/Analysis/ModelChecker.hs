@@ -10,6 +10,7 @@ import           Data.GI.Base
 
 -- modules needed for threads
 import           Control.Concurrent
+import           Control.Concurrent.MVar
 import qualified GI.GLib as GLib
 
 -- Haskell structures
@@ -76,6 +77,8 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
 
   -- IORefs
   ssGraphState <- newIORef emptyState
+  execThread <- newIORef Nothing
+  fstStateIORef <- newIORef []
 
   -- bindings ------------------------------------------------------------------------
   -- controls
@@ -84,22 +87,52 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
     case eGG of
       Left msg -> showError window (T.pack msg)
       Right grammar -> do
+        stMVar <- newEmptyMVar
         depth <- Gtk.spinButtonGetValueAsInt depthSpinBtn >>= return . fromIntegral
-        let initialGraph = DPO.start grammar
-            mconf = (DPO.MorphismsConfig Cat.monic) :: DPO.MorphismsConfig (TGM.TypedGraphMorphism Info Info)
-            (initialStates, stateSpace) = exploreStateSpace mconf depth grammar [("initialGraph",initialGraph)]
-            st = generateGraphState initialStates stateSpace
-            (ngi,egi) = stateGetGI st
-            g = stateGetGraph st
-
         context <- Gtk.widgetGetPangoContext canvas
-        ngi' <- updateNodesGiDims ngi g context
-        st' <- return $ stateSetGI (ngi',egi) st
+        execT <- forkFinally  (do
+                                Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
+                                    Gtk.spinnerStart statusSpinner
+                                    Gtk.labelSetText statusLabel "generating state space"
+                                    return False
 
-        writeIORef ssGraphState st'
-        Gtk.widgetQueueDraw canvas
+                                let initialGraph = DPO.start grammar
+                                    mconf = (DPO.MorphismsConfig Cat.monic) :: DPO.MorphismsConfig (TGM.TypedGraphMorphism Info Info)
+                                    (initialStates, stateSpace) = exploreStateSpace mconf depth grammar [("initialGraph",initialGraph)]
+                                    st = generateGraphState initialStates stateSpace
+                                    (ngi,egi) = stateGetGI st
+                                    g = stateGetGraph st
+
+                                ngi' <- updateNodesGiDims ngi g context
+                                st' <- return $ stateSetGI (ngi',egi) st
+                                putMVar stMVar st'
+                              )
+                              (\_ -> do
+                                Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
+                                  interruptedComputation <- isEmptyMVar stMVar
+                                  if interruptedComputation
+                                    then return ()
+                                    else do
+                                      st <- takeMVar stMVar
+                                      writeIORef ssGraphState st
+                                  writeIORef execThread Nothing
+                                  Gtk.spinnerStop statusSpinner
+                                  Gtk.labelSetText statusLabel ""
+                                  Gtk.widgetQueueDraw canvas
+                                  return False
+                                return ()
+                              )
+        writeIORef execThread (Just execT)
 
   on generateBtn #pressed $ Gtk.menuItemActivate genStateSpaceItem
+
+  on stopBtn #pressed $ do
+    execT <- readIORef execThread
+    case execT of
+      Nothing -> return ()
+      Just t -> do
+        killThread t
+        writeIORef execThread Nothing
 
   -- canvas - to draw the state space graph
   oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
