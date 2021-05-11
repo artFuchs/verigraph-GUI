@@ -21,6 +21,9 @@ import qualified Data.IntMap                        as IntMap
 import qualified Data.Text                          as T
 import qualified Data.Map                           as M
 import qualified Data.Set                           as Set
+import qualified Data.List                          as List
+import           Data.Char
+
 
 -- verigraph structures
 import qualified  Abstract.Category                 as Cat
@@ -30,6 +33,8 @@ import qualified  Data.Graphs                       as G
 import qualified  Data.TypedGraph.Morphism          as TGM
 import qualified  Data.TypedGraph                   as TG
 import            Rewriting.DPO.TypedGraph
+import qualified  Logic.Ctl                         as Logic
+import qualified  Logic.Model                       as Logic
 
 -- GUI modules
 import            GUI.Data.Info hiding (empty)
@@ -67,18 +72,22 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
   generateBtn <- Gtk.builderGetObject builder "generate_button" >>= unsafeCastTo Gtk.Button . fromJust
   stopBtn <- Gtk.builderGetObject builder "stop_button" >>= unsafeCastTo Gtk.Button . fromJust
   depthSpinBtn <- Gtk.builderGetObject builder "depth_spin_button" >>= unsafeCastTo Gtk.SpinButton . fromJust
-  statusSpinner <- Gtk.builderGetObject builder "status_spinner" >>= unsafeCastTo Gtk.Spinner . fromJust
-  statusLabel <- Gtk.builderGetObject builder "status_label" >>= unsafeCastTo Gtk.Label . fromJust
+
+  formulaEntry <- Gtk.builderGetObject builder "formula_entry" >>= unsafeCastTo Gtk.Entry . fromJust
+  formulaCheckBtn <- Gtk.builderGetObject builder "check_formula_btn" >>= unsafeCastTo Gtk.Button . fromJust
+
   canvas <- Gtk.builderGetObject builder "canvas" >>= unsafeCastTo Gtk.DrawingArea . fromJust
   Gtk.widgetSetEvents canvas [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
 
+  statusSpinner <- Gtk.builderGetObject builder "status_spinner" >>= unsafeCastTo Gtk.Spinner . fromJust
+  statusLabel <- Gtk.builderGetObject builder "status_label" >>= unsafeCastTo Gtk.Label . fromJust
   Gtk.spinnerStop statusSpinner
   Gtk.labelSetText statusLabel ""
 
   -- IORefs
   ssGraphState <- newIORef emptyState
+  modelIORef <- newIORef Nothing
   execThread <- newIORef Nothing
-  fstStateIORef <- newIORef []
 
   -- bindings ------------------------------------------------------------------------
   -- controls
@@ -88,6 +97,7 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
       Left msg -> showError window (T.pack msg)
       Right grammar -> do
         stMVar <- newEmptyMVar
+        modelMVar <- newEmptyMVar
         depth <- Gtk.spinButtonGetValueAsInt depthSpinBtn >>= return . fromIntegral
         context <- Gtk.widgetGetPangoContext canvas
         execT <- forkFinally  (do
@@ -99,22 +109,28 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
                                 let initialGraph = DPO.start grammar
                                     mconf = (DPO.MorphismsConfig Cat.monic) :: DPO.MorphismsConfig (TGM.TypedGraphMorphism Info Info)
                                     (initialStates, stateSpace) = exploreStateSpace mconf depth grammar [("initialGraph",initialGraph)]
+                                    model = SS.toKripkeStructure stateSpace
                                     st = generateGraphState initialStates stateSpace
                                     (ngi,egi) = stateGetGI st
                                     g = stateGetGraph st
 
                                 ngi' <- updateNodesGiDims ngi g context
                                 st' <- return $ stateSetGI (ngi',egi) st
+                                print model
                                 putMVar stMVar st'
+                                putMVar modelMVar $ Just model
                               )
                               (\_ -> do
                                 Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
-                                  interruptedComputation <- isEmptyMVar stMVar
-                                  if interruptedComputation
-                                    then return ()
-                                    else do
-                                      st <- takeMVar stMVar
-                                      writeIORef ssGraphState st
+                                  let writeIORefIfMVarNotEmpty mvar ioref = do
+                                          emptyMvar <- isEmptyMVar mvar
+                                          if emptyMvar
+                                            then return ()
+                                            else do
+                                              var <- takeMVar mvar
+                                              writeIORef ioref var
+                                  writeIORefIfMVarNotEmpty stMVar ssGraphState
+                                  writeIORefIfMVarNotEmpty modelMVar modelIORef
                                   writeIORef execThread Nothing
                                   Gtk.spinnerStop statusSpinner
                                   Gtk.labelSetText statusLabel ""
@@ -133,6 +149,32 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
       Just t -> do
         killThread t
         writeIORef execThread Nothing
+
+  -- chekc formula
+  let checkFormula = do
+        text <- Gtk.entryGetText formulaEntry >>= return . T.unpack
+        case Logic.parseExpr "" text of
+          Left err -> do
+            showError window $ T.pack ("Invalid CTL formula:\n" ++ (show err))
+          Right expr -> do
+            maybeModel <- readIORef modelIORef
+            case maybeModel of
+              Nothing -> showError window $ "Must Generate State Space before checking a formula"
+              Just model -> do
+                modelCheck window model expr 0
+
+  on formulaCheckBtn #pressed $ checkFormula
+
+  on formulaEntry #keyPressEvent $ \eventKey -> do
+    k <- get eventKey #keyval >>= return . chr . fromIntegral
+    --if it's Return or Enter (Numpad), then check formula
+    case k of
+      '\65293' -> checkFormula
+      '\65421' -> checkFormula
+      _ -> return ()
+    return False
+
+
 
   -- canvas - to draw the state space graph
   oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
@@ -163,7 +205,7 @@ generateGraphState initialStates stateSpace = st'
                                                   Nothing -> Just (l+1)
                                                   Just x -> Just (min x (l+1)))
                                         b levels
-    nidsWithLevels = Set.foldl addLevel (M.singleton 0 0) (SS.transitions stateSpace) :: M.Map Int Int
+    nidsWithLevels = foldl addLevel (M.singleton 0 0) $ M.keys (SS.transitions stateSpace) :: M.Map Int Int
     organizeLevels a l levels = case M.lookup l levels of
                               Nothing -> M.insert l [a] levels
                               Just ls -> M.insert l (ls++[a]) levels
@@ -172,7 +214,9 @@ generateGraphState initialStates stateSpace = st'
     nodeWithPos nid posX posY =
       let
         predicates = getStatePredicates nid
-        label = init $ unlines $ ("state " ++ show nid ++ "\n"):predicates
+        label = case predicates of
+                  [] -> ("state " ++ show nid)
+                  ps -> init . unlines $ ("state " ++ show nid ++ "\n"):predicates
       in
         (G.Node (G.NodeId nid) (infoSetLabel Info.empty label), (fromIntegral posX, fromIntegral posY))
     addNodeInLevel l nids nds = foldr (\(nid,posX) ls -> (nodeWithPos nid posX (l*50)):ls ) nds (zip nids [0,50..])
@@ -180,10 +224,31 @@ generateGraphState initialStates stateSpace = st'
     ndsGIs = M.fromList $ map (\(n,pos) -> (fromEnum $ G.nodeId n, newNodeGI {position = pos, shape = NRect})) nds
     g = G.fromNodesAndEdges (map fst nds) []
     st = stateSetGI (ndsGIs,M.empty) $ stateSetGraph g $ emptyState
-    st' = Set.foldr (\(a,b) st -> createEdge st (G.NodeId a) (G.NodeId b) (infoSetLabel Info.empty (show (a,b))) False ENormal (0,0,0)) st (SS.transitions stateSpace)
+    st' = M.foldrWithKey (\(a,b) names st -> createEdge st (G.NodeId a) (G.NodeId b) (infoSetLabel Info.empty (init $ unlines names)) False ENormal (0,0,0)) st (SS.transitions stateSpace)
 
 
 -- definitions taken from Verigraph CLI/ModelChecker.hs -------------------------------------------------------------
+modelCheck :: Gtk.Window -> Logic.KripkeStructure String -> Logic.Expr -> Int -> IO ()
+modelCheck window model expr initialState =
+  let
+    allGoodStates =
+      Logic.satisfyExpr' model expr
+
+    (goodStates, badStates) =
+      List.partition (`List.elem` allGoodStates) [initialState]
+
+    explainStates states msgIfEmpty msgIfNonEmpty =
+      if List.null states then
+        showError window (T.pack msgIfEmpty)
+      else
+        showError window (T.pack msgIfNonEmpty)
+  in do
+    explainStates
+      goodStates
+      "The initial state satisfy the formula!"
+      "The initial state does NOT satisfy the formula!"
+
+
 exploreStateSpace :: DPO.MorphismsConfig (TGM.TypedGraphMorphism a b) -> Int -> DPO.Grammar (TGM.TypedGraphMorphism a b) -> [(String, TG.TypedGraph a b)] -> ([Int], Space a b)
 exploreStateSpace conf maxDepth grammar graphs =
   let
@@ -200,7 +265,7 @@ exploreStateSpace conf maxDepth grammar graphs =
       mapM searchFrom graphs
 
     initialSpace =
-      SS.empty conf (map snd productions) predicates
+      SS.empty conf productions predicates
   in
     SS.runStateSpaceBuilder search initialSpace
 
