@@ -47,6 +47,8 @@ import           Control.Monad
 import qualified Control.Monad.State                as Monad
 import           Data.IntMap                        (IntMap)
 import qualified Data.IntMap                        as IntMap
+import           Data.Map                           (Map)
+import qualified Data.Map                           as Map
 import           Data.Set                           (Set)
 import qualified Data.Set                           as Set
 
@@ -69,10 +71,10 @@ import qualified Logic.Model                        as Logic
 -- are expressed as productions, and a predicate holds in a state if the production is applicable.
 data StateSpace morph = SS
   { states        :: IntMap (State morph) -- ^ Obtain the set of (explored) indexed states in a state space.
-  , transitions   :: Set (Int, Int) -- ^ Obtain the set of (explored) transitions in a state space.
+  , transitions   :: Map (Int, Int) [String] -- ^ Obtain the set of (explored) transitions in a state space.
   , uid           :: Int -- ^ Provides an unused state index.
   , morphismsConf :: MorphismsConfig morph -- ^ Obtain the configuration of DPO semantics for the state space.
-  , productions   :: [Production morph] -- ^ Obtain the productions of the HLR system of the state space.
+  , productions   :: [(String, Production morph)] -- ^ Obtain the productions of the HLR system of the state space.
   , predicates    :: [(String, Production morph)] -- ^ Obtain the predicates of the state space.
   }
 
@@ -83,8 +85,8 @@ type State morph = (Obj morph, [String])
 
 -- | An empty state space for the HLR system defined by the given productions, with the given
 -- configuration of the DPO semantics.
-empty :: MorphismsConfig morph -> [Production morph] -> [(String, Production morph)] -> StateSpace morph
-empty = SS IntMap.empty Set.empty 0
+empty :: MorphismsConfig morph -> [(String, Production morph)] -> [(String, Production morph)] -> StateSpace morph
+empty = SS IntMap.empty Map.empty 0
 
 
 -- | Tries to find an isomorphic object in the state space, returning it along with its index.
@@ -116,10 +118,10 @@ toKripkeStructure space =
       Logic.State index props
 
     convertedTransitions =
-      zipWith convertTransition [0..] $ Set.toList (transitions space)
+      zipWith convertTransition [0..] $ Map.toList (transitions space)
 
-    convertTransition index (from, to) =
-      Logic.Transition index from to []
+    convertTransition index ((from, to), names) =
+      Logic.Transition index from to names
   in
     Logic.KripkeStructure convertedStates convertedTransitions
 
@@ -162,7 +164,7 @@ getDpoConfig =
 
 
 -- | Gets the productions of the HLR system being explored in this builder.
-getProductions :: StateSpaceBuilder morph [Production morph]
+getProductions :: StateSpaceBuilder morph [(String, Production morph)]
 getProductions =
   Monad.gets productions
 
@@ -205,11 +207,15 @@ putState object =
 
 -- | Adds a transition between the states with the given indices. Does __not__ check if
 -- such states exist.
-putTransition :: (Int, Int) -> StateSpaceBuilder m ()
-putTransition transition =
+putTransition :: (Int, Int, String) -> StateSpaceBuilder m ()
+putTransition (from,to,name) =
   Monad.modify $ \space ->
     space
-    { transitions = Set.insert transition (transitions space) }
+    { transitions = Map.alter (f name) (from,to) (transitions space) }
+  where
+    f x mxs = case mxs of
+                Nothing -> Just [x]
+                Just xs -> if x `elem` xs then Just xs else Just (x:xs)
 
 
 -- | Tries to find an isomorphic object in the current state space, returning its index.
@@ -227,14 +233,14 @@ expandSuccessors (index, object) =
     successorLists <- mapM applyProduction prods
     return (concat successorLists)
   where
-    applyProduction prod =
+    applyProduction (name,prod) =
       do
         conf <- getDpoConfig
         forM (findApplicableMatches conf prod object) $ \match -> do
           let object' = rewrite match prod
 
           (index', isNew) <- putState object'
-          putTransition (index, index')
+          putTransition (index, index',name)
           return (index', object', isNew)
 
 

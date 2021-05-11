@@ -691,6 +691,33 @@
         </Graph>
         <NACs/>
       </Rule>
+      <Rule id="16" name="hasPill" active="True">
+        <Graph>
+          <Nodes>
+            <Node id="2">
+              <Info locked="False" type="pill" operation="Preserve">
+                <Label text="pill" group="False"/>
+              </Info>
+              <NodeLayout position="(104.36944580078125,190.10238647460938)" fillColor="(0.6784313725490196,0.4980392156862745,0.6588235294117647)" lineColor="(0.0,0.0,0.0)" dimension="(24.0,21.0)" shape="NCircle"/>
+            </Node>
+            <Node id="1">
+              <Info locked="False" type="pacman" operation="Preserve">
+                <Label text="pacman" group="False"/>
+              </Info>
+              <NodeLayout position="(100.90399169921875,84.89114379882813)" fillColor="(0.9294117647058824,0.8313725490196079,0.0)" lineColor="(0.0,0.0,0.0)" dimension="(56.0,21.0)" shape="NCircle"/>
+            </Node>
+          </Nodes>
+          <Edges>
+            <Edge id="1" source="1" target="2">
+              <Info locked="False" type="eaten" operation="Preserve">
+                <Label text="1" group="False"/>
+              </Info>
+              <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="EPointed"/>
+            </Edge>
+          </Edges>
+        </Graph>
+        <NACs/>
+      </Rule>
     </Rules>
   </Grammar>
 </Document>
