@@ -180,7 +180,7 @@
       </Graph>
     </HostGraph>
     <Rules>
-      <Rule id="2" name="MovePacman" active="True">
+      <Rule id="2" name="movePacman" active="True">
         <Graph>
           <Nodes>
             <Node id="4">
@@ -330,7 +330,7 @@
           </NAC>
         </NACs>
       </Rule>
-      <Rule id="3" name="MoveGhost" active="True">
+      <Rule id="3" name="moveGhost" active="True">
         <Graph>
           <Nodes>
             <Node id="4">
@@ -523,7 +523,7 @@
           </NAC>
         </NACs>
       </Rule>
-      <Rule id="4" name="KillPacman" active="True">
+      <Rule id="4" name="killPacman" active="True">
         <Graph>
           <Nodes>
             <Node id="3">
@@ -595,7 +595,7 @@
           </NAC>
         </NACs>
       </Rule>
-      <Rule id="5" name="EatPill" active="True">
+      <Rule id="5" name="eatPill" active="True">
         <Graph>
           <Nodes>
             <Node id="3">
@@ -640,7 +640,7 @@
         </Graph>
         <NACs/>
       </Rule>
-      <Rule id="6" name="KillGhost" active="True">
+      <Rule id="6" name="killGhost" active="True">
         <Graph>
           <Nodes>
             <Node id="3">

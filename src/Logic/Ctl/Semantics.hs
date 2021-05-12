@@ -26,8 +26,9 @@ satisfyExpr' model (Literal True) =
 satisfyExpr' model (Atom v) =
   let
     goodStates = filter (stateSatisfies v) (states model)
+    goodTransitions = filter (transitionSatisfies v) (transitions model)
   in
-    map elementId goodStates
+    (map elementId goodStates) `union` (map source goodTransitions)
 
 satisfyExpr' model (Not p) =
   let
@@ -54,6 +55,10 @@ satisfyExpr' model (Temporal p) =
 stateSatisfies :: String -> State String -> Bool
 stateSatisfies p st =
   p `elem` values st
+
+transitionSatisfies :: String -> Transition String -> Bool
+transitionSatisfies p t =
+  p `elem` values t
 
 
 satisfyTemporal :: KripkeStructure String -> PathQuantified Expr -> [Int]
