@@ -174,8 +174,6 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
       _ -> return ()
     return False
 
-
-
   -- canvas - to draw the state space graph
   oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
   squareSelection <- newIORef Nothing   -- selection box : Maybe (x1,y1,x2,y2)
@@ -194,6 +192,8 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
       return False
 
   return mainBox
+
+
 
 generateGraphState :: [Int] -> Space Info Info -> GraphState
 generateGraphState initialStates stateSpace = st'
@@ -231,23 +231,12 @@ generateGraphState initialStates stateSpace = st'
 modelCheck :: Gtk.Window -> Logic.KripkeStructure String -> Logic.Expr -> Int -> IO ()
 modelCheck window model expr initialState =
   let
-    allGoodStates =
-      Logic.satisfyExpr' model expr
-
-    (goodStates, badStates) =
-      List.partition (`List.elem` allGoodStates) [initialState]
-
-    explainStates states msgIfEmpty msgIfNonEmpty =
-      if List.null states then
-        showError window (T.pack msgIfEmpty)
-      else
-        showError window (T.pack msgIfNonEmpty)
+    allGoodStates = Logic.satisfyExpr' model expr
   in do
-    explainStates
-      goodStates
-      "The initial state satisfy the formula!"
-      "The initial state does NOT satisfy the formula!"
-
+    if initialState `elem` allGoodStates then
+      showError window "The initial state satisfy the formula!"
+    else
+      showError window "The initial state does NOT satisfy the formula!"
 
 exploreStateSpace :: DPO.MorphismsConfig (TGM.TypedGraphMorphism a b) -> Int -> DPO.Grammar (TGM.TypedGraphMorphism a b) -> [(String, TG.TypedGraph a b)] -> ([Int], Space a b)
 exploreStateSpace conf maxDepth grammar graphs =
