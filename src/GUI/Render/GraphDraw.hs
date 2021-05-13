@@ -1,5 +1,6 @@
 module GUI.Render.GraphDraw (
-  drawTypeGraph
+  drawGraph
+, drawTypeGraph
 , drawHostGraph
 , drawRuleGraph
 , drawRuleSideGraph
@@ -8,6 +9,7 @@ module GUI.Render.GraphDraw (
 ) where
 
 import qualified Data.Map as M
+import qualified Data.Maybe as Maybe
 import Control.Monad
 import Graphics.Rendering.Cairo
 
@@ -19,202 +21,139 @@ import GUI.Data.GraphicalInfo
 import GUI.Data.Nac
 import GUI.Render.Render
 import GUI.Helper.GraphValidation
-
-import Graphics.Rendering.Pango as GRP
-import Graphics.Rendering.Pango.Cairo as GRPC
-import Graphics.Rendering.Pango.Layout as GRPL
 import GUI.Helper.Geometry
 
--- shadow colors for basic situations
+import qualified Graphics.Rendering.Pango as GRP
+import qualified Graphics.Rendering.Pango.Cairo as GRPC
+import qualified Graphics.Rendering.Pango.Layout as GRPL
+
+-- TODO: reorganize functions drawHostGraphWithMatches and drawRuleSideGraph to use the drawGraph base function
+
+type Color = (Double,Double,Double)
+type SquareSelection = Maybe (Double,Double,Double,Double)
+
+-- highlight colors for basic situations
 selectColor = (0.29,0.56,0.85)
 errorColor = (0.9,0.2,0.2)
-bothColor = (0.47,0.13,0.87)
+bothColor = mixColors selectColor errorColor
+
+mixColors :: Color -> Color -> Color
+mixColors (r1,g1,b1) (r2,g2,b2) = ( (r1+r2)/2, (g1+g2)/2, (b1+b2)/2 )
+
+drawSelectionBox:: SquareSelection -> Render()
+drawSelectionBox sq = case sq of
+  Just (x,y,w,h) -> do
+    rectangle x y w h
+    setSourceRGBA 0.29 0.56 0.85 0.5
+    fill
+    rectangle x y w h
+    setSourceRGBA 0.29 0.56 0.85 1
+    stroke
+  Nothing -> return ()
+
+drawGraph :: GraphState -> SquareSelection -> M.Map NodeId Color -> M.Map EdgeId Color -> M.Map NodeId Color -> M.Map EdgeId Color -> Render ()
+drawGraph state sq nodeColors edgeColors nodeTextColors edgeTextColors = do
+  let g = stateGetGraph state
+      (nGI,eGI) = stateGetGI state
+      (sNodes,sEdges) = stateGetSelected state
+      z = stateGetZoom state
+      (px,py) = stateGetPan state
+
+  scale z z
+  translate px py
+
+  -- draw the edges
+  forM (edges g) $ \e -> do
+    let dstN = M.lookup (fromEnum . targetId $ e) nGI
+        srcN = M.lookup (fromEnum . sourceId $ e) nGI
+        egi  = M.lookup (fromEnum . edgeId   $ e) eGI
+        info = infoVisible $ edgeInfo e
+        (highlight, color) = case (edgeId e `elem` sEdges, M.lookup (edgeId e) edgeColors) of
+            (False,Nothing) -> (False, (0,0,0))
+            (False,Just c)  -> (True, c)
+            (True, Nothing) -> (True, selectColor)
+            (True, Just c)  -> (True, mixColors selectColor c)
+        (highlightText, textColor) = Maybe.fromMaybe (False,(0,0,0)) $ (\a -> (True, a)) <$> M.lookup (edgeId e) edgeTextColors
+    case (egi, srcN, dstN) of
+      (Just gi, Just src, Just dst) -> renderEdge gi info src dst highlight color highlightText textColor
+      _ -> return ()
+
+  -- draw the nodes
+  forM (nodes g) $ \n -> do
+    let ngi = M.lookup (fromEnum . nodeId $ n) nGI
+        info = infoVisible $ nodeInfo n
+        (highlight, color) = case (nodeId n `elem` sNodes, M.lookup (nodeId n) nodeColors) of
+            (False,Nothing) -> (False, (0,0,0))
+            (False, Just c) -> (True, c)
+            (True, Nothing) -> (True, selectColor)
+            (True, Just c)  -> (True, mixColors selectColor c)
+        (highlightText, textColor) = Maybe.fromMaybe (False,(0,0,0)) $ (\a -> (True, a)) <$> M.lookup (nodeId n) nodeTextColors
+    case (ngi) of
+      Just gi -> renderNode gi info highlight color highlightText textColor
+      Nothing -> return ()
+
+  drawSelectionBox sq
 
 -- draw a typegraph in the canvas
 -- if there are nodes or edges with same names, then highlight them as errors
 -- if any element is selected, highlight it as selected
-drawTypeGraph :: GraphState -> Maybe (Double,Double,Double,Double)-> Render ()
-drawTypeGraph state sq = do
-  let g = stateGetGraph state
-      (nGI,eGI) = stateGetGI state
-      (sNodes,sEdges) = stateGetSelected state
-      z = stateGetZoom state
-      (px,py) = stateGetPan state
-
-  scale z z
-  translate px py
-
-  let cg = nameConflictGraph g
-
-
-  -- draw the edges
-  forM (edges g) (\e -> do
-    let dstN = M.lookup (fromEnum . targetId $ e) nGI
-        srcN = M.lookup (fromEnum . sourceId $ e) nGI
-        egi  = M.lookup (fromEnum . edgeId   $ e) eGI
-        selected = (edgeId e) `elem` sEdges
-        conflict = case lookupEdge (edgeId e) cg of
-          Just e' -> not $ edgeInfo e'
-          Nothing -> True
-        shadowColor = case (selected, conflict) of
-          (False,False) -> (0,0,0)
-          (False,True) -> errorColor
-          (True,False) -> selectColor
-          (True,True) -> bothColor
-    case (egi, srcN, dstN) of
-      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabelStr $ edgeInfo e) src dst (selected || conflict) shadowColor False (0,0,0)
-      _ -> return ())
-
-  -- draw the nodes
-  forM (nodes g) (\n -> do
-    let ngi = M.lookup (fromEnum . nodeId $ n) nGI
-        selected = (nodeId n) `elem` (sNodes)
-        conflict = case lookupNode (nodeId n) cg of
-          Just n' -> not $ nodeInfo n'
-          Nothing -> True
-        shadowColor = case (selected, conflict) of
-          (False,False) -> (0,0,0)
-          (False,True) -> errorColor
-          (True,False) -> selectColor
-          (True,True) -> bothColor
-        info = infoLabelStr $ nodeInfo n
-    case (ngi) of
-      Just gi -> renderNode gi info (selected || conflict) shadowColor False (0,0,0)
-      Nothing -> return ())
-
-  -- draw the selectionBox
-  drawSelectionBox sq
-  return ()
+drawTypeGraph :: GraphState -> SquareSelection -> Render ()
+drawTypeGraph state sq = drawGraph state sq nodeColors edgeColors M.empty M.empty
+  where
+    g = stateGetGraph state
+    cg = nameConflictGraph g
+    edgeColors = M.fromList $ map (\e -> (edgeId e, errorColor)) $ filter (not . edgeInfo) (edges cg)
+    nodeColors = M.fromList $ map (\n -> (nodeId n, errorColor)) $ filter (not . nodeInfo) (nodes cg)
 
 -- draw a typed graph
 -- if there are nodes or edges not correctly typed, highlight them as errors
 -- if any element is selected, highlight it as selected
-drawHostGraph :: GraphState -> Maybe (Double,Double,Double,Double) -> Graph Info Info -> Render ()
-drawHostGraph state sq tg = do
-  let g = stateGetGraph state
-      (nGI,eGI) = stateGetGI state
-      (sNodes,sEdges) = stateGetSelected state
-      z = stateGetZoom state
-      (px,py) = stateGetPan state
-
-  scale z z
-  translate px py
-
-  let vg = correctTypeGraph g tg
-  -- draw the edges
-  forM (edges g) (\e -> do
-    let dstN = M.lookup (fromEnum . targetId $ e) nGI
-        srcN = M.lookup (fromEnum . sourceId $ e) nGI
-        egi  = M.lookup (fromEnum . edgeId   $ e) eGI
-        selected = (edgeId e) `elem` sEdges
-        typeError = case lookupEdge (edgeId e) vg of
-                      Just e' -> not $ edgeInfo e'
-                      Nothing -> True
-        color = case (selected,typeError) of
-                 (False,False) -> (0,0,0)
-                 (False,True) -> errorColor
-                 (True,False) -> selectColor
-                 (True,True) -> bothColor
-    case (egi, srcN, dstN) of
-      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabelStr (edgeInfo e)) src dst (selected || typeError) color False (0,0,0)
-      _ -> return ())
-
-  -- draw the nodes
-  forM (nodes g) (\n -> do
-    let ngi = M.lookup (fromEnum . nodeId $ n) nGI
-        selected = (nodeId n) `elem` (sNodes)
-        info = nodeInfo n
-        label = infoLabelStr info
-        typeError = case lookupNode (nodeId n) vg of
-                      Just n' -> not $ nodeInfo n'
-                      Nothing -> True
-        color = case (selected,typeError) of
-                  (False,False) -> (0,0,0)
-                  (False,True) -> errorColor
-                  (True,False) -> selectColor
-                  (True,True) -> bothColor
-    case (ngi) of
-      Just gi -> renderNode gi label (selected || typeError) color False (0,0,0)
-      Nothing -> return ())
-
-  -- draw the selectionBox
-  drawSelectionBox sq
-  return ()
+drawHostGraph :: GraphState -> SquareSelection -> Graph Info Info -> Render ()
+drawHostGraph state sq tg = drawGraph state sq nodeColors edgeColors M.empty M.empty
+  where
+    g = stateGetGraph state
+    vg = correctTypeGraph g tg
+    edgeColors = M.fromList $ map (\e -> (edgeId e, errorColor)) $ filter (not . edgeInfo) (edges vg)
+    nodeColors = M.fromList $ map (\n -> (nodeId n, errorColor)) $ filter (not . nodeInfo) (nodes vg)
 
 -- draw a rulegraph
--- similar to drawhostGraph, but draws bold texts to indicate operations
-drawRuleGraph :: GraphState -> Maybe (Double,Double,Double,Double) -> Graph Info Info -> Render ()
-drawRuleGraph state sq tg = do
-  let g = stateGetGraph state
-      (nGI,eGI) = stateGetGI state
-      (sNodes,sEdges) = stateGetSelected state
-      z = stateGetZoom state
-      (px,py) = stateGetPan state
-  
-  scale z z
-  translate px py
+-- similar to drawHostGraph, but draws bold texts to indicate operations
+drawRuleGraph :: GraphState -> SquareSelection -> Graph Info Info -> Render ()
+drawRuleGraph state sq tg = drawGraph state sq nodeColors edgeColors nodeTextColors edgeTextColors
+  where
+    g = stateGetGraph state
+    (nGI,eGI) = stateGetGI state
+    vg = correctTypeGraph g tg
+    ovg = opValidationGraph g
+    edgeColors = (M.fromList $ map (\e -> (edgeId e, errorColor)) $ filter (not . edgeInfo) (edges vg))
+                 `M.union`
+                 (M.fromList $ map (\e -> (edgeId e, errorColor)) $ filter (not . edgeInfo) (edges ovg))
+                 `M.union`
+                 edgeTextColors
+    nodeColors = (M.fromList $ map (\n -> (nodeId n, errorColor)) $ filter (not . nodeInfo) (nodes vg))
+                 `M.union`
+                 (M.fromList $ map (\n -> (nodeId n, errorColor)) $ filter (not . nodeInfo) (nodes ovg))
+                 `M.union`
+                 nodeTextColors
+    edgeTextColors = M.fromList $ Maybe.catMaybes
+                                $ map (\e -> case infoOperation (edgeInfo e) of
+                                                Create -> Just (edgeId e, createColor)
+                                                Delete -> Just (edgeId e, deleteColor)
+                                                _ -> Nothing)
+                                  (edges g)
+    nodeTextColors = M.fromList $ Maybe.catMaybes
+                                $ map (\n -> case infoOperation (nodeInfo n) of
+                                                Create -> Just (nodeId n, createColor)
+                                                Delete -> Just (nodeId n, deleteColor)
+                                                _ -> Nothing)
+                                  (nodes g)
+    createColor = (0.12, 0.48, 0.10)
+    deleteColor = (0.17, 0.28, 0.77)
 
-  -- specify colors for select and error
-  let createColor = (0.12, 0.48, 0.10)
-      deleteColor = (0.17, 0.28, 0.77)
-
-  let vg = correctTypeGraph g tg
-  let ovg = opValidationGraph g
-
-  -- draw the edges
-  forM (edges g) (\e -> do
-    let dstN = M.lookup (fromEnum . targetId $ e) nGI
-        srcN = M.lookup (fromEnum . sourceId $ e) nGI
-        egi  = M.lookup (fromEnum . edgeId   $ e) eGI
-        info = infoVisible (edgeInfo e)
-        selected = (edgeId e) `elem` sEdges
-        typeError = case lookupEdge (edgeId e) vg of
-                      Just e' -> not $ edgeInfo e'
-                      Nothing -> True
-        operationError = case lookupEdge (edgeId e) ovg of
-                          Just e' -> not $ edgeInfo e'
-                          Nothing -> True
-        color = case (selected,typeError || operationError) of
-                 (False,False) -> (0,0,0)
-                 (False,True) -> errorColor
-                 (True,False) -> selectColor
-                 (True,True) -> bothColor
-        (highlight, textColor) = case (infoOperation (edgeInfo e)) of
-          Create   -> (True, createColor)
-          Delete   -> (True, deleteColor)
-          Preserve -> (False, (0,0,0))
-    case (egi, srcN, dstN) of
-      (Just gi, Just src, Just dst) -> renderEdge gi info src dst (selected || typeError || operationError) color highlight textColor
-      _ -> return ())
-
-  -- draw the nodes
-  forM (nodes g) (\n -> do
-    let ngi = M.lookup (fromEnum . nodeId $ n) nGI
-        selected = (nodeId n) `elem` (sNodes)
-        info = nodeInfo n
-        label = infoVisible info
-        typeError = case lookupNode (nodeId n) vg of
-                      Just n' -> not $ nodeInfo n'
-                      Nothing -> True
-        color = case (selected,typeError) of
-                  (False,False) -> (0,0,0)
-                  (False,True) -> errorColor
-                  (True,False) -> selectColor
-                  (True,True) -> bothColor
-        (highlight, textColor) = case (infoOperation info) of
-          Create -> (True, createColor)
-          Delete -> (True, deleteColor)
-          Preserve -> (False, (0,0,0))
-    case (ngi) of
-      Just gi -> renderNode gi label (selected || typeError) color highlight textColor
-      Nothing -> return ())
-
-  drawSelectionBox sq
-  return ()
 
 -- draw a single side of a rule
--- 
-drawRuleSideGraph :: GraphState -> Maybe (Double,Double,Double,Double) -> Graph Info Info -> Render ()
+--
+drawRuleSideGraph :: GraphState -> SquareSelection -> Graph Info Info -> Render ()
 drawRuleSideGraph state sq k = do
   let g = stateGetGraph state
       (nGI,eGI) = stateGetGI state
@@ -269,69 +208,25 @@ drawRuleSideGraph state sq k = do
 -- draw a nac
 -- it highlights elements of the lhs part of the rule with yellow shadows
 -- and highlights merged elements of the lhs part of the rule with green shadows
-drawNACGraph :: GraphState -> Maybe (Double,Double,Double,Double) -> Graph Info Info -> MergeMapping -> Render ()
-drawNACGraph state sq tg (nM,eM) = do
-  let g = stateGetGraph state
-      (nGI,eGI) = stateGetGI state
-      (sNodes,sEdges) = stateGetSelected state
-      z = stateGetZoom state
-      (px,py) = stateGetPan state
-  
-  scale z z
-  translate px py
+drawNACGraph :: GraphState -> SquareSelection -> Graph Info Info -> MergeMapping -> Render ()
+drawNACGraph state sq tg (nM,eM) = drawGraph state sq nodeColors edgeColors M.empty M.empty
+  where
+    g = stateGetGraph state
+    vg = correctTypeGraph g tg
+    (nGI,eGI) = stateGetGI state
+    nodeColors =  (M.fromList $ map (\n -> (nodeId n, errorColor)) $ filter (not . nodeInfo) (nodes vg))
+                  `M.union`
+                  (M.fromList $ map (\n -> (nodeId n, if isNodeMerged n then mergedColor else lockedColor)) $ filter (infoLocked . nodeInfo) (nodes g))
+    edgeColors =  (M.fromList $ map (\e -> (edgeId e, errorColor)) $ filter (not . edgeInfo) (edges vg))
+                  `M.union`
+                  (M.fromList $ map (\e -> (edgeId e, if isEdgeMerged e then mergedColor else lockedColor)) $ filter (infoLocked . edgeInfo) (edges g))
+    lockedColor = (0.90,0.75,0.05)
+    mergedColor = (0.28,0.70,0.09)
+    isNodeMerged n = M.size (M.filter (== (nodeId n)) nM) > 1
+    isEdgeMerged e = M.size (M.filter (== (edgeId e)) eM) > 1
 
-  -- color for elements from the rule lhs that are locked and merged
-  let lockedColor = (0.90,0.75,0.05)
-      mergedColor = (0.28,0.70,0.09)
-
-  let chooseColor s e l m = case (s,e,l,m) of
-        (False,False,False,False) -> (0,0,0)
-        (True,False,_,_) -> selectColor
-        (False,True,_,_) -> errorColor
-        (True,True,_,_) -> bothColor
-        (False,False,True,False) -> lockedColor
-        (False,False,_,True) -> mergedColor
-
-  let isNodeMerged n = M.size (M.filter (== (nodeId n)) nM) > 1
-      isEdgeMerged e = M.size (M.filter (== (edgeId e)) eM) > 1
-
-  let vg = correctTypeGraph g tg
-  -- draw the edges
-  forM (edges g) (\e -> do
-    let dstN = M.lookup (fromEnum . targetId $ e) nGI
-        srcN = M.lookup (fromEnum . sourceId $ e) nGI
-        egi  = M.lookup (fromEnum . edgeId   $ e) eGI
-        selected = (edgeId e) `elem` sEdges
-        merged = isEdgeMerged e
-        typeError = case lookupEdge (edgeId e) vg of
-                      Just e' -> not $ edgeInfo e'
-                      Nothing -> True
-        locked = infoLocked $ edgeInfo e
-        color = chooseColor selected typeError locked merged
-    case (egi, srcN, dstN) of
-      (Just gi, Just src, Just dst) -> renderEdge gi (infoLabelStr (edgeInfo e)) src dst (selected || typeError || locked) color False (0,0,0)
-      _ -> return ())
-
-  -- draw the nodes
-  forM (nodes g) (\n -> do
-    let ngi = M.lookup (fromEnum . nodeId $ n) nGI
-        selected = (nodeId n) `elem` (sNodes)
-        info = nodeInfo n
-        label = infoLabelStr info
-        typeError = case lookupNode (nodeId n) vg of
-                      Just n' -> not $ nodeInfo n'
-                      Nothing -> True
-        locked = infoLocked $ nodeInfo n
-        merged = isNodeMerged n
-        color = chooseColor selected typeError locked merged
-    case (ngi) of
-      Just gi -> renderNode gi label (selected || typeError || locked) color False (0,0,0)
-      Nothing -> return ())
-
-  drawSelectionBox sq
-  return ()
-
-drawHostGraphWithMatches :: GraphState -> Maybe (Double,Double,Double,Double) -> Graph Info Info -> (M.Map NodeId [NodeId],M.Map EdgeId [EdgeId]) -> Render ()
+-- draw a hostGraph highlighting some match with yellow
+drawHostGraphWithMatches :: GraphState -> SquareSelection -> Graph Info Info -> (M.Map NodeId [NodeId],M.Map EdgeId [EdgeId]) -> Render ()
 drawHostGraphWithMatches state sq tg (nodeMap, edgeMap) = do
   let g = stateGetGraph state
       (nGI,eGI) = stateGetGI state
@@ -360,7 +255,7 @@ drawHostGraphWithMatches state sq tg (nodeMap, edgeMap) = do
                  (True,False) -> selectColor
                  (True,True) -> bothColor'
     case (egi, srcN, dstN) of
-      (Just gi, Just src, Just dst) -> do 
+      (Just gi, Just src, Just dst) -> do
           renderEdge gi (infoLabelStr (edgeInfo e)) src dst (selected || matched) color False (0,0,0)
           case matchId of
             Just id ->  drawEdgeId gi id src dst
@@ -381,13 +276,13 @@ drawHostGraphWithMatches state sq tg (nodeMap, edgeMap) = do
                   (True,False) -> selectColor
                   (True,True) -> bothColor'
     case (ngi) of
-      Just gi -> do 
+      Just gi -> do
         renderNode gi label (selected || matched) color False (0,0,0)
         case matchId of
           Just id ->  drawNodeId gi id
           _ -> return ()
       Nothing -> return ()
-    
+
 
   -- draw the selectionBox
   drawSelectionBox sq
@@ -395,21 +290,10 @@ drawHostGraphWithMatches state sq tg (nodeMap, edgeMap) = do
 
 
 
-drawSelectionBox:: Maybe (Double,Double,Double,Double) -> Render()
-drawSelectionBox sq = case sq of
-  Just (x,y,w,h) -> do
-    rectangle x y w h
-    setSourceRGBA 0.29 0.56 0.85 0.5
-    fill
-    rectangle x y w h
-    setSourceRGBA 0.29 0.56 0.85 1
-    stroke
-  Nothing -> return ()
-
 
 drawEdgeId :: EdgeGI -> EdgeId -> NodeGI -> NodeGI -> Render ()
 drawEdgeId gi eid src dst = do
-  let 
+  let
     (idr,idb,idg) = (0.5,0.5,0.5)
     (ae,de) = cPosition gi
     (x1, y1) = position src
@@ -421,11 +305,11 @@ drawEdgeId gi eid src dst = do
   liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
   setSourceRGB idr idg idb
   moveTo (fst pos) (snd pos)
-  showLayout pL
+  GRPC.showLayout pL
 
 drawNodeId :: NodeGI -> NodeId -> Render ()
 drawNodeId gi nid = do
-  let 
+  let
     (idr,idb,idg) = (0.5,0.5,0.5)
     pos = case shape gi of
               NCircle -> let diam = maximum [fst . dims $ gi, snd . dims $ gi]
@@ -438,4 +322,4 @@ drawNodeId gi nid = do
   liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
   setSourceRGB idr idg idb
   moveTo (fst pos) (snd pos)
-  showLayout pL
+  GRPC.showLayout pL
