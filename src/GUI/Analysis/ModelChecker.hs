@@ -7,6 +7,7 @@ module GUI.Analysis.ModelChecker (
 import qualified GI.Gtk as Gtk
 import qualified GI.Gdk as Gdk
 import           Data.GI.Base
+import           Graphics.Rendering.Cairo (Render)
 
 -- modules needed for threads
 import           Control.Concurrent
@@ -17,11 +18,11 @@ import qualified GI.GLib as GLib
 import           Data.IORef
 import           Data.Int
 import           Data.Maybe
-import qualified Data.IntMap                        as IntMap
-import qualified Data.Text                          as T
-import qualified Data.Map                           as M
-import qualified Data.Set                           as Set
-import qualified Data.List                          as List
+import qualified Data.IntMap as IntMap
+import qualified Data.Text   as T
+import qualified Data.Map    as M
+import qualified Data.Set    as Set
+import qualified Data.List   as List
 import           Data.Char
 
 
@@ -88,6 +89,7 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
   ssGraphState <- newIORef emptyState
   modelIORef <- newIORef Nothing
   execThread <- newIORef Nothing
+  goodStatesIORef <- newIORef Nothing
 
   -- bindings ------------------------------------------------------------------------
   -- controls
@@ -116,7 +118,6 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
 
                                 ngi' <- updateNodesGiDims ngi g context
                                 st' <- return $ stateSetGI (ngi',egi) st
-                                print model
                                 putMVar stMVar st'
                                 putMVar modelMVar $ Just model
                               )
@@ -152,8 +153,9 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
 
   -- chekc formula
   let checkFormula = do
-        text <- Gtk.entryGetText formulaEntry >>= return . T.unpack
-        case Logic.parseExpr "" text of
+        text <- Gtk.entryGetText formulaEntry
+        exprStr <- return $ T.unpack text
+        case Logic.parseExpr "" exprStr of
           Left err -> do
             showError window $ T.pack ("Invalid CTL formula:\n" ++ (show err))
           Right expr -> do
@@ -161,7 +163,8 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
             case maybeModel of
               Nothing -> showError window $ "Must Generate State Space before checking a formula"
               Just model -> do
-                modelCheck window model expr 0
+                modelCheck model expr goodStatesIORef
+                Gtk.labelSetText statusLabel text
 
   on formulaCheckBtn #pressed $ checkFormula
 
@@ -171,6 +174,12 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
     case k of
       '\65293' -> checkFormula
       '\65421' -> checkFormula
+      '\65288' -> do
+          t <- Gtk.entryGetTextLength formulaEntry >>= return . fromIntegral
+          if t == 0 then do
+            writeIORef goodStatesIORef Nothing
+            Gtk.labelSetText statusLabel ""
+          else return ()
       _ -> return ()
     return False
 
@@ -180,7 +189,8 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
   on canvas #draw $ \context -> do
     ss <- readIORef ssGraphState
     sq <- readIORef squareSelection
-    renderWithContext context   $ drawTypeGraph ss sq
+    gsts <- readIORef goodStatesIORef
+    renderWithContext context   $ drawStateSpace ss sq gsts
     return False
   on canvas #buttonPressEvent   $ basicCanvasButtonPressedCallback ssGraphState oldPoint squareSelection canvas
   on canvas #motionNotifyEvent  $ basicCanvasMotionCallBack ssGraphState oldPoint squareSelection canvas
@@ -219,7 +229,7 @@ generateGraphState initialStates stateSpace = st'
                   ps -> init . unlines $ ("state " ++ show nid ++ "\n"):predicates
       in
         (G.Node (G.NodeId nid) (infoSetLabel Info.empty label), (fromIntegral posX, fromIntegral posY))
-    addNodeInLevel l nids nds = foldr (\(nid,posX) ls -> (nodeWithPos nid posX (l*50)):ls ) nds (zip nids [0,50..])
+    addNodeInLevel l nids nds = foldr (\(nid,posX) ls -> (nodeWithPos nid posX (l*100)):ls ) nds (zip nids [0,100..])
     nds = M.foldrWithKey addNodeInLevel [] levels
     ndsGIs = M.fromList $ map (\(n,pos) -> (fromEnum $ G.nodeId n, newNodeGI {position = pos, shape = NRect})) nds
     g = G.fromNodesAndEdges (map fst nds) []
@@ -228,15 +238,12 @@ generateGraphState initialStates stateSpace = st'
 
 
 -- definitions taken from Verigraph CLI/ModelChecker.hs -------------------------------------------------------------
-modelCheck :: Gtk.Window -> Logic.KripkeStructure String -> Logic.Expr -> Int -> IO ()
-modelCheck window model expr initialState =
+modelCheck :: Logic.KripkeStructure String -> Logic.Expr -> IORef (Maybe [G.NodeId]) -> IO ()
+modelCheck model expr goodStatesIORef =
   let
     allGoodStates = Logic.satisfyExpr' model expr
   in do
-    if initialState `elem` allGoodStates then
-      showError window "The initial state satisfy the formula!"
-    else
-      showError window "The initial state does NOT satisfy the formula!"
+    writeIORef goodStatesIORef $ Just (map G.NodeId allGoodStates)
 
 exploreStateSpace :: DPO.MorphismsConfig (TGM.TypedGraphMorphism a b) -> Int -> DPO.Grammar (TGM.TypedGraphMorphism a b) -> [(String, TG.TypedGraph a b)] -> ([Int], Space a b)
 exploreStateSpace conf maxDepth grammar graphs =
@@ -277,3 +284,18 @@ splitPredicates ((name, rule) : rest) =
       (productions, (name, rule):predicates)
     else
       ((name, rule):productions, predicates)
+
+
+-- draw state space graph -------------------------------------------------------------
+drawStateSpace :: GraphState -> Maybe (Double,Double,Double,Double) -> Maybe [G.NodeId] -> Render ()
+drawStateSpace state sq maybeGoodStates = drawGraph state sq nodeColors M.empty M.empty M.empty
+  where
+    g = stateGetGraph state
+    allGoodStates = fromMaybe [] maybeGoodStates
+    nodeColors = case maybeGoodStates of
+                    Nothing            -> M.empty
+                    Just allGoodStates ->
+                        let (goodStates, badStates) = List.partition (`List.elem` allGoodStates) (G.nodeIds g)
+                        in  (M.fromList $ map (\n -> (n,(0,1,0))) goodStates)
+                            `M.union`
+                            (M.fromList $ map (\n -> (n,(1,0,0))) badStates)
