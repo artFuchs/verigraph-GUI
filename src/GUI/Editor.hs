@@ -391,7 +391,7 @@ startEditor window store
                             foldr (\(src, mt) (es,eids) ->
                                       let srcId = nodeId src
                                           (t,estyle,color) = checkType mt (infoType $ nodeInfo src)
-                                          es' = createEdge es srcId nid (infoSetType I.empty t) auto estyle color
+                                          es' = createEdge es Nothing srcId nid (infoSetType I.empty t) auto estyle color
                                           eids' = (snd $ stateGetSelected es') ++ eids
                                       in (es',eids'))
                               (es,[]) edgesTs

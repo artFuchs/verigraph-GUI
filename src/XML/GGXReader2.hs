@@ -42,9 +42,10 @@ readGGX fileName = do
   case typeGraph of
     Just tg -> do
       hg <- readHostGraph fileName elemTypes >>= return . fromMaybe (HostGraph 1 "initialGraph" emptyState)
+      rules <- readRules fileName elemTypes >>= return . map (\a -> Tree.Node a [])
       return $ Just [ Tree.Node tg []
                     , Tree.Node hg []
-                    , Tree.Node (Topic "Rules") [ Tree.Node (RuleGraph 2 "rule 0" emptyState True) [] ]
+                    , Tree.Node (Topic "Rules") rules
                     ]
     _ -> return Nothing
 
@@ -63,11 +64,21 @@ readTypeGraph fileName types = do
 
 readHostGraph :: String -> ElementTypes -> IO (Maybe SaveInfo)
 readHostGraph fileName types = do
-  mhgs <- runX $ parseXML fileName >>> parseHostGraph types
-  let hgs = catMaybes mhgs
+  gs <- runX $ parseXML fileName >>> parseGraph types
+  let hgs = filter (\(k,_,_) -> k=="HOST") gs
   case hgs of
-    hg:_ -> return $ Just hg
+    (_,i,st):_ -> return $ Just (HostGraph (fromMaybe 1 $ parseId (Utils.clearId i) fromIntegral) "InitialGraph" st)
     _ -> return Nothing
+
+readRules :: String -> ElementTypes -> IO [SaveInfo]
+readRules fileName types = do
+  elemIds <- runX $ parseXML fileName >>> getElemIds -- [([String],[String])]
+  let elementIds = foldr (\(ns,es) (ns',es') ->  (ns++ns',es++es')) ([],[]) elemIds
+  rules <- runX $ parseXML fileName >>> parseRule types elementIds
+  let msgs = unlines $ map fst rules
+  putStrLn msgs
+  return $ catMaybes (map snd rules)
+
 
 parseNodeType :: ArrowXml cat => cat (NTree XNode) (String,(String,NodeGI))
 parseNodeType = atTag "Types" >>> atTag "NodeType" >>>
@@ -170,7 +181,7 @@ parseTypeGraph (ntypes,etypes) = atTag "Types" >>> atTag "Graph" >>>
     let nlyts = M.fromList $ map (\(n,l) -> (fromIntegral $ G.nodeId n, l)) $ catMaybes nodes
     let st = stateSetGraph g . stateSetGI (nlyts,M.empty) $ emptyState
     let st' = foldr
-              (\(e,l) st -> createEdge st (G.sourceId e) (G.targetId e) (G.edgeInfo e) False (style l) (color l))
+              (\(e,l) st -> createEdge st (Just $ G.edgeId e) (G.sourceId e) (G.targetId e) (G.edgeInfo e) False (style l) (color l))
               st
               (catMaybes edges)
     returnA -< (TypeGraph 0 "TypeGraph" st')
@@ -213,22 +224,98 @@ parseTypeEdge etypes = atTag "Edge" >>>
                   _ -> Nothing
     returnA -< medge
 
-parseHostGraph :: ArrowXml cat => ElementTypes -> cat (NTree XNode) (Maybe SaveInfo)
-parseHostGraph (ntypes,etypes) = atTag "Graph" >>>
-  proc hg -> do
-    kindStr <- getAttrValue "kind" -< hg
-    nodes <- listA $ parseNode ntypes -< hg
-    edges <- listA $ parseEdge etypes -< hg
+
+parseRule :: ArrowXml cat => ElementTypes -> ([String],[String]) -> cat (NTree XNode) (String, Maybe SaveInfo)
+parseRule (ntypes, etypes) elemIds = atTag "Rule" >>>
+  proc rg -> do
+    idStr <- getAttrValue "ID" -< rg
+    name <- getAttrValue "name" -< rg
+    -- get the left and right graphs
+    mappings <- listA $ parseMorphism elemIds -< rg
+    -- merge the graph states
+    graphs <- listA $ parseGraph (ntypes, etypes) -< rg
+    let (_,_,leftGst) = head $ filter (\(k,_,_) -> k == "LHS") graphs
+        (_,_,rightGst) = head $ filter (\(k,_,_) -> k == "RHS") graphs
+        (nodeM,edgeM) = head mappings
+        preservedNodes = filter (\n -> G.nodeId n `elem` (M.keys nodeM)) (G.nodes (stateGetGraph leftGst))
+        preservedEdges = filter (\e -> G.edgeId e `elem` (M.keys edgeM)) (G.edges (stateGetGraph leftGst))
+        removedNodes =   filter (\n -> G.nodeId n `notElem` (M.keys nodeM)) (G.nodes (stateGetGraph leftGst))
+        removedEdges =   filter (\e -> G.edgeId e `notElem` (M.keys edgeM)) (G.edges (stateGetGraph leftGst))
+        addedNodes =     filter (\n -> G.nodeId n `notElem` (M.elems nodeM)) (G.nodes (stateGetGraph rightGst))
+        addedEdges =     filter (\e -> G.edgeId e `notElem` (M.elems edgeM)) (G.edges (stateGetGraph rightGst))
+        removedNodes' = map (\n -> n { G.nodeInfo = (G.nodeInfo n) {infoOperation = Delete}}) removedNodes
+        removedEdges' = map (\e -> e { G.edgeInfo = (G.edgeInfo e) {infoOperation = Delete}}) removedEdges
+        addedNodes' = map (\n -> n { G.nodeInfo = (G.nodeInfo n) {infoOperation = Create}}) addedNodes
+        addedEdges' = map (\e -> e { G.edgeInfo = (G.edgeInfo e) {infoOperation = Create}}) addedEdges
+        ruleG = G.fromNodesAndEdges (preservedNodes ++ removedNodes' ++ addedNodes') (preservedEdges ++ removedEdges' ++ addedEdges')
+        (leftNGI,leftEGI) = stateGetGI leftGst
+        rightNGI = M.filterWithKey (\k _ -> G.NodeId k `elem` (map G.nodeId addedNodes')) (fst $ stateGetGI rightGst)
+        rightEGI = M.filterWithKey (\k _ -> G.EdgeId k `elem` (map G.edgeId addedEdges')) (snd $ stateGetGI rightGst)
+        ruleGI = (M.union leftNGI rightNGI, M.union leftEGI rightEGI)
+        ruleSt = stateSetGI ruleGI . stateSetGraph ruleG $ emptyState
+    -- create the saveInfo and return
+    let rid = parseId (Utils.clearId idStr) fromIntegral
+        sinfo = case rid of
+                    Just i -> Just $ RuleGraph i name ruleSt True
+                    Nothing -> Nothing
+        msg = name ++ "\nruleG: " ++ (show ruleG) ++ "\nLHS: " ++ (show (stateGetGraph leftGst)) ++ "\nRHS: " ++ (show (stateGetGraph rightGst)) ++ "\nnode mapping:" ++ (show nodeM) ++ "\nedge mapping:" ++ (show edgeM)
+    returnA -< (msg,sinfo)
+
+
+getElemIds :: ArrowXml cat => cat (NTree XNode) ([String],[String])
+getElemIds = atTag "Graph" >>>
+  proc g -> do
+    nodeStrs <- listA $ (atTag "Node" >>> getAttrValue "ID") -< g
+    edgeStrs <- listA $ (atTag "Edge" >>> getAttrValue "ID") -< g
+    returnA -< (nodeStrs,edgeStrs)
+
+type Mapping = (M.Map G.NodeId G.NodeId, M.Map G.EdgeId G.EdgeId)
+type NodeMapping = (G.NodeId, G.NodeId)
+type EdgeMapping = (G.EdgeId, G.EdgeId)
+
+parseMorphism :: ArrowXml cat => ([String],[String]) -> cat (NTree XNode) Mapping
+parseMorphism (nodeIds,edgeIds) = atTag "Morphism" >>>
+  proc m -> do
+    mappings <- listA $ parseMapping (nodeIds, edgeIds) -< m
+    let nodeMappings = M.fromList $ catMaybes $ map fst mappings
+        edgeMappings = M.fromList $ catMaybes $ map snd mappings
+    returnA -< (nodeMappings, edgeMappings)
+
+parseMapping :: ArrowXml cat => ([String],[String]) -> cat (NTree XNode) (Maybe NodeMapping, Maybe EdgeMapping)
+parseMapping (nodeIds, edgeIds) = atTag "Mapping" >>>
+  proc m -> do
+    srcStr <- getAttrValue "orig" -< m
+    tgtStr <- getAttrValue "image" -< m
+    let isNode = (srcStr `elem` nodeIds) && (tgtStr `elem` nodeIds)
+        isEdge = (srcStr `elem` edgeIds) && (tgtStr `elem` edgeIds)
+        srcNodeId = if isNode then parseId (Utils.clearId srcStr) G.NodeId else Nothing
+        tgtNodeId = if isNode then parseId (Utils.clearId tgtStr) G.NodeId else Nothing
+        srcEdgeId = if isEdge then parseId (Utils.clearId srcStr) G.EdgeId else Nothing
+        tgtEdgeId = if isEdge then parseId (Utils.clearId tgtStr) G.EdgeId else Nothing
+        nMapping = (\a b -> (a,b)) <$> srcNodeId <*> tgtNodeId
+        eMapping = (\a b -> (a,b)) <$> srcEdgeId <*> tgtEdgeId
+    returnA -< (nMapping,eMapping)
+
+
+-- parse a graph together with the elements' layouts, generating a graphState
+parseGraph :: ArrowXml cat => ElementTypes -> cat (NTree XNode) (String,String,GraphState)
+parseGraph (ntypes,etypes) = atTag "Graph" >>>
+  proc g -> do
+    kindStr <- getAttrValue "kind" -< g
+    idStr <- getAttrValue "ID" -< g
+    -- parse elements
+    nodes <- listA $ parseNode ntypes -< g
+    edges <- listA $ parseEdge etypes -< g
+    -- create a graph with only nodes and add edges one by one
     let g = G.fromNodesAndEdges (map fst $ catMaybes nodes) []
-    let nlyts = M.fromList $ map (\(n,l) -> (fromIntegral $ G.nodeId n, l)) $ catMaybes nodes
-    let st = stateSetGraph g . stateSetGI (nlyts,M.empty) $ emptyState
-    let st' = foldr
-              (\(e,l) st -> createEdge st (G.sourceId e) (G.targetId e) (G.edgeInfo e) False (style l) (color l))
+        nlyts = M.fromList $ map (\(n,l) -> (fromIntegral $ G.nodeId n, l)) $ catMaybes nodes
+        st = stateSetGraph g . stateSetGI (nlyts,M.empty) $ emptyState
+        st' = foldr
+              (\(e,l) st -> createEdge st (Just $ G.edgeId e) (G.sourceId e) (G.targetId e) (G.edgeInfo e) False (style l) (color l) )
               st
               (catMaybes edges)
-    returnA -< if kindStr == "HOST"
-                then Just (HostGraph 1 "InitialGraph" st')
-                else Nothing
+    returnA -< (kindStr, idStr, st')
+
 
 parseNode :: ArrowXml cat => M.Map String (String, NodeGI) -> cat (NTree XNode) (Maybe (G.Node Info, NodeGI))
 parseNode ntypes = atTag "Node" >>>
