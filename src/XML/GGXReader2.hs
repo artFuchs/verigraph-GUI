@@ -42,7 +42,7 @@ readGGX fileName = do
   case typeGraph of
     Just tg -> do
       hg <- readHostGraph fileName elemTypes >>= return . fromMaybe (HostGraph 1 "initialGraph" emptyState)
-      rules <- readRules fileName elemTypes >>= return . map (\a -> Tree.Node a [])
+      rules <- readRules fileName elemTypes
       return $ Just [ Tree.Node tg []
                     , Tree.Node hg []
                     , Tree.Node (Topic "Rules") rules
@@ -65,19 +65,17 @@ readTypeGraph fileName types = do
 readHostGraph :: String -> ElementTypes -> IO (Maybe SaveInfo)
 readHostGraph fileName types = do
   gs <- runX $ parseXML fileName >>> parseGraph types
-  let hgs = filter (\(k,_,_) -> k=="HOST") gs
+  let hgs = filter (\(k,_,_,_) -> k=="HOST") gs
   case hgs of
-    (_,i,st):_ -> return $ Just (HostGraph (fromMaybe 1 $ parseId (Utils.clearId i) fromIntegral) "InitialGraph" st)
+    (_,i,n,st):_ -> return $ Just (HostGraph (fromMaybe 1 $ parseId (Utils.clearId i) fromIntegral) n st)
     _ -> return Nothing
 
-readRules :: String -> ElementTypes -> IO [SaveInfo]
+readRules :: String -> ElementTypes -> IO (Tree.Forest SaveInfo)
 readRules fileName types = do
   elemIds <- runX $ parseXML fileName >>> getElemIds -- [([String],[String])]
   let elementIds = foldr (\(ns,es) (ns',es') ->  (ns++ns',es++es')) ([],[]) elemIds
   rules <- runX $ parseXML fileName >>> parseRule types elementIds
-  let msgs = unlines $ map fst rules
-  putStrLn msgs
-  return $ catMaybes (map snd rules)
+  return $ catMaybes rules
 
 
 parseNodeType :: ArrowXml cat => cat (NTree XNode) (String,(String,NodeGI))
@@ -225,7 +223,7 @@ parseTypeEdge etypes = atTag "Edge" >>>
     returnA -< medge
 
 
-parseRule :: ArrowXml cat => ElementTypes -> ([String],[String]) -> cat (NTree XNode) (String, Maybe SaveInfo)
+parseRule :: ArrowXml cat => ElementTypes -> ([String],[String]) -> cat (NTree XNode) (Maybe (Tree.Tree SaveInfo))
 parseRule (ntypes, etypes) elemIds = atTag "Rule" >>>
   proc rg -> do
     idStr <- getAttrValue "ID" -< rg
@@ -234,32 +232,52 @@ parseRule (ntypes, etypes) elemIds = atTag "Rule" >>>
     mappings <- listA $ parseMorphism elemIds -< rg
     -- merge the graph states
     graphs <- listA $ parseGraph (ntypes, etypes) -< rg
-    let (_,_,leftGst) = head $ filter (\(k,_,_) -> k == "LHS") graphs
-        (_,_,rightGst) = head $ filter (\(k,_,_) -> k == "RHS") graphs
-        (nodeM,edgeM) = head mappings
-        preservedNodes = filter (\n -> G.nodeId n `elem` (M.keys nodeM)) (G.nodes (stateGetGraph leftGst))
-        preservedEdges = filter (\e -> G.edgeId e `elem` (M.keys edgeM)) (G.edges (stateGetGraph leftGst))
-        removedNodes =   filter (\n -> G.nodeId n `notElem` (M.keys nodeM)) (G.nodes (stateGetGraph leftGst))
-        removedEdges =   filter (\e -> G.edgeId e `notElem` (M.keys edgeM)) (G.edges (stateGetGraph leftGst))
-        addedNodes =     filter (\n -> G.nodeId n `notElem` (M.elems nodeM)) (G.nodes (stateGetGraph rightGst))
-        addedEdges =     filter (\e -> G.edgeId e `notElem` (M.elems edgeM)) (G.edges (stateGetGraph rightGst))
-        removedNodes' = map (\n -> n { G.nodeInfo = (G.nodeInfo n) {infoOperation = Delete}}) removedNodes
-        removedEdges' = map (\e -> e { G.edgeInfo = (G.edgeInfo e) {infoOperation = Delete}}) removedEdges
-        addedNodes' = map (\n -> n { G.nodeInfo = (G.nodeInfo n) {infoOperation = Create}}) addedNodes
-        addedEdges' = map (\e -> e { G.edgeInfo = (G.edgeInfo e) {infoOperation = Create}}) addedEdges
-        ruleG = G.fromNodesAndEdges (preservedNodes ++ removedNodes' ++ addedNodes') (preservedEdges ++ removedEdges' ++ addedEdges')
-        (leftNGI,leftEGI) = stateGetGI leftGst
-        rightNGI = M.filterWithKey (\k _ -> G.NodeId k `elem` (map G.nodeId addedNodes')) (fst $ stateGetGI rightGst)
-        rightEGI = M.filterWithKey (\k _ -> G.EdgeId k `elem` (map G.edgeId addedEdges')) (snd $ stateGetGI rightGst)
-        ruleGI = (M.union leftNGI rightNGI, M.union leftEGI rightEGI)
-        ruleSt = stateSetGI ruleGI . stateSetGraph ruleG $ emptyState
-    -- create the saveInfo and return
-    let rid = parseId (Utils.clearId idStr) fromIntegral
-        sinfo = case rid of
-                    Just i -> Just $ RuleGraph i name ruleSt True
-                    Nothing -> Nothing
-        msg = name ++ "\nruleG: " ++ (show ruleG) ++ "\nLHS: " ++ (show (stateGetGraph leftGst)) ++ "\nRHS: " ++ (show (stateGetGraph rightGst)) ++ "\nnode mapping:" ++ (show nodeM) ++ "\nedge mapping:" ++ (show edgeM)
-    returnA -< (msg,sinfo)
+    mnacs <- listA $ parseNac (ntypes, etypes) elemIds -< rg
+    let leftGraphs = filter (\(k,_,_,_) -> k == "LHS") graphs
+        rightGraphs = filter (\(k,_,_,_) -> k == "RHS") graphs
+        sinfo = case (leftGraphs,rightGraphs,mappings) of
+                ((_,_,_,leftGst):_, (_,_,_,rightGst):_, (nodeM,edgeM):_ ) ->
+                  let preservedNodes = filter (\n -> G.nodeId n `elem` (M.keys nodeM)) (G.nodes (stateGetGraph leftGst))
+                      preservedEdges = filter (\e -> G.edgeId e `elem` (M.keys edgeM)) (G.edges (stateGetGraph leftGst))
+                      removedNodes =   filter (\n -> G.nodeId n `notElem` (M.keys nodeM)) (G.nodes (stateGetGraph leftGst))
+                      removedEdges =   filter (\e -> G.edgeId e `notElem` (M.keys edgeM)) (G.edges (stateGetGraph leftGst))
+                      addedNodes =     filter (\n -> G.nodeId n `notElem` (M.elems nodeM)) (G.nodes (stateGetGraph rightGst))
+                      addedEdges =     filter (\e -> G.edgeId e `notElem` (M.elems edgeM)) (G.edges (stateGetGraph rightGst))
+                      removedNodes' = map (\n -> n { G.nodeInfo = (G.nodeInfo n) {infoOperation = Delete}}) removedNodes
+                      removedEdges' = map (\e -> e { G.edgeInfo = (G.edgeInfo e) {infoOperation = Delete}}) removedEdges
+                      addedNodes' = map (\n -> n { G.nodeInfo = (G.nodeInfo n) {infoOperation = Create}}) addedNodes
+                      addedEdges' = map (\e -> e { G.edgeInfo = (G.edgeInfo e) {infoOperation = Create}}) addedEdges
+                      ruleG = G.fromNodesAndEdges (preservedNodes ++ removedNodes' ++ addedNodes') (preservedEdges ++ removedEdges' ++ addedEdges')
+                      (leftNGI,leftEGI) = stateGetGI leftGst
+                      rightNGI = M.filterWithKey (\k _ -> G.NodeId k `elem` (map G.nodeId addedNodes')) (fst $ stateGetGI rightGst)
+                      rightEGI = M.filterWithKey (\k _ -> G.EdgeId k `elem` (map G.edgeId addedEdges')) (snd $ stateGetGI rightGst)
+                      ruleGI = (M.union leftNGI rightNGI, M.union leftEGI rightEGI)
+                      ruleSt = stateSetGI ruleGI . stateSetGraph ruleG $ emptyState
+                      -- create the saveInfo and return
+                      rid = parseId (Utils.clearId idStr) fromIntegral
+                      nacs = catMaybes mnacs
+                  in case rid of
+                        Just i -> Just $ Tree.Node (RuleGraph i name ruleSt True) nacs
+                        Nothing -> Nothing
+                _ -> Nothing
+
+    returnA -< sinfo
+
+
+parseNac :: ArrowXml cat => ElementTypes -> ([String],[String]) -> cat (NTree XNode) (Maybe (Tree.Tree SaveInfo))
+parseNac (ntypes, etypes) elemIds = atTag "NAC" >>>
+  proc nac -> do
+    mappings <- listA $ parseMorphism elemIds -< nac
+    graphs <- listA $ parseGraph (ntypes, etypes) -< nac
+    let sinfo = case (graphs,mappings) of
+                  ((_,nacIdStr,nacName,nacSt):_ ,mergeMapping:_ ) ->
+                      let nacInfo = ((stateGetGraph nacSt, stateGetGI nacSt), mergeMapping)
+                          nacId = parseId (Utils.clearId nacIdStr) fromIntegral
+                      in (\i -> Tree.Node (NacGraph i nacName nacInfo) []) <$> nacId
+                  _ -> Nothing
+    returnA -< sinfo
+
+
 
 
 getElemIds :: ArrowXml cat => cat (NTree XNode) ([String],[String])
@@ -298,11 +316,12 @@ parseMapping (nodeIds, edgeIds) = atTag "Mapping" >>>
 
 
 -- parse a graph together with the elements' layouts, generating a graphState
-parseGraph :: ArrowXml cat => ElementTypes -> cat (NTree XNode) (String,String,GraphState)
+parseGraph :: ArrowXml cat => ElementTypes -> cat (NTree XNode) (String,String,String,GraphState)
 parseGraph (ntypes,etypes) = atTag "Graph" >>>
   proc g -> do
     kindStr <- getAttrValue "kind" -< g
     idStr <- getAttrValue "ID" -< g
+    name <- getAttrValue "name" -< g
     -- parse elements
     nodes <- listA $ parseNode ntypes -< g
     edges <- listA $ parseEdge etypes -< g
@@ -314,7 +333,7 @@ parseGraph (ntypes,etypes) = atTag "Graph" >>>
               (\(e,l) st -> createEdge st (Just $ G.edgeId e) (G.sourceId e) (G.targetId e) (G.edgeInfo e) False (style l) (color l) )
               st
               (catMaybes edges)
-    returnA -< (kindStr, idStr, st')
+    returnA -< (kindStr, idStr, name, st')
 
 
 parseNode :: ArrowXml cat => M.Map String (String, NodeGI) -> cat (NTree XNode) (Maybe (G.Node Info, NodeGI))
