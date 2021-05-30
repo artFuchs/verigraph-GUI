@@ -71,7 +71,7 @@ readHostGraph fileName types = do
   case hgs of
     (msgs,_,i,n,st):_ -> do
       forM_ msgs $ \msg -> putStrLn msg
-      return $ Just (HostGraph (fromMaybe 1 $ parseId (Utils.clearId i) fromIntegral) n st)
+      return $ Just (HostGraph 1 n st)
     _ -> do
       putStrLn "Initial graph not parsed."
       return Nothing
@@ -347,7 +347,7 @@ parseGraph (ntypes,etypes) = atTag "Graph" >>>
               st
               (Either.rights edges)
         elemMsgs = (Either.lefts nodes) ++ (Either.lefts edges)
-        msgs = if null elemMsgs then [] else ("Graph " ++ idStr ++ " (" ++ name ++ "):"):elemMsgs
+        msgs = ("Graph " ++ idStr ++ " (" ++ name ++ "):"):elemMsgs
     returnA -< (msgs, kindStr, idStr, name, st')
 
 
