@@ -244,22 +244,29 @@ parseRule (ntypes, etypes) elemIds = atTag "Rule" >>>
     let leftGraphs = filter (\(_,k,_,_,_) -> k == "LHS") graphs
         rightGraphs = filter (\(_,k,_,_,_) -> k == "RHS") graphs
         msgs = case (leftGraphs,rightGraphs) of
-                ((lmsgs,_,_,_,_):_, (rmsgs,_,_,_,_):_) -> lmsgs ++ rmsgs ++ (concat (map fst mnacs))
-                ([],(rmsgs,_,_,_,_):_) -> [ "Could not parse left graph of the rule " ++ name ++ " [" ++ idStr ++ "]" ]
-                ((lmsgs,_,_,_,_):_,[]) -> [ "Could not parse right graph of the rule " ++ name ++ " [" ++ idStr ++ "]" ]
-                _ -> [ "Could not parse the graphs of the of the rule " ++ name ++ " [" ++ idStr ++ "]" ]
+                  ((lmsgs,_,_,_,_):_, (rmsgs,_,_,_,_):_) ->  if (null (lmsgs++rmsgs)) then []
+                                                             else ("Rule" ++ name ++ "[" ++ idStr ++ "]:"):(lmsgs ++ rmsgs ++ (concat (map fst mnacs)))
+                  ([],(rmsgs,_,_,_,_):_) -> [ "Could not parse left graph of the rule " ++ name ++ " [" ++ idStr ++ "]" ]
+                  ((lmsgs,_,_,_,_):_,[]) -> [ "Could not parse right graph of the rule " ++ name ++ " [" ++ idStr ++ "]" ]
+                  _ -> [ "Could not parse the graphs of the of the rule " ++ name ++ " [" ++ idStr ++ "]" ]
         sinfo = case (leftGraphs,rightGraphs,mappings) of
                 ((_,_,_,_,leftGst):_, (_,_,_,_,rightGst):_, (nodeM,edgeM):_ ) ->
-                  let preservedNodes = filter (\n -> G.nodeId n `elem` (M.keys nodeM)) (G.nodes (stateGetGraph leftGst))
+                  let reverseNodeM = M.fromList $ map (\(k,a) -> (a,k)) $ M.toList nodeM
+                      preservedNodes = filter (\n -> G.nodeId n `elem` (M.keys nodeM)) (G.nodes (stateGetGraph leftGst))
                       preservedEdges = filter (\e -> G.edgeId e `elem` (M.keys edgeM)) (G.edges (stateGetGraph leftGst))
-                      removedNodes =   filter (\n -> G.nodeId n `notElem` (M.keys nodeM)) (G.nodes (stateGetGraph leftGst))
-                      removedEdges =   filter (\e -> G.edgeId e `notElem` (M.keys edgeM)) (G.edges (stateGetGraph leftGst))
-                      addedNodes =     filter (\n -> G.nodeId n `notElem` (M.elems nodeM)) (G.nodes (stateGetGraph rightGst))
-                      addedEdges =     filter (\e -> G.edgeId e `notElem` (M.elems edgeM)) (G.edges (stateGetGraph rightGst))
-                      removedNodes' = map (\n -> n { G.nodeInfo = (G.nodeInfo n) {infoOperation = Delete}}) removedNodes
-                      removedEdges' = map (\e -> e { G.edgeInfo = (G.edgeInfo e) {infoOperation = Delete}}) removedEdges
-                      addedNodes' = map (\n -> n { G.nodeInfo = (G.nodeInfo n) {infoOperation = Create}}) addedNodes
-                      addedEdges' = map (\e -> e { G.edgeInfo = (G.edgeInfo e) {infoOperation = Create}}) addedEdges
+                      removedNodes   = filter (\n -> G.nodeId n `notElem` (M.keys nodeM)) (G.nodes (stateGetGraph leftGst))
+                      removedEdges   = filter (\e -> G.edgeId e `notElem` (M.keys edgeM)) (G.edges (stateGetGraph leftGst))
+                      addedNodes     = filter (\n -> G.nodeId n `notElem` (M.elems nodeM)) (G.nodes (stateGetGraph rightGst))
+                      addedEdges     = filter (\e -> G.edgeId e `notElem` (M.elems edgeM)) (G.edges (stateGetGraph rightGst))
+                      removedNodes'  = map (\n -> n { G.nodeInfo = (G.nodeInfo n) {infoOperation = Delete}}) removedNodes
+                      removedEdges'  = map (\e -> e { G.edgeInfo = (G.edgeInfo e) {infoOperation = Delete}}) removedEdges
+                      addedNodes'    = map (\n -> n { G.nodeInfo = (G.nodeInfo n) {infoOperation = Create}}) addedNodes
+                      addedEdges'    = filter (\e -> (G.sourceId e /= G.NodeId 0) && (G.targetId e /= G.NodeId 0))
+                                       $ map (\e -> e { G.sourceId = (fromMaybe (G.sourceId e) $ M.lookup (G.sourceId e) reverseNodeM)
+                                                      , G.targetId = (fromMaybe (G.targetId e) $ M.lookup (G.targetId e) reverseNodeM)
+                                                      , G.edgeInfo = (G.edgeInfo e) {infoOperation = Create}
+                                                      }
+                                                      ) addedEdges
                       ruleG = G.fromNodesAndEdges (preservedNodes ++ removedNodes' ++ addedNodes') (preservedEdges ++ removedEdges' ++ addedEdges')
                       (leftNGI,leftEGI) = stateGetGI leftGst
                       rightNGI = M.filterWithKey (\k _ -> G.NodeId k `elem` (map G.nodeId addedNodes')) (fst $ stateGetGI rightGst)
@@ -347,7 +354,7 @@ parseGraph (ntypes,etypes) = atTag "Graph" >>>
               st
               (Either.rights edges)
         elemMsgs = (Either.lefts nodes) ++ (Either.lefts edges)
-        msgs = ("Graph " ++ idStr ++ " (" ++ name ++ "):"):elemMsgs
+        msgs = if null elemMsgs then [] else ("Graph " ++ idStr ++ " (" ++ name ++ "):"):elemMsgs
     returnA -< (msgs, kindStr, idStr, name, st')
 
 
