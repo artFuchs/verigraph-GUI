@@ -310,17 +310,45 @@ parseNac (ntypes, etypes) elemIds = atTag "NAC" >>>
                           connectedNodes = (map G.sourceId nacEdges)++(map G.targetId nacEdges) :: [G.NodeId]
                           nacNodes = filter (\n -> let id = G.nodeId n in (id `elem` mergedNIds) || (id `elem` connectedNodes) || (id `notElem` (M.elems $ fst mapping))) nodes
                           -- construct the graph
-                          nacG = G.fromNodesAndEdges nacNodes nacEdges
+                          -- nacG = G.fromNodesAndEdges nacNodes nacEdges
                           nacNLayouts = M.filterWithKey (\k a -> k `elem` (map (fromEnum . G.nodeId) nacNodes)) (fst . stateGetGI $ nacSt)
                           nacELayouts = M.filterWithKey (\k a -> k `elem` (map (fromEnum . G.edgeId) nacEdges)) (snd . stateGetGI $ nacSt)
-                          nacLayouts = (nacNLayouts,nacELayouts)
+                          -- nacLayouts = (nacNLayouts,nacELayouts)
                           -- clear the mapping
                           nodeM = M.filter (\n -> n `elem` (map G.nodeId nacNodes)) (fst mapping)
                           edgeM = M.filter (\e -> e `elem` (map G.edgeId nacEdges)) (snd mapping)
+                          --nacInfo = ((nacG, nacLayouts), (nodeM,edgeM))
+
+                          -- TEMPORARY fix for NAC edges disappearing when a NAC is realoaded after the user modify the NAC graph slightly
+                          -- the bug occurs when the nodes are mapped to nodes with different IDs...
+                          -- the NAC morphism handling in verigraph-GUI may need to be rewritten as this should not happen...
+                          -- but for now, this temporary fix should do.
+                          -- basically , what this does is change the element ids from the nac graph to the ids that the LHS elements mapped to them have
+                          reverseNodeM = M.fromList $ map (\(a,b) -> (b,a)) $ M.toList nodeM
+                          reverseEdgeM = M.fromList $ map (\(a,b) -> (b,a)) $ M.toList edgeM
+                          nacNodes' = map (\n ->  let nid = G.nodeId n
+                                                      newId = M.lookup nid reverseNodeM
+                                                  in  G.Node (fromMaybe nid newId) (G.nodeInfo n)
+                                          ) nacNodes
+                          nacEdges' = map (\e ->  let eid = G.edgeId e
+                                                      srcId = G.sourceId e
+                                                      tgtId = G.targetId e
+                                                      newId = M.lookup eid reverseEdgeM
+                                                      newSrc = M.lookup srcId reverseNodeM
+                                                      newTgt = M.lookup tgtId reverseNodeM
+                                                  in  G.Edge (fromMaybe eid newId) (fromMaybe srcId newSrc) (fromMaybe tgtId newTgt) (G.edgeInfo e)
+                                          ) nacEdges
+                          nacG = G.fromNodesAndEdges nacNodes' nacEdges'
+                          nacNLayouts' = M.mapKeys (\k -> fromEnum $ fromMaybe (G.NodeId k) $ M.lookup (G.NodeId k) reverseNodeM ) nacNLayouts
+                          nacELayouts' = M.mapKeys (\k -> fromEnum $ fromMaybe (G.EdgeId k) $ M.lookup (G.EdgeId k) reverseEdgeM ) nacELayouts
+                          nacLayouts = (nacNLayouts',nacELayouts')
+                          nodeM' = M.mapWithKey (\k a -> k) nodeM
+                          edgeM' = M.mapWithKey (\k a -> k) edgeM
+                          nacInfo = ((nacG,nacLayouts), (nodeM',edgeM'))
 
 
-                          nacInfo = ((nacG, nacLayouts), (nodeM,edgeM))
                           nacId = parseId (Utils.clearId nacIdStr) fromIntegral
+
                       in (\i -> Tree.Node (NacGraph i nacName nacInfo) []) <$> nacId
                   _ -> Nothing
     returnA -< (msgs,sinfo)
