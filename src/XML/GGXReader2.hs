@@ -29,7 +29,7 @@ import           GUI.Data.GraphicalInfo
 import           GUI.Data.GraphState
 import           GUI.Data.Info hiding (empty)
 import qualified GUI.Data.Info as Info
-import           GUI.Data.Nac (MergeMapping)
+import           GUI.Data.Nac
 
 -- ElementType = Map typeId (typeName typeLayout)
 type ElementTypes = (M.Map String (String, NodeGI), M.Map String (String, EdgeGI))
@@ -283,7 +283,7 @@ parseRule (ntypes, etypes) elemIds = atTag "Rule" >>>
     returnA -< (msgs,sinfo)
 
 
-parseNac :: ArrowXml cat => ElementTypes -> ([String],[String]) -> cat (NTree XNode) ([String], Maybe (Tree.Tree SaveInfo))
+parseNac :: ArrowXml cat => ElementTypes -> ([String],[String])-> cat (NTree XNode) ([String], Maybe (Tree.Tree SaveInfo))
 parseNac (ntypes, etypes) elemIds = atTag "NAC" >>>
   proc nac -> do
     mappings <- listA $ parseMorphism elemIds -< nac
@@ -293,7 +293,33 @@ parseNac (ntypes, etypes) elemIds = atTag "NAC" >>>
                 [] -> ["Could not parse the graph of NAC"]
     let sinfo = case (graphs,mappings) of
                   ((mmsg,_,nacIdStr,nacName,nacSt):_ ,mapping:_ ) ->
-                      let nacInfo = ((stateGetGraph nacSt, stateGetGI nacSt), mapping)
+                          -- add information that some of the nodes and edges from the parsed graph are from the LHS
+                      let nodes = map (\n -> if G.nodeId n `elem` (M.elems $ fst mapping) then
+                                                    n { G.nodeInfo = (G.nodeInfo n) { infoLocked = True} }
+                                                  else
+                                                    n ) $ G.nodes (stateGetGraph nacSt)
+                          edges = map (\e -> if G.edgeId e `elem` (M.elems $ snd mapping) then
+                                                    e { G.edgeInfo = (G.edgeInfo e) { infoLocked = True }  }
+                                                  else
+                                                    e ) $ G.edges (stateGetGraph nacSt)
+                          -- remove edges that are in the map and aren't merged
+                          mergedEIds = map fst $ filter (\(a,b) -> b > 1) $ M.toList $ foldr (\e m -> M.insertWith (+) e 1 m) M.empty (M.elems $ snd mapping) :: [G.EdgeId]
+                          nacEdges = filter (\e -> G.edgeId e `elem` mergedEIds || G.edgeId e `notElem` (M.elems $ snd mapping)) edges :: [G.Edge Info]
+                          -- remove nodes that are in the map, aren't merged and have no edge in nacEdge that refer to them
+                          mergedNIds = map fst $ filter (\(a,b) -> b > 1) $ M.toList $ foldr (\e m -> M.insertWith (+) e 1 m) M.empty (M.elems $ fst mapping)
+                          connectedNodes = (map G.sourceId nacEdges)++(map G.targetId nacEdges) :: [G.NodeId]
+                          nacNodes = filter (\n -> let id = G.nodeId n in (id `elem` mergedNIds) || (id `elem` connectedNodes) || (id `notElem` (M.elems $ fst mapping))) nodes
+                          -- construct the graph
+                          nacG = G.fromNodesAndEdges nacNodes nacEdges
+                          nacNLayouts = M.filterWithKey (\k a -> k `elem` (map (fromEnum . G.nodeId) nacNodes)) (fst . stateGetGI $ nacSt)
+                          nacELayouts = M.filterWithKey (\k a -> k `elem` (map (fromEnum . G.edgeId) nacEdges)) (snd . stateGetGI $ nacSt)
+                          nacLayouts = (nacNLayouts,nacELayouts)
+                          -- clear the mapping
+                          nodeM = M.filter (\n -> n `elem` (map G.nodeId nacNodes)) (fst mapping)
+                          edgeM = M.filter (\e -> e `elem` (map G.edgeId nacEdges)) (snd mapping)
+
+
+                          nacInfo = ((nacG, nacLayouts), (nodeM,edgeM))
                           nacId = parseId (Utils.clearId nacIdStr) fromIntegral
                       in (\i -> Tree.Node (NacGraph i nacName nacInfo) []) <$> nacId
                   _ -> Nothing

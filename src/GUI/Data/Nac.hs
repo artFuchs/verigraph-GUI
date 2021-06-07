@@ -22,7 +22,7 @@ import GUI.Helper.List
 type MergeMapping = (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
 type NacInfo = (DiaGraph, MergeMapping)
 
--- | Given a Graph and a MergeMapping, extract the elements that are part of the nac subgraph that contains merged 
+-- | Given a Graph and a MergeMapping, extract the elements that are part of the nac subgraph that contains merged
 --   and added elements.
 -- this function also merges the elements as defined in the MergeMapping
 extractNacGraph :: Graph Info Info -> MergeMapping -> Graph Info Info
@@ -84,18 +84,21 @@ addToGroup mapping getKey element groupMapping =
 
 
 -- | Given a list of nodes and a node merge mapping, merge the list of nodes according to the mapping
--- examples: 
+-- examples:
 -- applyMerging [Node 1 "1", Node 2 "2", Node 3 "3"]
 --              [(1,3),(2,3),(3,3)]
 -- = [Node 3 "1 2 3"]
--- 
--- applyMerging [Node 3 "1,2,3"]
+--
+-- applyMerging [Node 1 "1", Node 2 "2", Node 3 "3"]
 --              []
 -- = []
 --
--- applyMerging [Node 3 "1,2,3"]
+-- applyMerging [Node 1 "1", Node 2 "2", Node 3 "3"]
 --              [(3,3)]
 -- = [Node 3 "3"]
+-- -- applyMerging [Node 1 "1", Node 2 "2", Node 3 "3"]
+--              [(1,1),(2,2),(3,3)]
+-- = [Node 1 "1", Node 2 "2", Node 3 "3"]
 applyNodeMerging :: [Node Info] -> M.Map NodeId NodeId -> [Node Info]
 applyNodeMerging nodes mapping = mergedNodes
   where
