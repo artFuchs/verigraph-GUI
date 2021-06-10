@@ -1,5 +1,8 @@
 # Changelog for graph-editor-gi-gtk
 
+0.2.0.2 ... 0.2.0.3
+    - GGX files (AGG grammar files) can be oppened and saved preserving the layouts.
+
 0.2.0.1 ... 0.2.0.2
     - changed default format for verigraph-GUI grammar from .vgg to .vggx (XML)
 
