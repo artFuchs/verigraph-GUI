@@ -5,7 +5,6 @@ module GUI.Editor.Helper.SaveLoad
 , saveFileAs
 , exportAs
 , exportGGX
-, exportGGX2
 , loadFile
 )where
 
@@ -30,11 +29,10 @@ import Abstract.Constraint
 import Abstract.Rewriting.DPO
 import Rewriting.DPO.TypedGraph
 import Category.TypedGraphRule (RuleMorphism)
-import XML.GGXWriter
-import XML.GGXWriter2
-import XML.GGXReader2
-import XML.VGGXWritter
-import XML.VGGXReader
+import GUI.XML.GGXWriter
+import GUI.XML.GGXReader
+import GUI.XML.VGGXWritter
+import GUI.XML.VGGXReader
 
 import GUI.Data.GraphicalInfo
 import GUI.Data.GraphState
@@ -157,26 +155,8 @@ exportAs x saveF window = do
       Gtk.widgetDestroy saveD
       return False
 
---
-exportGGX :: (Grammar (TGM.TypedGraphMorphism Info Info), Graph Info Info) -> String -> IO Bool
-exportGGX (fstOrderGG, tg)  path = do
-  let path' = if FilePath.hasExtension path && FilePath.takeExtension path == ".ggx"
-                then path
-                else FilePath.addExtension path ".ggx"
-  let nods = nodes tg
-      edgs = edges tg
-      nodeNames = map (\n -> ('N' : (show . fromEnum . nodeId $ n), (infoLabelStr . nodeInfo $ n) ++ "%:[NODE]:" )) nods
-      edgeNames = map (\e -> ('E' : (show . fromEnum . edgeId $ e), (infoLabelStr . edgeInfo $ e) ++ "%:[EDGE]:" )) edgs
-      names = nodeNames ++ edgeNames
-
-  let emptySndOrderGG = grammar (emptyGraphRule (makeTypeGraph tg)) [] [] :: Grammar (RuleMorphism Info Info)
-  let ggName = reverse . takeWhile (/= '/') . reverse $ path
-
-  writeGrammarFile (fstOrderGG,emptySndOrderGG) ggName names path'
-  return True
-
-exportGGX2 :: Tree.Forest SaveInfo -> String -> IO Bool
-exportGGX2 saveInfo path = do
+exportGGX :: Tree.Forest SaveInfo -> String -> IO Bool
+exportGGX saveInfo path = do
   writeGGX saveInfo path
   return True
 

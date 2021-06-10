@@ -1,6 +1,6 @@
 {-# LANGUAGE Arrows                    #-}
 
-module XML.GGXReader2
+module GUI.XML.GGXReader
 ( readGGX
 , readTypes
 ) where

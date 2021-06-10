@@ -1,4 +1,4 @@
-module XML.VGGXWritter (
+module GUI.XML.VGGXWritter (
     writeVGGX
 )
 where
@@ -35,13 +35,13 @@ writeSITree :: ArrowXml a => Tree.Tree SaveInfo -> a XmlTree XmlTree
 writeSITree (Tree.Node (Topic name) fs) = mkelem name [] $ writeSIForest fs
 writeSITree (Tree.Node (TypeGraph id name gst) fs) = mkelem "TypeGraph" [sattr "id" (show id), sattr "name" name] [writeGraphState gst]
 writeSITree (Tree.Node (HostGraph id name gst) fs) = mkelem "HostGraph" [sattr "id" (show id), sattr "name" name] [writeGraphState gst]
-writeSITree (Tree.Node (RuleGraph id name gst active) fs) = 
-    mkelem "Rule" 
-    [sattr "id" (show id), sattr "name" name, sattr "active" (show active)] 
+writeSITree (Tree.Node (RuleGraph id name gst active) fs) =
+    mkelem "Rule"
+    [sattr "id" (show id), sattr "name" name, sattr "active" (show active)]
     [writeGraphState gst, mkelem "NACs" [] $ writeSIForest fs]
-writeSITree (Tree.Node (NacGraph id name ((g,gi),mergeMap) ) fs) = 
-    mkelem "NAC" 
-    [sattr "id" (show id), sattr "name" name] 
+writeSITree (Tree.Node (NacGraph id name ((g,gi),mergeMap) ) fs) =
+    mkelem "NAC"
+    [sattr "id" (show id), sattr "name" name]
     [writeGraph g gi, writeMergeMapping mergeMap]
 
 writeGraphState :: ArrowXml a => GraphState -> a XmlTree XmlTree
@@ -62,7 +62,7 @@ writeNodeGI gi = mkelem "NodeLayout" [ sattr "position" (show $ position gi)
                                  , sattr "lineColor" (show $ lineColor gi)
                                  , sattr "dimension" (show $ dims gi)
                                  , sattr "shape" (show $ shape gi)
-                                 ]                                  
+                                 ]
                                  []
 
 writeEdges :: ArrowXml a => [G.Edge Info] -> M.Map Int EdgeGI -> a XmlTree XmlTree
@@ -71,8 +71,8 @@ writeEdges edges giM = mkelem "Edges" [] $ map (\e -> writeEdge e (getEdgeGI (fr
 writeEdge :: ArrowXml a => G.Edge Info -> EdgeGI -> a XmlTree XmlTree
 writeEdge edge gi = mkelem "Edge" [sattr "id" eid, sattr "source" src, sattr "target" tgt] [writeInfo (G.edgeInfo edge), writeEdgeGI gi]
     where
-        eid = show . fromEnum $ G.edgeId edge 
-        src = show . fromEnum $ G.sourceId edge 
+        eid = show . fromEnum $ G.edgeId edge
+        src = show . fromEnum $ G.sourceId edge
         tgt = show . fromEnum $ G.targetId edge
 
 writeEdgeGI :: ArrowXml a => EdgeGI -> a XmlTree XmlTree
@@ -85,17 +85,17 @@ writeEdgeGI gi = mkelem "EdgeLayout" [ sattr "position" (show $ cPosition gi)
 writeInfo :: ArrowXml a => Info -> a XmlTree XmlTree
 writeInfo info = mkelem "Info" [ sattr "locked" (show $ infoLocked info)
                                , sattr "type" (infoType info)
-                               , sattr "operation" (show $ infoOperation info)] 
+                               , sattr "operation" (show $ infoOperation info)]
                                [ writeInfoLabel (infoLabel info) ]
 
 writeInfoLabel :: ArrowXml a => InfoLabel -> a XmlTree XmlTree
-writeInfoLabel (Label lbl) = mkelem "Label" [sattr "text" lbl, sattr "group" "False"] [] 
+writeInfoLabel (Label lbl) = mkelem "Label" [sattr "text" lbl, sattr "group" "False"] []
 writeInfoLabel (LabelGroup group) = mkelem "Label" [sattr "group" "True"] $ map writeElement group
     where writeElement (id,str) = mkelem "LabelElement" [sattr "id" (show id), sattr "text" str] []
-    
+
 writeMergeMapping :: ArrowXml a => MergeMapping -> a XmlTree XmlTree
-writeMergeMapping (nodeMapping,edgeMapping) = 
-    mkelem "MergeMapping" [] 
+writeMergeMapping (nodeMapping,edgeMapping) =
+    mkelem "MergeMapping" []
         [ mkelem "Nodes" [] $ map writeNodeMapping (M.toList nodeMapping)
         , mkelem "Edges" [] $ map writeEdgeMapping (M.toList edgeMapping)
         ]
@@ -103,5 +103,5 @@ writeMergeMapping (nodeMapping,edgeMapping) =
 writeNodeMapping :: ArrowXml a => (G.NodeId,G.NodeId) -> a XmlTree XmlTree
 writeNodeMapping (k,a) = mkelem "NodeMapping" [sattr "src" (show $ fromEnum k), sattr "tgt" (show $ fromEnum a)] []
 
-writeEdgeMapping :: ArrowXml a => (G.EdgeId,G.EdgeId) -> a XmlTree XmlTree 
+writeEdgeMapping :: ArrowXml a => (G.EdgeId,G.EdgeId) -> a XmlTree XmlTree
 writeEdgeMapping (k,a) = mkelem "EdgeMapping" [sattr "src" (show $ fromEnum k), sattr "tgt" (show $ fromEnum a)] []

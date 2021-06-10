@@ -1,6 +1,6 @@
 {-# LANGUAGE Arrows                    #-}
 
-module XML.VGGXReader
+module GUI.XML.VGGXReader
 ( readVGGX
 ) where
 

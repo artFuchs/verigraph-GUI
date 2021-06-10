@@ -1289,7 +1289,7 @@ startEditor window store
     context <- Gtk.widgetGetPangoContext canvas
     updateAllNacs store graphStates nacInfoMap context
     structs <- getStructsToSave store graphStates nacInfoMap
-    exportAs structs exportGGX2 window
+    exportAs structs exportGGX window
     return ()
 
   -- Edit Menu ---------------------------------------------------------------------------------------------------------------
