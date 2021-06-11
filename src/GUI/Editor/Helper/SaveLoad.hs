@@ -25,15 +25,10 @@ import Data.Graphs.Morphism
 import qualified Data.Graphs as G
 import qualified Data.TypedGraph.Morphism as TGM
 import qualified Data.TypedGraph as TG
-import Abstract.Constraint
-import Abstract.Rewriting.DPO
-import Rewriting.DPO.TypedGraph
-import Category.TypedGraphRule (RuleMorphism)
 import GUI.XML.GGXWriter
 import GUI.XML.GGXReader
 import GUI.XML.VGGXWritter
 import GUI.XML.VGGXReader
-
 import GUI.Data.GraphicalInfo
 import GUI.Data.GraphState
 import GUI.Data.Info

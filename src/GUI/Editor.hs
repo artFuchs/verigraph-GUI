@@ -37,7 +37,6 @@ import Data.Monoid
 import Data.Ord
 
 -- verigraph modules
-import Abstract.Category
 import Abstract.Rewriting.DPO
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
