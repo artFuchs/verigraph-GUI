@@ -59,9 +59,9 @@ import qualified GUI.Editor.Helper.Nac    as Nac
 type TGMProduction = DPO.Production (TGM.TypedGraphMorphism Info Info)
 type Match = TGM.TypedGraphMorphism Info Info
 
-buildExecutor :: Gtk.TreeStore 
-              -> IORef (M.Map Int32 GraphState) 
-              -> IORef (G.Graph Info Info) 
+buildExecutor :: Gtk.TreeStore
+              -> IORef (M.Map Int32 GraphState)
+              -> IORef (G.Graph Info Info)
               -> IORef (M.Map Int32 NacInfo)
               -> IORef (Maybe Gtk.DrawingArea) -> IORef (Maybe (IORef GraphState))
               -> IO (Gtk.Paned, Gtk.DrawingArea, Gtk.ComboBoxText, IORef GraphState, IORef Bool, IORef (M.Map Int32 [(String, Int32)]))
@@ -72,7 +72,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
 
     executorPane <- Gtk.builderGetObject builder "executorPane" >>= unsafeCastTo Gtk.Paned . fromJust
 
-    execPane  <- Gtk.builderGetObject builder "execPane" >>= unsafeCastTo Gtk.Paned . fromJust 
+    execPane  <- Gtk.builderGetObject builder "execPane" >>= unsafeCastTo Gtk.Paned . fromJust
     hideRVBtn <- Gtk.builderGetObject builder "hideRVBtn" >>= unsafeCastTo Gtk.Button . fromJust
 
     mainCanvas <- Gtk.builderGetObject builder "mainCanvas" >>= unsafeCastTo Gtk.DrawingArea . fromJust
@@ -113,11 +113,11 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
 
     lStateOrig  <- newIORef emptyState -- similar to lState, but not moved
     nacState    <- newIORef emptyState -- state refering to the graph of nac
-    
+
     mergeMap    <- newIORef (Nothing :: Maybe MergeMapping)
     nacIDListMap <- newIORef (M.empty :: M.Map Int32 [(String,Int32)])
     currentNACIndex    <- newIORef (-1 :: Int32) -- index of current selected NAC
-    
+
 
     productionMap <- newIORef (M.empty :: M.Map Int32 TGMProduction)
     matchesMap <- newIORef (M.empty :: M.Map Int32 (M.Map Int32 Match))
@@ -130,7 +130,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     execKeepInProd <- newIORef True  -- if after a execution step the same match should be selected
     processingMatches <- newIORef False -- flag to check if Verigraph is calculating the next matches - can be a long process if the graph is big and it would be bad to be executed more than once at the same time.
 
-    
+
     initExecDelay <- Gtk.spinButtonGetValue execSpeedBtn
     writeIORef execDelay $ round (initExecDelay * 1000000)
 
@@ -160,10 +160,10 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                             in case match of
                                 Nothing -> (M.empty,M.empty)
                                 Just m ->  (nMapping,eMapping)
-                                        where 
+                                        where
                                             mapping = TGM.mapping m
                                             nRel = GM.nodeRelation mapping
-                                            eRel = GM.edgeRelation mapping 
+                                            eRel = GM.edgeRelation mapping
                                             nMapping = R.mapping $ R.inverseRelation nRel
                                             eMapping = R.mapping $ R.inverseRelation eRel
         renderWithContext context $ drawHostGraphWithMatches es sq tg matchedElems
@@ -178,7 +178,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         mm <- readIORef mergeMap >>= return . fromMaybe (M.empty,M.empty)
         renderWithContext context $ drawNACGraph es sq tg mm
         return False
-    
+
     on store #rowInserted $ \path iter -> do
         _ <- Gtk.treePathUp path
         _ <- Gtk.treeViewExpandRow treeView path False
@@ -186,7 +186,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
 
     -- when select a rule, change their states
     treeViewOccupied <- newIORef False
-    on treeView #cursorChanged $ do 
+    on treeView #cursorChanged $ do
         selection <- Gtk.treeViewGetSelection treeView
         (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
         if sel
@@ -195,17 +195,13 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                 (rIndex,mIndex) <- case t of
                     1 -> do -- selected rule entry
                         ri <- Gtk.treeModelGetValue model iter 1 >>= fromGValue :: IO Int32
-                        return (ri,-1) 
-                        
+                        return (ri,-1)
+
                     2 -> do -- selected match entry
                         ri <- Gtk.treeModelGetValue model iter 3 >>= fromGValue :: IO Int32
                         rm <- Gtk.treeModelGetValue model iter 1 >>= fromGValue :: IO Int32
                         return (ri,rm)
-                    
-                    3 -> do  -- selected comentary
-                        ri <- Gtk.treeModelGetValue model iter 3 >>= fromGValue :: IO Int32
-                        return (ri,-1)
-                    
+
                     4 -> do -- show next 100 items or so
                         ri <- Gtk.treeModelGetValue model iter 3 >>= fromGValue :: IO Int32
                         occ <- readIORef treeViewOccupied
@@ -213,7 +209,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                             then return ()
                             else do
                                 matchesM <- readIORef matchesMap
-                                case M.lookup ri matchesM of 
+                                case M.lookup ri matchesM of
                                     Nothing -> return ()
                                     Just nM -> do
                                         writeIORef treeViewOccupied True
@@ -221,26 +217,31 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                                         let numMatches = M.size nM
                                             offset' = 100+(fromIntegral offset)
                                             matchesL = drop offset' $ M.toList nM
-                                            newCommentEntry = ( (show numMatches) ++ " matches (showing " ++ (show $ offset'+1) ++ "-" ++ (show $ min numMatches (offset'+100)) ++ ")", 0, 3, ri)
+                                            comment = " -> " ++ (show numMatches) ++ " matches (showing " ++ (show $ offset'+1) ++ "-" ++ (show $ min numMatches (offset'+100)) ++ ")"
                                             newNextEntry = if numMatches-offset' > 100
-                                                            then Just ( "next " ++ (show $ min (numMatches-offset'-100) 100 ) ++ " matches", fromIntegral offset', 4, ri)
+                                                            then Just ( "next " ++ (show $ min (numMatches-offset'-100) 100 ) ++ " matches", fromIntegral offset', 4, ri, "")
                                                             else Nothing
-                                            newPreviousEntry = ("previous 100 matches", fromIntegral offset', 5, ri)
+                                            newPreviousEntry = ("previous 100 matches", fromIntegral offset', 5, ri, "")
 
-                                        (_,iterParent) <- Gtk.treeModelIterParent store iter
-                                        (_,firstChildIter) <- Gtk.treeModelIterChildren store (Just iterParent)
+                                        (_,ruleIter) <- Gtk.treeModelIterParent store iter
+                                        (_,firstChildIter) <- Gtk.treeModelIterChildren store (Just ruleIter)
                                         treeStoreClearCurrrentLevel store firstChildIter
-                                        
-                                        updateTreeStore store newCommentEntry
+
+                                        -- set the comment of number of matches to the rule name
+                                        realRuleName <- Gtk.treeModelGetValue store ruleIter 4 >>= fromGValue >>= return . fromMaybe "" :: IO String
+                                        newNameGV <- toGValue $ Just (realRuleName ++ comment)
+                                        #set store ruleIter [0] [newNameGV]
+
+                                        -- add the "next matches" and "previous matches" entries
                                         case newNextEntry of
                                             Nothing    -> return ()
                                             Just entry -> updateTreeStore store entry
                                         updateTreeStore store newPreviousEntry
-                                        forM_ (take 100 matchesL) $ \(mid,m) -> updateTreeStore store ("match " ++ (show mid), mid, 2, ri)
+                                        forM_ (take 100 matchesL) $ \(mid,m) -> updateTreeStore store ("match " ++ (show mid), mid, 2, ri, "")
 
                                         writeIORef treeViewOccupied False
-                        return (ri,-1)                       
-                        
+                        return (ri,-1)
+
                     5 -> do -- show previous 100
                         ri <- Gtk.treeModelGetValue model iter 3 >>= fromGValue :: IO Int32
                         occ <- readIORef treeViewOccupied
@@ -256,26 +257,31 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                                         let numMatches = M.size nM
                                             offset' = (fromIntegral offset) - 100
                                             matchesL = drop offset' $ M.toList nM
-                                            newCommentEntry = ( (show numMatches) ++ " matches (showing " ++ (show $ offset'+1) ++ "-" ++ (show $ offset'+100) ++ ")", 0, 3, ri)
-                                            newNextEntry = ( "next 100 matches", (fromIntegral offset'), 4, ri)
+                                            comment = " -> " ++ (show numMatches) ++ " matches (showing " ++ (show $ offset'+1) ++ "-" ++ (show $ min numMatches (offset'+100)) ++ ")"
+                                            newNextEntry = ( "next 100 matches", (fromIntegral offset'), 4, ri, "")
                                             newPreviousEntry = if offset' >= 100
-                                                                then Just ("previous 100 matches", (fromIntegral offset'), 5, ri)
+                                                                then Just ("previous 100 matches", (fromIntegral offset'), 5, ri, "")
                                                                 else Nothing
 
-                                        (parentValid,iterParent) <- Gtk.treeModelIterParent store iter
-                                        (childValid,firstChildIter) <- Gtk.treeModelIterChildren store (Just iterParent)
+                                        (parentValid,ruleIter) <- Gtk.treeModelIterParent store iter
+                                        (childValid,firstChildIter) <- Gtk.treeModelIterChildren store (Just ruleIter)
                                         treeStoreClearCurrrentLevel store firstChildIter
-                                        
-                                        updateTreeStore store newCommentEntry
+
+                                        -- set the comment of number of matches to the rule name
+                                        realRuleName <- Gtk.treeModelGetValue store ruleIter 4 >>= fromGValue >>= return . fromMaybe "" :: IO String
+                                        newNameGV <- toGValue $ Just (realRuleName ++ comment)
+                                        #set store ruleIter [0] [newNameGV]
+
+                                        -- add the "next matches" and "previous matches" entries
                                         updateTreeStore store newNextEntry
                                         case newPreviousEntry of
                                             Nothing    -> return ()
                                             Just entry -> updateTreeStore store entry
-                                        forM_ (take 100 matchesL) $ \(mid,m) -> updateTreeStore store ("match " ++ (show mid), mid, 2, ri)
-                                        
+                                        forM_ (take 100 matchesL) $ \(mid,m) -> updateTreeStore store ("match " ++ (show mid), mid, 2, ri, "")
+
                                         writeIORef treeViewOccupied False
-                        
-                        return (ri,-1) 
+
+                        return (ri,-1)
 
                     _ -> return (-1,-1)
 
@@ -303,7 +309,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                         writeIORef lState $ stateSetGraph l . stateSetGI lgi $ es
                         writeIORef rState $ stateSetGraph r . stateSetGI rgi $ es
                         writeIORef lStateOrig $ stateSetGraph l . stateSetGI (lngiM,legiM) $ es
-                        writeIORef kGraph k                    
+                        writeIORef kGraph k
                         writeIORef currentRuleIndex rIndex
 
 
@@ -355,11 +361,11 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     -- execution controls
     -- when stop button is pressed, reset the host graph to initial state
     on stopBtn #pressed $ do
-        writeIORef execStarted False       
+        writeIORef execStarted False
         mThread <- readIORef execThread
         case mThread of
             Nothing -> return ()
-            Just t -> do 
+            Just t -> do
                 killThread t
                 writeIORef execThread Nothing
         statesM <- readIORef statesMap
@@ -369,15 +375,15 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         -- load the productions of the treeStore
         loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap
         -- process matches
-        execT <- forkFinally (do  
+        execT <- forkFinally (do
                                 Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
                                     Gtk.spinnerStart statusSpinner
                                     Gtk.labelSetText statusLabel "processing matches"
-                                    return False                                       
+                                    return False
                                 writeIORef processingMatches True
                                 findMatches store hostState typeGraph nacInfoMap nacIDListMap matchesMap productionMap
                                 )
-                            (\_ -> do 
+                            (\_ -> do
                                 Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
                                     Gtk.spinnerStop statusSpinner
                                     Gtk.labelSetText statusLabel ""
@@ -394,35 +400,35 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         mThread <- readIORef execThread
         case mThread of
             Nothing -> return ()
-            Just t -> do 
+            Just t -> do
                 killThread t
                 writeIORef execThread Nothing
-                
-    
+
+
     -- when the step button is pressed, apply the match that is selected
-    on stepBtn #pressed $ do 
+    on stepBtn #pressed $ do
         started <- readIORef execStarted
         processing <- readIORef processingMatches
         if started || processing
             then return ()
-            else do 
-                execT <- forkFinally 
+            else do
+                execT <- forkFinally
                             (do writeIORef execStarted True
                                 executeStep treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel  typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches)
                             (\_ -> writeIORef execStarted False)
                 writeIORef execThread $ Just execT
-    
+
     on startBtn #pressed $ do
         started <- readIORef execStarted
         processing <- readIORef processingMatches
         if started || processing
-            then return () 
-            else do 
+            then return ()
+            else do
                 loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap
-                execT <- forkFinally 
+                execT <- forkFinally
                             (do writeIORef execStarted True
                                 executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel  typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches)
-                            (\_ -> do 
+                            (\_ -> do
                                 Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
                                             Gtk.spinnerStop statusSpinner
                                             Gtk.labelSetText statusLabel ""
@@ -434,7 +440,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     on execSpeedBtn #valueChanged $ do
         value <- Gtk.spinButtonGetValue execSpeedBtn
         writeIORef execDelay $ round (value * 1000000)
-    
+
     #show executorPane
     return (executorPane, mainCanvas, nacCBox, hostState, execStarted, nacIDListMap)
 
@@ -452,18 +458,18 @@ executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas status
     delay <- readIORef execDelay
     threadDelay delay
 
-    -- checks if the selected 
+    -- checks if the selected
     matchesM <- readIORef matchesMap
     let allMatches = concat $ M.elems $ M.map M.elems matchesM
     if length allMatches > 0
-        then do 
+        then do
             executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches
         else return ()
 
 executeStep :: Gtk.TreeView -> Gtk.TreeStore -> Gtk.CheckButton -> Gtk.DrawingArea -> Gtk.Spinner -> Gtk.Label
-            -> IORef (G.Graph Info Info) -> IORef GraphState -> IORef (M.Map Int32 GraphState) 
+            -> IORef (G.Graph Info Info) -> IORef GraphState -> IORef (M.Map Int32 GraphState)
             -> IORef (M.Map Int32 NacInfo) -> IORef (M.Map Int32 [(String, Int32)])
-            -> IORef (M.Map Int32 (M.Map Int32 Match)) -> IORef (M.Map Int32 TGMProduction) -> IORef Int32 -> IORef Int32 
+            -> IORef (M.Map Int32 (M.Map Int32 Match)) -> IORef (M.Map Int32 TGMProduction) -> IORef Int32 -> IORef Int32
             -> IORef Bool
             -> IO ()
 executeStep treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches = do
@@ -471,7 +477,7 @@ executeStep treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel
         Gtk.spinnerStart statusSpinner
         Gtk.labelSetText statusLabel "applying match"
         return False
-    
+
     --apply match
     applyMatchAccordingToLevel hostState statesMap matchesMap productionMap currentMatchIndex currentRuleIndex
 
@@ -482,7 +488,7 @@ executeStep treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel
         context <- Gtk.widgetGetPangoContext mainCanvas
         ngi' <- updateNodesGiDims ngi g context
         modifyIORef hostState $ stateSetGI (ngi',egi)
-        
+
         --update Canvas
         Gtk.widgetQueueDraw mainCanvas
         --update treeView cursor
@@ -509,20 +515,20 @@ executeStep treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel
     writeIORef processingMatches True
     findMatches store hostState typeGraph nacInfoMap nacIDListMap matchesMap productionMap
     writeIORef processingMatches False
-    
+
     Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
         -- if keepInProd is true but the selected production has no matches, then go up one level to full randomness
         Gtk.spinnerStop statusSpinner
         Gtk.labelSetText statusLabel ""
         keepInProd <- Gtk.toggleButtonGetActive keepRuleCheckBtn
-        if keepInProd 
+        if keepInProd
             then do
                 matchesM <- readIORef matchesMap
                 ruleIndex <- readIORef currentRuleIndex
                 pathFst <- Gtk.treePathNewFirst
                 case M.lookup ruleIndex matchesM of
                     Nothing -> Gtk.treeViewSetCursor treeView pathFst Gtk.noTreeViewColumn False
-                    Just m -> if M.size m == 0 
+                    Just m -> if M.size m == 0
                                 then Gtk.treeViewSetCursor treeView pathFst Gtk.noTreeViewColumn False
                                 else return ()
             else return ()
@@ -533,8 +539,8 @@ executeStep treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel
 
 
 type SquareSelection = Maybe (Double,Double,Double,Double)
-setCanvasCallBacks :: Gtk.DrawingArea 
-                   -> IORef GraphState 
+setCanvasCallBacks :: Gtk.DrawingArea
+                   -> IORef GraphState
                    -> IORef (G.Graph Info Info )
                    -> Maybe (GraphState -> SquareSelection -> G.Graph Info Info -> Render ())
                    -> IORef (Maybe Gtk.DrawingArea) -> IORef (Maybe (IORef GraphState))
@@ -543,7 +549,7 @@ setCanvasCallBacks canvas state refGraph drawMethod focusedCanvas focusedStateIO
     oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
     squareSelection <- newIORef Nothing   -- selection box : Maybe (x1,y1,x2,y2)
     case drawMethod of
-        Just draw -> do 
+        Just draw -> do
             on canvas #draw $ \context -> do
                 es <- readIORef state
                 rg <- readIORef refGraph
@@ -560,8 +566,8 @@ setCanvasCallBacks canvas state refGraph drawMethod focusedCanvas focusedStateIO
         writeIORef focusedCanvas $ Just canvas
         writeIORef focusedStateIORef $ Just state
         return False
-    return (oldPoint,squareSelection) 
-           
+    return (oldPoint,squareSelection)
+
 loadProductions :: Gtk.TreeStore -> IORef (G.Graph Info Info) -> IORef (M.Map Int32 GraphState) -> IORef (M.Map Int32 NacInfo) -> IORef (M.Map Int32 [(String,Int32)]) -> IORef (M.Map Int32 TGMProduction) -> IO ()
 loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap = do
     typeG <- readIORef typeGraph
@@ -581,8 +587,8 @@ loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap 
 -- process matches and
 -- this function should be executed inside a thread
 findMatches :: Gtk.TreeStore
-            -> IORef GraphState 
-            -> IORef (G.Graph Info Info) 
+            -> IORef GraphState
+            -> IORef (G.Graph Info Info)
             -> IORef (M.Map Int32 NacInfo)
             -> IORef (M.Map Int32 [(String,Int32)])
             -> IORef (M.Map Int32 (M.Map Int32 Match))
@@ -604,27 +610,31 @@ findMatches store hostState typeGraph nacInfoMap nacIDListMap matchesMap product
     forM_ (M.toList matchesM) $ \(rid,mM) -> do
         mk <- return $ M.keys mM
         numMatches <- return $ length mk
-        matchesEntries <- forM (take 100 mk) $ \mid -> return ("match " ++ (show mid), mid, 2, rid)
-        entries <- return $! if numMatches > 100
-                                then 
-                                    let commentEntry = ((show numMatches) ++ " matches (showing 1-100)", 0, 3, rid)
-                                        nextPageEntry = ("next " ++ (show $ min 100 (numMatches - 100) ) ++ " matches",0, 4, rid) 
-                                    in  commentEntry:nextPageEntry:matchesEntries
-                                else 
-                                    let commentEntry = ((show numMatches) ++ " matches", 0, 3, rid)
-                                    in commentEntry:matchesEntries
+        matchesEntries <- forM (take 100 mk) $ \mid -> return ("match " ++ (show mid), mid, 2, rid, "")
+        entries <- return $!  if numMatches > 100 then
+                                let nextPageEntry = ("next " ++ (show $ min 100 (numMatches - 100) ) ++ " matches",0, 4, rid, "")
+                                in  nextPageEntry:matchesEntries
+                              else
+                                matchesEntries
+        comment <- return $ " -> " ++ (show numMatches) ++ case numMatches of
+                                                            1 -> " match"
+                                                            _ -> " matches" ++ (if numMatches > 100 then " (showing 1-100)" else "")
         Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
             ruleIter <- getRuleIter store rid
-            case ruleIter of 
+            case ruleIter of
                 Nothing -> return ()
                 Just iter -> do
+                    realName <- Gtk.treeModelGetValue store iter 4 >>= fromGValue >>= return . fromMaybe "" :: IO String
+                    newName <- return $ realName ++ comment
+                    nngv <- toGValue (Just newName)
+                    #set store iter [0] [nngv]
                     forM_ entries $ \entry -> do
-                        entryIter <- Gtk.treeStoreAppend store (Just iter) 
+                        entryIter <- Gtk.treeStoreAppend store (Just iter)
                         storeSetGraphEntry store entryIter entry
                     return ()
             return False
         return ()
-    writeIORef matchesMap matchesM 
+    writeIORef matchesMap matchesM
 
 
 -- apply matches according to the selected level on the treeView.
@@ -632,9 +642,9 @@ findMatches store hostState typeGraph nacInfoMap nacIDListMap matchesMap product
 -- select a prodution to get random matches of that production
 -- select a match to no randomness
 -- the selected level is given by currentMatchIndex and currentRuleIndex
-applyMatchAccordingToLevel :: IORef GraphState 
-                            -> IORef (M.Map Int32 GraphState) 
-                            -> IORef (M.Map Int32 (M.Map Int32 Match)) 
+applyMatchAccordingToLevel :: IORef GraphState
+                            -> IORef (M.Map Int32 GraphState)
+                            -> IORef (M.Map Int32 (M.Map Int32 Match))
                             -> IORef (M.Map Int32 TGMProduction)
                             -> IORef Int32
                             -> IORef Int32
@@ -644,14 +654,14 @@ applyMatchAccordingToLevel hostState statesMap matchesMap productionMap currentM
     prodMap  <- readIORef productionMap
     mIndex <- readIORef currentMatchIndex
     rIndex <- readIORef currentRuleIndex
-    
+
     let prod = M.lookup rIndex prodMap
         matches = fromMaybe M.empty $ M.lookup rIndex matchesM
         match = M.lookup mIndex matches
 
     -- apply match according to the level selected
-    case (prod,match, rIndex, mIndex) of 
-        (Just p, Just m, _, _) -> do  -- specified rule, specified match           
+    case (prod,match, rIndex, mIndex) of
+        (Just p, Just m, _, _) -> do  -- specified rule, specified match
             applyMatch hostState statesMap rIndex p m
 
         (Just p,Nothing, _, -1) -> do -- specified rule, random match
@@ -673,15 +683,15 @@ applyMatchAccordingToLevel hostState statesMap matchesMap productionMap currentM
                 else do
                     index <- randomRIO (0,(length matchesEntries)-1)
                     let (rIndex, m) = matchesEntries!!index
-                        p = fromJust $ M.lookup rIndex prodMap                        
+                        p = fromJust $ M.lookup rIndex prodMap
                     applyMatch hostState statesMap rIndex p m
         _ -> return ()
 
-    
+
 
 applyMatch :: IORef GraphState -> IORef (M.Map Int32 GraphState) -> Int32 -> TGMProduction -> Match -> IO ()
 applyMatch hostState statesMap rIndex p m = do
-    let (k,n,f,g) = DPO.calculateDPO m p        
+    let (k,n,f,g) = DPO.calculateDPO m p
         fMapping = TGM.mapping f
         gMapping = TGM.mapping g
         nMapping = TGM.mapping n
@@ -703,7 +713,7 @@ applyMatch hostState statesMap rIndex p m = do
 
         gNodesInfo = map (\(k,n) -> (apply fNodeRelation' k (G.NodeId (-1)), G.nodeInfo n)) (G.nodeMap gGraph)
         gEdgesInfo = map (\(k,e) -> (apply fEdgeRelation' k (G.EdgeId (-1)), G.edgeInfo e)) (G.edgeMap gGraph)
-        
+
         dNodesInfo = map (\(k,n) -> (k, G.nodeInfo n)) (G.nodeMap dGraph)
         dEdgesInfo = map (\(k,e) -> (k, G.edgeInfo e)) (G.edgeMap dGraph)
         dNodesInfo' = map (\(k,ni) -> (apply gNodeRelation k (G.NodeId (-1)), replaceInfo (k,ni) gNodesInfo) ) dNodesInfo
@@ -711,7 +721,7 @@ applyMatch hostState statesMap rIndex p m = do
 
         hNodesInfo = map (\(k,n) -> (k, replaceInfo (k, G.nodeInfo n) dNodesInfo')) (G.nodeMap hGraph)
         hEdgesInfo = map (\(k,e) -> (k, replaceInfo (k, G.edgeInfo e) dEdgesInfo')) (G.edgeMap hGraph)
-        
+
         hGraph' = foldr (\(k,i) g -> G.updateNodePayload k g (\ni -> i)) hGraph hNodesInfo
         hGraph'' = foldr (\(k,i) g -> G.updateEdgePayload k g (\ei -> i)) hGraph' hEdgesInfo
         hNodeMap' = map (\(k,n) -> (k, GMker.nodeFromJust n)) (G.nodeMap hGraph'')
@@ -745,7 +755,7 @@ applyMatch hostState statesMap rIndex p m = do
         addedNodeGIs = map (\(k,kr) -> (k,fromJust $ M.lookup (fromEnum kr) rgiN)) addedNodeIds'
         addedEdgeGIs = map (\(k,kr) -> (k,fromJust $ M.lookup (fromEnum kr) rgiE)) addedEdgeIds'
 
-        -- reposition added elements 
+        -- reposition added elements
         addedEdgeGIs' = calculateEdgesPositions addedEdgeIds addedEdgeGIs dGraph hGraph gNodeRelation
         addedNodeGIs' = calculateNodesPositions addedNodeIds' addedNodeGIs rGraph rgiN dgiN' nNodeRelation
 
@@ -756,15 +766,15 @@ applyMatch hostState statesMap rIndex p m = do
     writeIORef hostState hState
 
 calculateEdgesPositions :: [G.EdgeId] -> [(G.EdgeId, EdgeGI)] -> G.Graph (Maybe Info) (Maybe Info) -> G.Graph (Maybe Info) (Maybe Info) -> R.Relation G.NodeId -> [(G.EdgeId, EdgeGI)]
-calculateEdgesPositions addedEdgeIds addedEdgeGIs dGraph hGraph gNodeRelation = 
+calculateEdgesPositions addedEdgeIds addedEdgeGIs dGraph hGraph gNodeRelation =
     addedEdgeGIs'
-    where 
+    where
         -- 1. get src and tgt nodes from each edge in intermediary graph D;
         addedEdges = M.fromList $ map (\eid -> (eid, fromJust $ G.lookupEdge eid hGraph) ) addedEdgeIds
         gNodeRelation' = R.inverseRelation gNodeRelation
         addedEdgesPeerIds = M.map (\e -> (R.apply gNodeRelation' $ G.sourceId e, R.apply gNodeRelation' $ G.targetId e)) addedEdges
         -- 2. find what would be the added edges positions in D
-        (_,edgesPositions) = M.foldrWithKey (\eid (srcl,tgtl) (g,m) ->  case (srcl,tgtl) of 
+        (_,edgesPositions) = M.foldrWithKey (\eid (srcl,tgtl) (g,m) ->  case (srcl,tgtl) of
                                                         (src:_,tgt:_)-> let pos = if src == tgt then newLoopPos src g else newEdgePos src tgt g
                                                                             newId = head $ G.newEdges g
                                                                             g' = G.insertEdge newId src tgt g
@@ -786,7 +796,7 @@ calculateNodesPositions addedNodeIds' addedNodeGIs rGraph rgiN dgiN' nNodeRelati
         nodeIsPreserved n = (infoOperation $ G.nodeInfo n) == Preserve
         preservedNodes = filter nodeIsPreserved (G.nodes rGraph)
         anchorNodesInR = map (\(k,kr,(n,c)) -> let  nextNodes = filter nodeIsPreserved $ map fst $ [tgt | (_,_,tgt) <- G.outgoingEdges c]
-                                                    prevNodes = filter nodeIsPreserved $ map fst $ [src | (src,_,_) <- G.incomingEdges c] 
+                                                    prevNodes = filter nodeIsPreserved $ map fst $ [src | (src,_,_) <- G.incomingEdges c]
                                                     anchorNodesIds = map G.nodeId $ case ( nextNodes ++ prevNodes, preservedNodes) of
                                                         (n1:n2:_,_) -> [n1,n2]
                                                         ([n],_) -> [n]
@@ -798,11 +808,11 @@ calculateNodesPositions addedNodeIds' addedNodeGIs rGraph rgiN dgiN' nNodeRelati
         anchorNodesInR' = filter (\(k,kr,krA) -> not $ null krA) anchorNodesInR
         -- 2. calculate the relative position between each added node and it's anchor
         subPoint (a,b) (c,d) = (a-c,b-d)
-        positionLists = map (\(k,kr,krAs) -> 
+        positionLists = map (\(k,kr,krAs) ->
                             let
                                 posN = position $ getNodeGI (fromEnum kr) rgiN
-                                posAs = map (\krA -> position $ getNodeGI (fromEnum krA) rgiN) krAs 
-                                posList = case posAs of 
+                                posAs = map (\krA -> position $ getNodeGI (fromEnum krA) rgiN) krAs
+                                posList = case posAs of
                                     [posA] -> [posN, posA]
                                     [posA1,posA2] -> [posN, posA1, posA2]
                                     _ -> []
@@ -810,14 +820,14 @@ calculateNodesPositions addedNodeIds' addedNodeGIs rGraph rgiN dgiN' nNodeRelati
                             ) anchorNodesInR'
         -- 3. calculate position that the node should have in H
         anchorNodesInH = map (\(k,krAs,posF) -> (k,map (R.apply nNodeRelation) krAs,posF)) positionLists
-        addedNodePositions = M.fromList 
+        addedNodePositions = M.fromList
                                 $ map (\(k,kAs,posL) -> let posAs = case kAs of
                                                                 [(kA1:_),(kA2:_)] -> map (\kA -> position <$> M.lookup kA dgiN')  (map head kAs)
                                                                 [kA:_] -> [position <$> M.lookup kA dgiN']
                                                                 _ -> []
                                                             posN = case (posL,posAs) of
                                                                 ([pN,pA],[Just pA']) -> Just $ addPoint pA' (subPoint pN pA)
-                                                                ([pN,pA1,pA2],[Just pA1', Just pA2']) -> 
+                                                                ([pN,pA1,pA2],[Just pA1', Just pA2']) ->
                                                                                 let angle1 = angle pA1 pA2
                                                                                     angle2 = angle pA1' pA2'
                                                                                     (a,d) = toPolarFrom pA1 pN
@@ -828,7 +838,7 @@ calculateNodesPositions addedNodeIds' addedNodeGIs rGraph rgiN dgiN' nNodeRelati
                                                         ) anchorNodesInH
         -- 4. add to GI
         addedNodeGIs' = map (\(k,gi) -> let newPos = M.lookup k addedNodePositions
-                                            gi' = case newPos of 
+                                            gi' = case newPos of
                                                     Just (Just pos) -> gi {position = pos}
                                                     _ -> gi
                                             gi'' = repositionNode gi' (M.mapKeys fromEnum dgiN',M.empty)
@@ -839,26 +849,28 @@ calculateNodesPositions addedNodeIds' addedNodeGIs rGraph rgiN dgiN' nNodeRelati
 {-| ExecGraphEntry
     A tuple representing what is showed in each node of the tree in the treeview
     It contains the informations:
-    * name,
+    * name, - what is displayed, can have aditional information
     * id (case type is 2) or offset (case type is 4 or 5)
-    * type (0 - topic, 1 - rule, 2 - rule match, 3 - comment about the numer of matches, 4 - next, 5 - previous),
-    * parent id (used if type is >= 2).
+    * type (0 - topic, 1 - rule, 2 - rule match, 4 - next, 5 - previous),
+    * parent id (used if type is >= 2),
+    * real name, - used for keeping the rule names and then getting it after
 -}
-type ExecGraphEntry = (String, Int32, Int32, Int32)
+type ExecGraphEntry = (String, Int32, Int32, Int32, String)
 
 -- | set the ExecGraphStore in a position given by an iter in the TreeStore
 storeSetGraphEntry :: Gtk.TreeStore -> Gtk.TreeIter -> ExecGraphEntry -> IO ()
-storeSetGraphEntry store iter (n,i,t,p) = do
+storeSetGraphEntry store iter (n,i,t,p,rn) = do
     gvn <- toGValue (Just n)
     gvi <- toGValue i
     gvt <- toGValue t
     gvp <- toGValue p
-    #set store iter [0,1,2,3] [gvn,gvi,gvt,gvp]
+    gvrn <- toGValue (Just rn)
+    #set store iter [0,1,2,3,4] [gvn,gvi,gvt,gvp,gvrn]
 
 getFirstRuleIter :: Gtk.TreeStore -> IO (Maybe Gtk.TreeIter)
 getFirstRuleIter store = do
     (valid,rootIter) <- Gtk.treeModelGetIterFirst store
-    if valid 
+    if valid
         then do
             (valid,childIter) <- Gtk.treeModelIterChildren store (Just rootIter)
             if valid
@@ -866,7 +878,7 @@ getFirstRuleIter store = do
                 else return Nothing
         else do
             rootIter <- Gtk.treeStoreAppend store Nothing
-            storeSetGraphEntry store rootIter ("Grammar", (-1), 0, (-1))
+            storeSetGraphEntry store rootIter ("Grammar", (-1), 0, (-1), "Grammar")
             return Nothing
 
 getRuleIter :: Gtk.TreeStore -> Int32 -> IO (Maybe Gtk.TreeIter)
@@ -875,12 +887,12 @@ getRuleIter store rid = do
     case mIter of
         Nothing -> return Nothing
         Just iter -> getRuleIter' store rid iter
-            
+
 
 getRuleIter' :: Gtk.TreeStore -> Int32 -> Gtk.TreeIter -> IO (Maybe Gtk.TreeIter)
 getRuleIter' store rid iter = do
     id <- Gtk.treeModelGetValue store iter 1 >>= fromGValue :: IO Int32
-    if id == rid 
+    if id == rid
         then return $ Just iter
         else do
             continue <- Gtk.treeModelIterNext store iter
@@ -899,16 +911,16 @@ updateTreeStore store entry = do
             (valid,rootIter) <- Gtk.treeModelGetIterFirst store
             iter <- Gtk.treeStoreAppend store (Just rootIter)
             storeSetGraphEntry store iter entry
-        Just iter -> updateTreeStore' store iter entry        
+        Just iter -> updateTreeStore' store iter entry
 
 updateTreeStore' :: Gtk.TreeStore -> Gtk.TreeIter -> ExecGraphEntry -> IO ()
-updateTreeStore' store iter entry@(n,i,t,p) = do
+updateTreeStore' store iter entry@(n,i,t,p,rn) = do
     cid <- Gtk.treeModelGetValue store iter 1 >>= fromGValue :: IO Int32
     ct  <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
     if ct == t && cid == i
         then storeSetGraphEntry store iter entry
         else case t of
-            1 -> do 
+            1 -> do
                 (valid,rootIter) <- Gtk.treeModelIterParent store iter
                 if valid
                     then updateInList rootIter
@@ -931,7 +943,6 @@ updateTreeStore' store iter entry@(n,i,t,p) = do
                     if valid
                         then updateInList parentIter
                         else return ()
-            3 -> insertMiscInRule (cid==p) 0
             4 -> insertMiscInRule (cid==p) 1
             5 -> insertMiscInRule (cid==p) 1
             _ -> return ()
@@ -954,8 +965,8 @@ updateTreeStore' store iter entry@(n,i,t,p) = do
                     if valid
                         then updateTreeStore' store iter entry
                         else return ()
-        
-            
+
+
 -- | remove a rule entry from treeStore.
 removeFromTreeStore :: Gtk.TreeStore -> Int32 -> IO ()
 removeFromTreeStore store index = do
@@ -968,12 +979,12 @@ removeFromTreeStore' :: Gtk.TreeStore -> Gtk.TreeIter -> Int32 -> IO ()
 removeFromTreeStore' store iter index = do
     cindex <- Gtk.treeModelGetValue store iter 1 >>= fromGValue :: IO Int32
     if cindex == index
-        then do 
+        then do
             Gtk.treeStoreRemove store iter
             return ()
-        else do 
+        else do
             continue <- Gtk.treeModelIterNext store iter
-            if continue 
+            if continue
                 then removeFromTreeStore' store iter index
                 else return ()
 
@@ -990,14 +1001,14 @@ removeTrashFromTreeStore' :: Gtk.TreeStore -> Gtk.TreeIter -> [Int32] -> IO ()
 removeTrashFromTreeStore' store iter validIndexes = do
     index <- Gtk.treeModelGetValue store iter 1 >>= fromGValue :: IO Int32
     continue <- case index `elem` validIndexes of
-        True -> Gtk.treeModelIterNext store iter                    
+        True -> Gtk.treeModelIterNext store iter
         False -> Gtk.treeStoreRemove store iter
     if continue
         then removeTrashFromTreeStore' store iter validIndexes
         else return ()
 
 
--- | get the GraphStates that are referenciated by the treeStore    
+-- | get the GraphStates that are referenciated by the treeStore
 treeStoreGetRules :: Gtk.TreeStore -> IORef (M.Map Int32 GraphState) -> IO [(Int32,GraphState)]
 treeStoreGetRules store statesMap = do
     mIter <- getFirstRuleIter store
@@ -1042,7 +1053,7 @@ removeMatchesFromTreeStore' store iter = do
     if continue
         then removeMatchesFromTreeStore' store iter
         else return ()
-        
+
 -- | clear current level of entries from the treeStore
 treeStoreClearCurrrentLevel :: Gtk.TreeStore -> Gtk.TreeIter -> IO ()
 treeStoreClearCurrrentLevel store iter = do
@@ -1050,4 +1061,3 @@ treeStoreClearCurrrentLevel store iter = do
     if continue
         then treeStoreClearCurrrentLevel store iter
         else return ()
-         

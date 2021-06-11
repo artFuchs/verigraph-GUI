@@ -114,8 +114,8 @@ startGUI = do
                                                 focusedCanvas focusedStateIORef
 
   -- start executor module
-  execStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt]
-  Exec.updateTreeStore execStore ("Rule0", 2, 1, 0)
+  execStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt, gtypeString]
+  Exec.updateTreeStore execStore ("Rule0", 2, 1, 0, "Rule0")
   (execPane, execCanvas, execNacCBox, execState, execStarted, execNacListMap) <- Exec.buildExecutor execStore statesMap typeGraph nacInfoMap focusedCanvas focusedStateIORef
 
   -- start analysis module
@@ -146,7 +146,7 @@ startGUI = do
     a  <- Gtk.treeModelGetValue editStore iter 4 >>= fromGValue :: IO Bool
     v  <- Gtk.treeModelGetValue editStore iter 5 >>= fromGValue :: IO Bool
     case (v,t) of
-      (True,3) -> Exec.updateTreeStore execStore (n,id,1,0)
+      (True,3) -> Exec.updateTreeStore execStore (n,id,1,0,n)
       (True,4) -> do
         (valid,parent) <- Gtk.treeModelIterParent editStore iter
         if valid
