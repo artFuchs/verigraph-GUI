@@ -123,6 +123,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     matchesMap <- newIORef (M.empty :: M.Map Int32 (M.Map Int32 Match))
     currentMatchIndex <- newIORef (-1 :: Int32) -- index of current match
     currentRuleIndex   <- newIORef (-1 :: Int32) -- index of current selecte Rule
+    currentMatchedElements <- newIORef (([],[]) :: ([G.NodeId],[G.EdgeId]))
 
     execStarted  <- newIORef False   -- if execution has already started
     execThread  <- newIORef Nothing  -- thread for execution process
@@ -142,32 +143,39 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
 
     -- canvas
     setCanvasCallBacks ruleCanvas ruleState typeGraph (Just drawRuleGraph) focusedCanvas focusedStateIORef
-    setCanvasCallBacks lCanvas lState kGraph (Just drawRuleSideGraph) focusedCanvas focusedStateIORef
-    setCanvasCallBacks rCanvas rState kGraph (Just drawRuleSideGraph) focusedCanvas focusedStateIORef
+    setCanvasCallBacks lCanvas lState typeGraph (Just drawHostGraph) focusedCanvas focusedStateIORef
+    setCanvasCallBacks rCanvas rState typeGraph (Just drawHostGraph) focusedCanvas focusedStateIORef
 
 
     (_,mainSqrSel) <- setCanvasCallBacks mainCanvas hostState typeGraph Nothing focusedCanvas focusedStateIORef
-    on  mainCanvas #draw $ \context -> do
-        es <- readIORef hostState
-        tg <- readIORef typeGraph
+    on mainCanvas #draw $ \context -> do
+        st <- readIORef hostState
         sq <- readIORef mainSqrSel
-        rIndex <- readIORef currentRuleIndex
-        mIndex <- readIORef currentMatchIndex
-        matchesM <- readIORef matchesMap
-        matchedElems <- return $
-                            let matches = fromMaybe M.empty $ M.lookup rIndex matchesM
-                                match = M.lookup mIndex matches
-                            in case match of
-                                Nothing -> (M.empty,M.empty)
-                                Just m ->  (nMapping,eMapping)
-                                        where
-                                            mapping = TGM.mapping m
-                                            nRel = GM.nodeRelation mapping
-                                            eRel = GM.edgeRelation mapping
-                                            nMapping = R.mapping $ R.inverseRelation nRel
-                                            eMapping = R.mapping $ R.inverseRelation eRel
-        renderWithContext context $ drawHostGraphWithMatches es sq tg matchedElems
+        matchedElems <- readIORef currentMatchedElements
+        renderWithContext context $ drawGraphHighlighting st sq matchedElems
         return False
+
+    -- on  mainCanvas #draw $ \context -> do
+    --     es <- readIORef hostState
+    --     tg <- readIORef typeGraph
+    --     sq <- readIORef mainSqrSel
+    --     rIndex <- readIORef currentRuleIndex
+    --     mIndex <- readIORef currentMatchIndex
+    --     matchesM <- readIORef matchesMap
+    --     matchedElems <- return $
+    --                         let matches = fromMaybe M.empty $ M.lookup rIndex matchesM
+    --                             match = M.lookup mIndex matches
+    --                         in case match of
+    --                             Nothing -> (M.empty,M.empty)
+    --                             Just m ->  (nMapping,eMapping)
+    --                                     where
+    --                                         mapping = TGM.mapping m
+    --                                         nRel = GM.nodeRelation mapping
+    --                                         eRel = GM.edgeRelation mapping
+    --                                         nMapping = R.mapping $ R.inverseRelation nRel
+    --                                         eMapping = R.mapping $ R.inverseRelation eRel
+    --     renderWithContext context $ drawHostGraphWithMatches es sq tg matchedElems
+    --     return False
 
     (_,nacSqrSel)<- setCanvasCallBacks nacCanvas nacState typeGraph Nothing focusedCanvas focusedStateIORef
     on nacCanvas #draw $ \context -> do
@@ -285,10 +293,8 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
 
                     _ -> return (-1,-1)
 
-                -- writeIORef currentMatchIndex mIndex
-                statesM <- readIORef statesMap
-                writeIORef currentMatchIndex mIndex
                 --load rule
+                statesM <- readIORef statesMap
                 let es = fromMaybe emptyState $ M.lookup rIndex statesM
                     g = stateGetGraph es
                     (l,k,r) = GMker.graphToRuleGraphs g
@@ -297,28 +303,60 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                 if (currRIndex == rIndex)
                     then return ()
                     else do
-                        -- split GIs into left, right and middle GIs
+                        lcontext <- Gtk.widgetGetPangoContext lCanvas
+                        rcontext <- Gtk.widgetGetPangoContext rCanvas
+                        -- split layouts into left, right and middle layouts and change the labels to include the id on the mapping
                         let lngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds l)) ngiM
                             legiM = M.filterWithKey (\k a -> (G.EdgeId k) `elem` (G.edgeIds l)) egiM
                             rngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds r)) ngiM
                             regiM = M.filterWithKey (\k a -> (G.EdgeId k) `elem` (G.edgeIds r)) egiM
-                            (_,lgi) = adjustDiagrPosition (l,(lngiM,legiM))
-                            (_,rgi) = adjustDiagrPosition (r,(rngiM,regiM))
+                            -- show ids of elements that belongs to LHS
+                            nmap = M.fromList $ map (\k -> (k, "[" ++ (show . fromEnum $ k) ++ "]")) (G.nodeIds l)
+                            emap = M.fromList $ map (\k -> (k, "[" ++ (show . fromEnum $ k) ++ "]")) (G.edgeIds l)
+                        lst <- setInfoExtra (stateSetGraph l . stateSetGI (lngiM,legiM) $ es) (nmap,emap) lcontext
+                        rst <- setInfoExtra (stateSetGraph r . stateSetGI (rngiM,regiM) $ es) (nmap,emap) rcontext
+                            -- adjust positions of the elements of the diagraphs
+                        let (_,lgi) = adjustDiagrPosition (stateGetGraph lst, stateGetGI lst)
+                            (_,rgi) = adjustDiagrPosition (stateGetGraph rst, stateGetGI rst)
                             (_,gi') = adjustDiagrPosition (g,(ngiM,egiM))
                         writeIORef ruleState $ stateSetGI gi' es
-                        writeIORef lState $ stateSetGraph l . stateSetGI lgi $ es
-                        writeIORef rState $ stateSetGraph r . stateSetGI rgi $ es
+                        writeIORef lState $ stateSetGI lgi $ lst
+                        writeIORef rState $ stateSetGI rgi $ rst
                         writeIORef lStateOrig $ stateSetGraph l . stateSetGI (lngiM,legiM) $ es
                         writeIORef kGraph k
                         writeIORef currentRuleIndex rIndex
 
-
+                -- load rule NAC
                 nacListM <- readIORef nacIDListMap
                 let nacList = M.lookup rIndex nacListM
 
                 Gtk.comboBoxTextRemoveAll nacCBox
                 forM_ (fromMaybe [] nacList) $ \(str,index) -> Gtk.comboBoxTextAppendText nacCBox (T.pack str)
                 Gtk.comboBoxSetActive nacCBox 0
+
+                -- load match
+                hostSt <- readIORef hostState
+                matchesM <- readIORef matchesMap
+                context <- Gtk.widgetGetPangoContext mainCanvas
+                let matches = fromMaybe M.empty $ M.lookup rIndex matchesM
+                    match = M.lookup mIndex matches
+                    mappings = case match of
+                        Nothing -> (M.empty,M.empty)
+                        Just m ->  (nMapping',eMapping')
+                                where
+                                    mapping = TGM.mapping m
+                                    nRel = GM.nodeRelation mapping
+                                    eRel = GM.edgeRelation mapping
+                                    nMapping = R.mapping $ R.inverseRelation nRel
+                                    eMapping = R.mapping $ R.inverseRelation eRel
+                                    nMapping' = M.map (\as -> "[" ++ (concat $ map (show . fromEnum) as) ++ "]" ) nMapping
+                                    eMapping' = M.map (\as -> "[" ++ (concat $ map (show . fromEnum) as) ++ "]" ) eMapping
+                hostSt' <- setInfoExtra hostSt mappings context
+                writeIORef hostState hostSt'
+                writeIORef currentMatchedElements (M.keys (fst mappings), M.keys (snd mappings))
+                statesM <- readIORef statesMap
+                writeIORef currentMatchIndex mIndex
+
 
                 Gtk.widgetQueueDraw lCanvas
                 Gtk.widgetQueueDraw rCanvas
