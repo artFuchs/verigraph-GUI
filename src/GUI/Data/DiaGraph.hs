@@ -1,5 +1,5 @@
-module GUI.Data.DiaGraph
-( DiaGraph
+module GUI.Data.DiaGraph(
+  DiaGraph
 , empty
 , isDiaGraphEqual
 , diagrDisjointUnion
