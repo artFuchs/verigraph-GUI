@@ -136,6 +136,23 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     writeIORef execDelay $ round (initExecDelay * 1000000)
 
     -- callbacks ----------------------------------------------------------------------------------------------------------------
+
+
+    -- some callbacks called by multiple events ---------------------------------------------------------------------------------
+    let step = do
+            started <- readIORef execStarted
+            processing <- readIORef processingMatches
+            if started || processing
+                then return ()
+                else do
+                    execT <- forkFinally
+                                (do writeIORef execStarted True
+                                    executeStep treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel  typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches)
+                                (\_ -> writeIORef execStarted False)
+                    writeIORef execThread $ Just execT
+
+    -- Events and their callbacks -----------------------------------------------------------------------------------------------
+
     -- hide rule viewer panel when colse button is pressed
     on hideRVBtn #pressed $ do
         closePos <- get execPane #maxPosition
@@ -193,7 +210,6 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         return ()
 
     -- when select a rule, change their states
-    treeViewOccupied <- newIORef False
     on treeView #cursorChanged $ do
         selection <- Gtk.treeViewGetSelection treeView
         (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
@@ -209,88 +225,12 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                         ri <- Gtk.treeModelGetValue model iter 3 >>= fromGValue :: IO Int32
                         rm <- Gtk.treeModelGetValue model iter 1 >>= fromGValue :: IO Int32
                         return (ri,rm)
-
-                    4 -> do -- show next 100 items or so
+                    4 -> do
                         ri <- Gtk.treeModelGetValue model iter 3 >>= fromGValue :: IO Int32
-                        occ <- readIORef treeViewOccupied
-                        if occ
-                            then return ()
-                            else do
-                                matchesM <- readIORef matchesMap
-                                case M.lookup ri matchesM of
-                                    Nothing -> return ()
-                                    Just nM -> do
-                                        writeIORef treeViewOccupied True
-                                        offset <- Gtk.treeModelGetValue model iter 1 >>= fromGValue :: IO Int32
-                                        let numMatches = M.size nM
-                                            offset' = 100+(fromIntegral offset)
-                                            matchesL = drop offset' $ M.toList nM
-                                            comment = " -> " ++ (show numMatches) ++ " matches (showing " ++ (show $ offset'+1) ++ "-" ++ (show $ min numMatches (offset'+100)) ++ ")"
-                                            newNextEntry = if numMatches-offset' > 100
-                                                            then Just ( "next " ++ (show $ min (numMatches-offset'-100) 100 ) ++ " matches", fromIntegral offset', 4, ri, "")
-                                                            else Nothing
-                                            newPreviousEntry = ("previous 100 matches", fromIntegral offset', 5, ri, "")
-
-                                        (_,ruleIter) <- Gtk.treeModelIterParent store iter
-                                        (_,firstChildIter) <- Gtk.treeModelIterChildren store (Just ruleIter)
-                                        treeStoreClearCurrrentLevel store firstChildIter
-
-                                        -- set the comment of number of matches to the rule name
-                                        realRuleName <- Gtk.treeModelGetValue store ruleIter 4 >>= fromGValue >>= return . fromMaybe "" :: IO String
-                                        newNameGV <- toGValue $ Just (realRuleName ++ comment)
-                                        #set store ruleIter [0] [newNameGV]
-
-                                        -- add the "next matches" and "previous matches" entries
-                                        case newNextEntry of
-                                            Nothing    -> return ()
-                                            Just entry -> updateTreeStore store entry
-                                        updateTreeStore store newPreviousEntry
-                                        forM_ (take 100 matchesL) $ \(mid,m) -> updateTreeStore store ("match " ++ (show mid), mid, 2, ri, "")
-
-                                        writeIORef treeViewOccupied False
                         return (ri,-1)
-
-                    5 -> do -- show previous 100
+                    5 -> do
                         ri <- Gtk.treeModelGetValue model iter 3 >>= fromGValue :: IO Int32
-                        occ <- readIORef treeViewOccupied
-                        if occ
-                            then return ()
-                            else do
-                                matchesM <- readIORef matchesMap
-                                case M.lookup ri matchesM of
-                                    Nothing -> return ()
-                                    Just nM -> do
-                                        writeIORef treeViewOccupied True
-                                        offset <- Gtk.treeModelGetValue model iter 1 >>= fromGValue :: IO Int32
-                                        let numMatches = M.size nM
-                                            offset' = (fromIntegral offset) - 100
-                                            matchesL = drop offset' $ M.toList nM
-                                            comment = " -> " ++ (show numMatches) ++ " matches (showing " ++ (show $ offset'+1) ++ "-" ++ (show $ min numMatches (offset'+100)) ++ ")"
-                                            newNextEntry = ( "next 100 matches", (fromIntegral offset'), 4, ri, "")
-                                            newPreviousEntry = if offset' >= 100
-                                                                then Just ("previous 100 matches", (fromIntegral offset'), 5, ri, "")
-                                                                else Nothing
-
-                                        (parentValid,ruleIter) <- Gtk.treeModelIterParent store iter
-                                        (childValid,firstChildIter) <- Gtk.treeModelIterChildren store (Just ruleIter)
-                                        treeStoreClearCurrrentLevel store firstChildIter
-
-                                        -- set the comment of number of matches to the rule name
-                                        realRuleName <- Gtk.treeModelGetValue store ruleIter 4 >>= fromGValue >>= return . fromMaybe "" :: IO String
-                                        newNameGV <- toGValue $ Just (realRuleName ++ comment)
-                                        #set store ruleIter [0] [newNameGV]
-
-                                        -- add the "next matches" and "previous matches" entries
-                                        updateTreeStore store newNextEntry
-                                        case newPreviousEntry of
-                                            Nothing    -> return ()
-                                            Just entry -> updateTreeStore store entry
-                                        forM_ (take 100 matchesL) $ \(mid,m) -> updateTreeStore store ("match " ++ (show mid), mid, 2, ri, "")
-
-                                        writeIORef treeViewOccupied False
-
                         return (ri,-1)
-
                     _ -> return (-1,-1)
 
                 --load rule
@@ -383,18 +323,101 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                             let l = stateGetGraph les
                                 lgi = stateGetGI les
                             nacInfoM <- readIORef nacInfoMap
-                            (n,ngi) <- case M.lookup nacIndex nacInfoM of
-                                Nothing -> return (l,lgi)
+                            (nacdg,mergeM) <- case M.lookup nacIndex nacInfoM of
+                                Nothing -> return ((l,lgi),(M.empty,M.empty))
                                 Just nacInfo -> do
                                     context <- Gtk.widgetGetPangoContext nacCanvas
                                     tg <- readIORef typeGraph
-                                    (nacdg',mergeM') <- Nac.applyLhsChangesToNac l nacInfo (Just context)
-                                    writeIORef mergeMap $ Just mergeM'
-                                    return $ Nac.mountNACGraph (l,lgi) tg (nacdg',mergeM')
-                            let (_,ngi') = adjustDiagrPosition (n,ngi)
-                                nes = stateSetGI ngi' . stateSetGraph n $ emptyState
-                            writeIORef nacState nes
+                                    (nacdg,mergeM) <- Nac.applyLhsChangesToNac l nacInfo (Just context)
+                                    let nacdg' = Nac.mountNACGraph (l,lgi) tg (nacdg,mergeM)
+                                    return (nacdg',mergeM)
+                            context <- Gtk.widgetGetPangoContext nacCanvas
+                            let (nacG,ngi') = adjustDiagrPosition nacdg
+                                rNMapping = M.fromList $ map (\(a,b) -> (b,"[" ++ (show . fromEnum $ a) ++ "]") ) $ M.toList $ M.union (fst mergeM) $ M.fromList (map (\a -> (a,a)) $ G.nodeIds l)
+                                rEMapping = M.fromList $ map (\(a,b) -> (b,"[" ++ (show . fromEnum $ a) ++ "]") ) $ M.toList $ M.union (snd mergeM) $ M.fromList (map (\a -> (a,a)) $ G.edgeIds l)
+                                nst = stateSetGI ngi' . stateSetGraph nacG $ emptyState
+                            nst' <- setInfoExtra nst (rNMapping, rEMapping) context
+                            writeIORef mergeMap (Just mergeM)
+                            writeIORef nacState nst'
                             writeIORef currentNACIndex nacIndex
+                            Gtk.widgetQueueDraw nacCanvas
+
+    on treeView #rowActivated $ \path col -> do
+      (v,iter) <- Gtk.treeModelGetIter store path
+      if v then
+        do
+          t <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
+          case t of
+            1 -> step
+            2 -> step
+            3 -> step
+            4 -> do -- show next 100 items or so
+                  ri <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
+                  matchesM <- readIORef matchesMap
+                  case M.lookup ri matchesM of
+                      Nothing -> return ()
+                      Just nM -> do
+                          offset <- Gtk.treeModelGetValue store iter 1 >>= fromGValue :: IO Int32
+                          let numMatches = M.size nM
+                              offset' = 100+(fromIntegral offset)
+                              matchesL = drop offset' $ M.toList nM
+                              comment = " -> " ++ (show numMatches) ++ " matches (showing " ++ (show $ offset'+1) ++ "-" ++ (show $ min numMatches (offset'+100)) ++ ")"
+                              newNextEntry = if numMatches-offset' > 100
+                                              then Just ( "next " ++ (show $ min (numMatches-offset'-100) 100 ) ++ " matches", fromIntegral offset', 4, ri, "")
+                                              else Nothing
+                              newPreviousEntry = ("previous 100 matches", fromIntegral offset', 5, ri, "")
+
+                          (_,ruleIter) <- Gtk.treeModelIterParent store iter
+                          (_,firstChildIter) <- Gtk.treeModelIterChildren store (Just ruleIter)
+                          treeStoreClearCurrrentLevel store firstChildIter
+
+                          -- set the comment of number of matches to the rule name
+                          realRuleName <- Gtk.treeModelGetValue store ruleIter 4 >>= fromGValue >>= return . fromMaybe "" :: IO String
+                          newNameGV <- toGValue $ Just (realRuleName ++ comment)
+                          #set store ruleIter [0] [newNameGV]
+
+                          -- add the "next matches" and "previous matches" entries
+                          case newNextEntry of
+                              Nothing    -> return ()
+                              Just entry -> updateTreeStore store entry
+                          updateTreeStore store newPreviousEntry
+                          forM_ (take 100 matchesL) $ \(mid,m) -> updateTreeStore store ("match " ++ (show mid), mid, 2, ri, "")
+
+            5 -> do -- show previous 100
+                  ri <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
+                  matchesM <- readIORef matchesMap
+                  case M.lookup ri matchesM of
+                      Nothing -> return ()
+                      Just nM -> do
+                          offset <- Gtk.treeModelGetValue store iter 1 >>= fromGValue :: IO Int32
+                          let numMatches = M.size nM
+                              offset' = (fromIntegral offset) - 100
+                              matchesL = drop offset' $ M.toList nM
+                              comment = " -> " ++ (show numMatches) ++ " matches (showing " ++ (show $ offset'+1) ++ "-" ++ (show $ min numMatches (offset'+100)) ++ ")"
+                              newNextEntry = ( "next 100 matches", (fromIntegral offset'), 4, ri, "")
+                              newPreviousEntry = if offset' >= 100
+                                                  then Just ("previous 100 matches", (fromIntegral offset'), 5, ri, "")
+                                                  else Nothing
+
+                          (parentValid,ruleIter) <- Gtk.treeModelIterParent store iter
+                          (childValid,firstChildIter) <- Gtk.treeModelIterChildren store (Just ruleIter)
+                          treeStoreClearCurrrentLevel store firstChildIter
+
+                          -- set the comment of number of matches to the rule name
+                          realRuleName <- Gtk.treeModelGetValue store ruleIter 4 >>= fromGValue >>= return . fromMaybe "" :: IO String
+                          newNameGV <- toGValue $ Just (realRuleName ++ comment)
+                          #set store ruleIter [0] [newNameGV]
+
+                          -- add the "next matches" and "previous matches" entries
+                          updateTreeStore store newNextEntry
+                          case newPreviousEntry of
+                              Nothing    -> return ()
+                              Just entry -> updateTreeStore store entry
+                          forM_ (take 100 matchesL) $ \(mid,m) -> updateTreeStore store ("match " ++ (show mid), mid, 2, ri, "")
+            _ -> return ()
+      else return ()
+
+
 
     -- execution controls
     -- when stop button is pressed, reset the host graph to initial state
@@ -444,17 +467,8 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
 
 
     -- when the step button is pressed, apply the match that is selected
-    on stepBtn #pressed $ do
-        started <- readIORef execStarted
-        processing <- readIORef processingMatches
-        if started || processing
-            then return ()
-            else do
-                execT <- forkFinally
-                            (do writeIORef execStarted True
-                                executeStep treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel  typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches)
-                            (\_ -> writeIORef execStarted False)
-                writeIORef execThread $ Just execT
+    on stepBtn #pressed $ step
+
 
     on startBtn #pressed $ do
         started <- readIORef execStarted
@@ -478,6 +492,17 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     on execSpeedBtn #valueChanged $ do
         value <- Gtk.spinButtonGetValue execSpeedBtn
         writeIORef execDelay $ round (value * 1000000)
+
+
+
+
+
+
+
+
+
+
+
 
     #show executorPane
     return (executorPane, mainCanvas, nacCBox, hostState, execStarted, nacIDListMap)
