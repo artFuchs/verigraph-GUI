@@ -172,28 +172,6 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         renderWithContext context $ drawGraphHighlighting st sq matchedElems
         return False
 
-    -- on  mainCanvas #draw $ \context -> do
-    --     es <- readIORef hostState
-    --     tg <- readIORef typeGraph
-    --     sq <- readIORef mainSqrSel
-    --     rIndex <- readIORef currentRuleIndex
-    --     mIndex <- readIORef currentMatchIndex
-    --     matchesM <- readIORef matchesMap
-    --     matchedElems <- return $
-    --                         let matches = fromMaybe M.empty $ M.lookup rIndex matchesM
-    --                             match = M.lookup mIndex matches
-    --                         in case match of
-    --                             Nothing -> (M.empty,M.empty)
-    --                             Just m ->  (nMapping,eMapping)
-    --                                     where
-    --                                         mapping = TGM.mapping m
-    --                                         nRel = GM.nodeRelation mapping
-    --                                         eRel = GM.edgeRelation mapping
-    --                                         nMapping = R.mapping $ R.inverseRelation nRel
-    --                                         eMapping = R.mapping $ R.inverseRelation eRel
-    --     renderWithContext context $ drawHostGraphWithMatches es sq tg matchedElems
-    --     return False
-
     (_,nacSqrSel)<- setCanvasCallBacks nacCanvas nacState typeGraph Nothing focusedCanvas focusedStateIORef
     on nacCanvas #draw $ \context -> do
         es <- readIORef nacState
