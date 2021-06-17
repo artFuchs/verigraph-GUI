@@ -159,7 +159,7 @@ startEditor window store
       )
 
   -- "unpack" menuItems
-  let [newm,opn,svn,sva,eggx] = fileItems
+  let [newm,opn,svn,sva] = fileItems
       [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
       [zin,zut,z50,zdf,z150,z200,vdf] = viewItems
 
@@ -1282,17 +1282,7 @@ startEditor window store
       then afterSave store window graphStates changesIORefs fileName
       else return ()
 
-  -- export grammar to .ggx (AGG format)
-  eggx `on` #activate $ do
-    storeCurrentES window currentState storeIORefs nacInfoMap
-    context <- Gtk.widgetGetPangoContext canvas
-    updateAllNacs store graphStates nacInfoMap context
-    structs <- getStructsToSave store graphStates nacInfoMap
-    exportAs structs exportGGX window
-    return ()
-
   -- Edit Menu ---------------------------------------------------------------------------------------------------------------
-
   -- delete item
   on del #activate $ do
     es <- readIORef currentState
