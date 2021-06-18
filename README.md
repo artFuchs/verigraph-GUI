@@ -1,14 +1,15 @@
 # Verigraph-GUI
 
-A graph-grammar editor that's intended to be used in the [verigraph tool](https://github.com/Verites/verigraph) in the future.
-For now, it can export a .ggx file (default file format for AGG).
-The editor in this repository makes use of the module Data.Graphs from the Verigraph source.
+A graph-grammar editor that's uses some of the functionalities of [verigraph tool](https://github.com/Verites/verigraph).
+For now the editor can create typed-graph grammars and supports rules with NACs.
 
-# Important
+Verigraph-GUI have a integrated simulator that lets the user apply rules in the initial graph.
+It also can execute critical-pair-analysis on the graphs. For now there are not a good interface to show the results of the critical pair analysis but they can be exported to be seen in AGG.
 
-Changed file format from .vgg to .vggx (XML). .vgg files are now deprecated and this option will be removed in the near future. If you are working on a grammar in Verigraph-GUI, save it as .vggx from now on. You can still load and save .vgg files for now.
+Verigraph-GUI can export the grammars to .ggx files to be opened in AGG.
+The editor can also open ggx files with limitations (the grammars of verigraph-GUI don't support attributes).
 
-This is needed as .vgg is a simply show of the structures used inside verigraph-GUI, and keeping it like this prevents me from changing them, which is something that will have to be done soon.
+
 
 
 # Installation

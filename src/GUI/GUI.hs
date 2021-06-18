@@ -93,7 +93,7 @@ startGUI = do
   -- build main window
   (window, tabs, fileItems, editItems, viewItems, helpItems) <- buildMainWindow
   -- set the menubar
-  let [newm,opn,svn,sva,eggx] = fileItems
+  let [newm,opn,svn,sva] = fileItems
       [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
       [zin,zut,z50,zdf,z150,z200,vdf] = viewItems
       [hlp,abt] = helpItems
@@ -104,7 +104,7 @@ startGUI = do
 
 
   -- init an model to display in the editor tree panel --------------------------------
-  editStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt, gtypeBoolean, gtypeBoolean]
+  editStore <- Gtk.treeStoreNew [gtypeString, gtypeBoolean, gtypeInt, gtypeInt, gtypeBoolean, gtypeBoolean]
   Edit.initStore editStore
   -- start editor module
   (editorPane, editorCanvas, editorState) <- Edit.startEditor window editStore
@@ -114,8 +114,8 @@ startGUI = do
                                                 focusedCanvas focusedStateIORef
 
   -- start executor module
-  execStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt]
-  Exec.updateTreeStore execStore ("Rule0", 2, 1, 0)
+  execStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt, gtypeString]
+  Exec.updateTreeStore execStore ("Rule0", 2, 1, 0, "Rule0")
   (execPane, execCanvas, execNacCBox, execState, execStarted, execNacListMap) <- Exec.buildExecutor execStore statesMap typeGraph nacInfoMap focusedCanvas focusedStateIORef
 
   -- start analysis module
@@ -146,7 +146,7 @@ startGUI = do
     a  <- Gtk.treeModelGetValue editStore iter 4 >>= fromGValue :: IO Bool
     v  <- Gtk.treeModelGetValue editStore iter 5 >>= fromGValue :: IO Bool
     case (v,t) of
-      (True,3) -> Exec.updateTreeStore execStore (n,id,1,0)
+      (True,3) -> Exec.updateTreeStore execStore (n,id,1,0,n)
       (True,4) -> do
         (valid,parent) <- Gtk.treeModelIterParent editStore iter
         if valid
@@ -408,8 +408,7 @@ buildMainWindow = do
   openItem <- Gtk.builderGetObject builder "open_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   saveItem <- Gtk.builderGetObject builder "save_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   saveAsItem <- Gtk.builderGetObject builder "save_as_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  exportGGXItem <- Gtk.builderGetObject builder "export_ggx_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
-  let fileItems = [newItem,openItem,saveItem,saveAsItem,exportGGXItem]
+  let fileItems = [newItem,openItem,saveItem,saveAsItem]
 
   delItem <- Gtk.builderGetObject builder  "delete_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
   undoItem <- Gtk.builderGetObject builder  "undo_item" >>= unsafeCastTo Gtk.MenuItem . fromJust
