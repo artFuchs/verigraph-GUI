@@ -69,8 +69,8 @@ drawGraph state sq nodeColors edgeColors nodeTextColors edgeTextColors = do
         (highlight, color) = case (edgeId e `elem` sEdges, M.lookup (edgeId e) edgeColors) of
             (False,Nothing) -> (False, (0,0,0))
             (False,Just c)  -> (True, c)
-            (True, Nothing) -> (True, selectColor)
-            (True, Just c)  -> (True, mixColors selectColor c)
+            (True, _) -> (True, selectColor)
+            --(True, Just c)  -> (True, mixColors selectColor c)
         (highlightText, textColor) = Maybe.fromMaybe (False,(0,0,0)) $ (\a -> (True, a)) <$> M.lookup (edgeId e) edgeTextColors
     case (egi, srcN, dstN) of
       (Just gi, Just src, Just dst) -> renderEdge gi info src dst highlight color highlightText textColor

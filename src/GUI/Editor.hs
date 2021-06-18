@@ -160,7 +160,7 @@ startEditor window store
 
   -- "unpack" menuItems
   let [newm,opn,svn,sva] = fileItems
-      [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
+      [del,undo,redo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
       [zin,zut,z50,zdf,z150,z200,vdf] = viewItems
 
   mapM_ (\m -> Gtk.widgetSetSensitive m False) [mrg,spt]
@@ -1309,7 +1309,7 @@ startEditor window store
     Gtk.widgetQueueDraw canvas
 
   -- undo
-  on udo #activate $ do
+  on undo #activate $ do
     currGraph <- readIORef currentGraph
     uStack <- readIORef undoStack >>= return . fromMaybe [] . M.lookup currGraph
     case uStack of
@@ -1339,7 +1339,7 @@ startEditor window store
         updateByType
 
   -- redo
-  on rdo #activate $ do
+  on redo #activate $ do
     currGraph <- readIORef currentGraph
     rStack <- readIORef redoStack >>= return . fromMaybe [] . M.lookup currGraph
     case rStack of

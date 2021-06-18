@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 
-{- | Definition of GraphStore and auxiliar functions 
+{- | Definition of GraphStore and auxiliar functions
      to manipulate the TreeStore associated with the TreeView of the Editor
 -}
 module GUI.Editor.Helper.TreeStore(
@@ -102,13 +102,13 @@ storeSetGraphStore store iter (n,c,i,t,a,v) = do
 -- gets
 ----------------------------------------------------------
 
-{- | 
+{- |
   Walk in a TreeStore recovering the essential information of the GraphStore stored in each position.
   Must be given the TreeStore and a initial TreeIter to start a recursive walk in the treeStore.
   Returns a Tree.Forest containing (Type,(Name,Id,Active))
 -}
-getTreeStoreValues :: Gtk.TreeStore 
-                   -> Gtk.TreeIter 
+getTreeStoreValues :: Gtk.TreeStore
+                   -> Gtk.TreeIter
                    -> IO (Tree.Forest (String,Int32,Int32,Bool))
 getTreeStoreValues store iter = do
   valN <- Gtk.treeModelGetValue store iter 0 >>= (\n -> fromGValue n :: IO (Maybe String)) >>= return . fromJust
@@ -127,7 +127,7 @@ getTreeStoreValues store iter = do
     else return $ (Tree.Node (valN, valI, valT, valA) subForest) : []
 
 -- | gets a tree of SaveInfo out of a TreeStore
-getStructsToSave :: Gtk.TreeStore 
+getStructsToSave :: Gtk.TreeStore
                  -> IORef (M.Map Int32 GraphState)
                  -> IORef (M.Map Int32 (DiaGraph,MergeMapping))
                  -> IO (Tree.Forest SaveInfo)
@@ -154,9 +154,9 @@ getStructsToSave store graphStates nacInfoMapIORef = do
       return structs
 
 -- | Get the Diagraph stored in the parent position relative to the given path
-getParentLHSDiaGraph :: Gtk.TreeStore 
-                  -> [Int32] 
-                  -> IORef (M.Map Int32 GraphState) 
+getParentLHSDiaGraph :: Gtk.TreeStore
+                  -> [Int32]
+                  -> IORef (M.Map Int32 GraphState)
                   -> IO DiaGraph
 getParentLHSDiaGraph store pathIndices graphStates = do
   (g,gi) <- getParentDiaGraph store pathIndices graphStates
@@ -165,9 +165,9 @@ getParentLHSDiaGraph store pathIndices graphStates = do
       egi = M.filterWithKey (\k a -> (EdgeId k) `elem` (edgeIds lhs)) $ snd gi
   return (lhs,(ngi,egi))
 
-getParentDiaGraph :: Gtk.TreeStore 
-                  -> [Int32] 
-                  -> IORef (M.Map Int32 GraphState) 
+getParentDiaGraph :: Gtk.TreeStore
+                  -> [Int32]
+                  -> IORef (M.Map Int32 GraphState)
                   -> IO DiaGraph
 getParentDiaGraph store pathIndices graphStates = do
   path <- Gtk.treePathNewFromIndices pathIndices
@@ -272,7 +272,7 @@ indicateProjChanged window False = do
     else return ()
 
 -- | write in the treestore that the current graph was modified
-indicateGraphChanged :: Gtk.TreeStore -> Gtk.TreeIter -> Bool -> IO ()
+indicateGraphChanged :: Gtk.TreeStore -> Gtk.TreeIter -> Int32 -> IO ()
 indicateGraphChanged store iter changed = do
   gtype <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
   if gtype == 0
@@ -282,24 +282,24 @@ indicateGraphChanged store iter changed = do
       Gtk.treeStoreSetValue store iter 1 gvchanged
       (parentValid, parentIter) <- Gtk.treeModelIterParent store iter
       case (parentValid,changed) of
-        (True,True) -> Gtk.treeStoreSetValue store parentIter 1 gvchanged
-        (True,False) -> do
+        (True,1) -> Gtk.treeStoreSetValue store parentIter 1 gvchanged
+        (True,0) -> do
             let brothersChanged iter = do
-                    brotherChanged <- Gtk.treeModelGetValue store iter 1 >>= fromGValue :: IO Bool
+                    brotherChanged <- Gtk.treeModelGetValue store iter 1 >>= fromGValue :: IO Int32
                     continue <- Gtk.treeModelIterNext store iter
                     case (brotherChanged, continue) of
-                        (True,_) -> return True
-                        (False,True) -> brothersChanged iter
-                        (False,False) -> return False
+                        (1,_) -> return True
+                        (0,True) -> brothersChanged iter
+                        (0,False) -> return False
             parentChangeVal <- brothersChanged iter
             gvparentchanged <- toGValue parentChangeVal
             Gtk.treeStoreSetValue store parentIter 1 gvparentchanged
         (False,_) -> return ()
 
 -- | change the flags that inform if the graphs and project were changed and indicate the changes
-setChangeFlags :: Gtk.Window -> Gtk.TreeStore 
-               -> IORef Bool -> IORef [Bool] -> IORef [Int32] -> IORef Int32 
-               -> Bool 
+setChangeFlags :: Gtk.Window -> Gtk.TreeStore
+               -> IORef Bool -> IORef [Bool] -> IORef [Int32] -> IORef Int32
+               -> Bool
                -> IO ()
 setChangeFlags window store changedProject changedGraph currentPath currentGraph changed = do
   index <- readIORef currentGraph >>= return . fromIntegral
@@ -312,13 +312,13 @@ setChangeFlags window store changedProject changedGraph currentPath currentGraph
   path <- readIORef currentPath >>= Gtk.treePathNewFromIndices
   (valid,iter) <- Gtk.treeModelGetIter store path
   if valid
-    then indicateGraphChanged store iter changed
+    then indicateGraphChanged store iter (if changed then 1 else 0)
     else return ()
 
 -- Analise a graph and change the flags that inform if a graph is valid/invalid
-setValidFlag :: Gtk.TreeStore -> Gtk.TreeIter 
-             -> M.Map Int32 GraphState 
-             -> Graph Info Info 
+setValidFlag :: Gtk.TreeStore -> Gtk.TreeIter
+             -> M.Map Int32 GraphState
+             -> Graph Info Info
              -> IO ()
 setValidFlag store iter states tg = do
   index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
@@ -332,8 +332,8 @@ setValidFlag store iter states tg = do
 
 -- | walk in the treeStore, applying setValidFlag for all the hostGraphs and RuleGraphs
 -- should be called when occur an update to the typeGraph
-setValidFlags :: Gtk.TreeStore 
-               -> Graph Info Info 
+setValidFlags :: Gtk.TreeStore
+               -> Graph Info Info
                -> M.Map Int32 GraphState
                -> IO ()
 setValidFlags store tg states = do
@@ -349,10 +349,10 @@ setValidFlags store tg states = do
 
 -- Change the valid flag for the graph that is being edited
 -- Needed because the graphStates IORef is not updated while the user is editing the graph
-setCurrentValidFlag :: Gtk.TreeStore 
-                    -> IORef GraphState 
-                    -> IORef (Graph Info Info) 
-                    -> IORef [Int32] 
+setCurrentValidFlag :: Gtk.TreeStore
+                    -> IORef GraphState
+                    -> IORef (Graph Info Info)
+                    -> IORef [Int32]
                     -> IO ()
 setCurrentValidFlag store st typeGraph currentPath = do
       es <- readIORef st
@@ -372,11 +372,11 @@ setCurrentValidFlag store st typeGraph currentPath = do
 ----------------------------------------------------------
 
 -- updating a list of nacs in the TreeStore, starting from the first nac
-updateNacs :: Gtk.TreeStore 
-           -> Gtk.TreeIter 
-           -> Graph Info Info 
-           -> IORef (M.Map Int32 NacInfo) 
-           -> P.Context 
+updateNacs :: Gtk.TreeStore
+           -> Gtk.TreeIter
+           -> Graph Info Info
+           -> IORef (M.Map Int32 NacInfo)
+           -> P.Context
            -> IO ()
 updateNacs store iter lhs nacInfoMapIORef context = do
   nacInfoMap <- readIORef nacInfoMapIORef

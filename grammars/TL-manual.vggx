@@ -213,7 +213,7 @@
               <Info locked="False" type="1" operation="Create">
                 <Label text="1" group="False"/>
               </Info>
-              <EdgeLayout position="(4.702590378237536,79.22748197686394)" color="(0.9294117647058824,0.8313725490196079,0.0)" style="ENormal"/>
+              <EdgeLayout position="(4.693154573928494,77.79806688323121)" color="(0.9294117647058824,0.8313725490196079,0.0)" style="ENormal"/>
             </Edge>
             <Edge id="5" source="3" target="3">
               <Info locked="False" type="0" operation="Delete">
@@ -380,6 +380,18 @@
             </Node>
           </Nodes>
           <Edges>
+            <Edge id="1" source="1" target="1">
+              <Info locked="False" type="call_redLights" operation="Create">
+                <Label text="call_redLights" group="False"/>
+              </Info>
+              <EdgeLayout position="(-1.5707963267948966,80.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+            </Edge>
+            <Edge id="2" source="1" target="1">
+              <Info locked="False" type="read" operation="Delete">
+                <Label text="read" group="False"/>
+              </Info>
+              <EdgeLayout position="(-1.5707963267948966,50.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+            </Edge>
             <Edge id="5" source="2" target="3">
               <Info locked="False" type="status" operation="Preserve">
                 <Label text="" group="False"/>
@@ -397,18 +409,6 @@
                 <Label text="to" group="False"/>
               </Info>
               <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
-            </Edge>
-            <Edge id="1" source="1" target="1">
-              <Info locked="False" type="call_greenLights" operation="Create">
-                <Label text="call_greenLights" group="False"/>
-              </Info>
-              <EdgeLayout position="(-1.5707963267948966,80.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
-            </Edge>
-            <Edge id="2" source="1" target="1">
-              <Info locked="False" type="read" operation="Delete">
-                <Label text="read" group="False"/>
-              </Info>
-              <EdgeLayout position="(-1.5707963267948966,50.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
             </Edge>
           </Edges>
         </Graph>
@@ -500,6 +500,12 @@
             </Node>
           </Nodes>
           <Edges>
+            <Edge id="4" source="1" target="1">
+              <Info locked="False" type="call_redLights" operation="Delete">
+                <Label text="call_redLights" group="False"/>
+              </Info>
+              <EdgeLayout position="(-1.5707963267948966,50.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+            </Edge>
             <Edge id="3" source="3" target="1">
               <Info locked="False" type="to" operation="Preserve">
                 <Label text="to" group="False"/>
@@ -517,12 +523,6 @@
                 <Label text="true" group="False"/>
               </Info>
               <EdgeLayout position="(4.76074720811326,42.42969807857746)" color="(0.0,0.0,0.0)" style="ENormal"/>
-            </Edge>
-            <Edge id="4" source="1" target="1">
-              <Info locked="False" type="call_greenLights" operation="Delete">
-                <Label text="call_redLights" group="False"/>
-              </Info>
-              <EdgeLayout position="(-1.5707963267948966,50.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
             </Edge>
             <Edge id="2" source="1" target="1">
               <Info locked="False" type="call_changeColor" operation="Create">
@@ -557,6 +557,12 @@
             </Node>
           </Nodes>
           <Edges>
+            <Edge id="2" source="1" target="1">
+              <Info locked="False" type="call_changeColor" operation="Delete">
+                <Label text="call_changeColor" group="False"/>
+              </Info>
+              <EdgeLayout position="(4.6977035441551696,50.75072692083121)" color="(0.0,0.0,0.0)" style="ENormal"/>
+            </Edge>
             <Edge id="1" source="2" target="1">
               <Info locked="False" type="to" operation="Preserve">
                 <Label text="to" group="False"/>
@@ -568,12 +574,6 @@
                 <Label text="return_changeColor" group="False"/>
               </Info>
               <EdgeLayout position="(-1.5707963267948966,80.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
-            </Edge>
-            <Edge id="2" source="1" target="1">
-              <Info locked="False" type="call_changeColor" operation="Delete">
-                <Label text="call_changeColor" group="False"/>
-              </Info>
-              <EdgeLayout position="(-1.5707963267948966,50.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
             </Edge>
           </Edges>
         </Graph>
@@ -665,17 +665,17 @@
               </Info>
               <EdgeLayout position="(-1.5707963267948966,80.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
             </Edge>
-            <Edge id="4" source="2" target="2">
-              <Info locked="False" type="3" operation="Preserve">
-                <Label text="3" group="False"/>
-              </Info>
-              <EdgeLayout position="(-1.5707963267948966,50.0)" color="(0.9607843137254902,0.4745098039215686,0.0)" style="ENormal"/>
-            </Edge>
             <Edge id="2" source="1" target="1">
               <Info locked="False" type="return_changeColor" operation="Delete">
                 <Label text="return_changeColor" group="False"/>
               </Info>
               <EdgeLayout position="(-1.5707963267948966,50.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+            </Edge>
+            <Edge id="4" source="2" target="2">
+              <Info locked="False" type="3" operation="Preserve">
+                <Label text="3" group="False"/>
+              </Info>
+              <EdgeLayout position="(-1.5707963267948966,50.0)" color="(0.9607843137254902,0.4745098039215686,0.0)" style="ENormal"/>
             </Edge>
             <Edge id="3" source="3" target="1">
               <Info locked="False" type="to" operation="Preserve">
@@ -773,6 +773,12 @@
             </Node>
           </Nodes>
           <Edges>
+            <Edge id="6" source="2" target="2">
+              <Info locked="False" type="0" operation="Create">
+                <Label text="0" group="False"/>
+              </Info>
+              <EdgeLayout position="(-1.5707963267948966,80.0)" color="(0.45098039215686275,0.8235294117647058,8.627450980392157e-2)" style="ENormal"/>
+            </Edge>
             <Edge id="4" source="3" target="1">
               <Info locked="False" type="to" operation="Delete">
                 <Label text="to" group="False"/>
@@ -784,12 +790,6 @@
                 <Label text="return_redLights" group="False"/>
               </Info>
               <EdgeLayout position="(-1.5707963267948966,80.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
-            </Edge>
-            <Edge id="6" source="2" target="2">
-              <Info locked="False" type="0" operation="Preserve">
-                <Label text="0" group="False"/>
-              </Info>
-              <EdgeLayout position="(-1.5707963267948966,80.0)" color="(0.45098039215686275,0.8235294117647058,8.627450980392157e-2)" style="ENormal"/>
             </Edge>
             <Edge id="2" source="2" target="2">
               <Info locked="False" type="3" operation="Delete">
