@@ -104,7 +104,7 @@ startGUI = do
 
 
   -- init an model to display in the editor tree panel --------------------------------
-  editStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt, gtypeBoolean, gtypeBoolean]
+  editStore <- Gtk.treeStoreNew [gtypeString, gtypeBoolean, gtypeInt, gtypeInt, gtypeBoolean, gtypeBoolean]
   Edit.initStore editStore
   -- start editor module
   (editorPane, editorCanvas, editorState) <- Edit.startEditor window editStore

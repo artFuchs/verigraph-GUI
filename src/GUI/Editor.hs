@@ -125,14 +125,14 @@ startEditor window store
   case changesCol of
     Nothing -> return ()
     Just col -> Gtk.treeViewColumnSetCellDataFunc col changesRenderer $ Just (\column renderer model iter -> do
-      changed <- Gtk.treeModelGetValue model iter 1 >>= fromGValue:: IO Int32
+      changed <- Gtk.treeModelGetValue model iter 1 >>= fromGValue:: IO Bool
       valid <- Gtk.treeModelGetValue model iter 5 >>= fromGValue :: IO Bool
       renderer' <- castTo Gtk.CellRendererText renderer
       case (renderer', changed, valid) of
-        (Just r, 0, True)  -> set r [#text := ""  ]
-        (Just r, 1, True)  -> set r [#text := "*" ]
-        (Just r, 0, False) -> set r [#text := "!" ]
-        (Just r, 1, False) -> set r [#text := "!*"]
+        (Just r, False, True)  -> set r [#text := ""  ]
+        (Just r, True, True)  -> set r [#text := "*" ]
+        (Just r, False, False) -> set r [#text := "!" ]
+        (Just r, True, False) -> set r [#text := "!*"]
         _ -> return ()
 
       )
@@ -1063,7 +1063,7 @@ startEditor window store
       else do
         n <- Gtk.treeModelIterNChildren store (Just parent)
         iter <- Gtk.treeStoreAppend store (Just parent)
-        storeSetGraphStore store iter ("Rule" ++ (show n), 0, newKey, 3, True, True)
+        storeSetGraphStore store iter ("Rule" ++ (show n), False, newKey, 3, True, True)
         path <- Gtk.treeModelGetPath store iter
         Gtk.treeViewExpandToPath treeview path
         modifyIORef graphStates (M.insert newKey emptyState)
@@ -1137,7 +1137,7 @@ startEditor window store
                 newKey = if M.size states > 0 then maximum (M.keys states) + 1 else 0
             n <- Gtk.treeModelIterNChildren store (Just iterR)
             iterN <- Gtk.treeStoreAppend store (Just iterR)
-            storeSetGraphStore store iterN ("NAC" ++ (show n), 0, newKey, 4, True, True)
+            storeSetGraphStore store iterN ("NAC" ++ (show n), False, newKey, 4, True, True)
             path <- Gtk.treeModelGetPath store iterN
             Gtk.treeViewExpandToPath treeview path
             modifyIORef nacInfoMap (M.insert newKey (DG.empty,(nodeMap,edgeMap)))
@@ -1218,11 +1218,11 @@ startEditor window store
                 writeIORef graphStates M.empty
                 Gtk.treeStoreClear store
                 let toGSandStates n = case n of
-                              Topic name -> ((name,0,0,0,False), (0,(-1,emptyState)))
-                              TypeGraph id name es -> ((name,0,id,1,True), (1, (id,es)))
-                              HostGraph id name es -> ((name,0,id,2,True), (2, (id,es)))
-                              RuleGraph id name es a -> ((name,0,id,3,a), (3, (id,es)))
-                              NacGraph id name _ -> ((name,0,id,4,True), (4,(id,emptyState)))
+                              Topic name -> ((name,False,0,0,False), (0,(-1,emptyState)))
+                              TypeGraph id name es -> ((name,False,id,1,True), (1, (id,es)))
+                              HostGraph id name es -> ((name,False,id,2,True), (2, (id,es)))
+                              RuleGraph id name es a -> ((name,False,id,3,a), (3, (id,es)))
+                              NacGraph id name _ -> ((name,False,id,4,True), (4,(id,emptyState)))
                 let toNACInfos n = case n of
                               NacGraph id name nacInfo -> (id,nacInfo)
                               _ -> (0,(DG.empty,(M.empty,M.empty)))
@@ -1731,7 +1731,7 @@ afterSave store window graphStates (changedProject, changedGraph, lastSavedState
           writeIORef changedGraph (take (length states) (repeat False))
           writeIORef lastSavedState (M.map (\es -> (stateGetGraph es, stateGetGI es)) states)
           -- clean the changed flag foreach graph in treeStore
-          gvChanged <- toGValue (0::Int32)
+          gvChanged <- toGValue False
           Gtk.treeModelForeach store $ \model path iter -> do
             Gtk.treeStoreSetValue store iter 1 gvChanged
             return False

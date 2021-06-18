@@ -59,7 +59,7 @@ import GUI.Helper.List
  * active (valid for rules only)
  * valid (if the current graph is correctly mapped to the typegraph)
 -}
-type GraphStore = (String, Int32, Int32, Int32, Bool, Bool)
+type GraphStore = (String, Bool, Int32, Int32, Bool, Bool)
 type NAC = (Graph Info Info, (MergeMapping))
 
 ----------------------------------------------------------
@@ -70,13 +70,13 @@ type NAC = (Graph Info Info, (MergeMapping))
 initStore :: Gtk.TreeStore ->  IO ()
 initStore store = do
   fstIter <- Gtk.treeStoreAppend store Nothing
-  storeSetGraphStore store fstIter ("TypeGraph", 0, 0, 1, False, True)
+  storeSetGraphStore store fstIter ("TypeGraph", False, 0, 1, False, True)
   sndIter <- Gtk.treeStoreAppend store Nothing
-  storeSetGraphStore store sndIter ("InitialGraph", 0, 1, 2, False, True)
+  storeSetGraphStore store sndIter ("InitialGraph", False, 1, 2, False, True)
   rulesIter <- Gtk.treeStoreAppend store Nothing
-  storeSetGraphStore store rulesIter ("Rules", 0, 0, 0, False, True)
+  storeSetGraphStore store rulesIter ("Rules", False, 0, 0, False, True)
   fstRuleIter <- Gtk.treeStoreAppend store (Just rulesIter)
-  storeSetGraphStore store fstRuleIter ("Rule0", 0, 2, 3, True, True)
+  storeSetGraphStore store fstRuleIter ("Rule0", False, 2, 3, True, True)
   return ()
 
 initTreeView :: Gtk.TreeView -> IO ()
@@ -272,7 +272,7 @@ indicateProjChanged window False = do
     else return ()
 
 -- | write in the treestore that the current graph was modified
-indicateGraphChanged :: Gtk.TreeStore -> Gtk.TreeIter -> Int32 -> IO ()
+indicateGraphChanged :: Gtk.TreeStore -> Gtk.TreeIter -> Bool -> IO ()
 indicateGraphChanged store iter changed = do
   gtype <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
   if gtype == 0
@@ -282,15 +282,15 @@ indicateGraphChanged store iter changed = do
       Gtk.treeStoreSetValue store iter 1 gvchanged
       (parentValid, parentIter) <- Gtk.treeModelIterParent store iter
       case (parentValid,changed) of
-        (True,1) -> Gtk.treeStoreSetValue store parentIter 1 gvchanged
-        (True,0) -> do
+        (True,True) -> Gtk.treeStoreSetValue store parentIter 1 gvchanged
+        (True,False) -> do
             let brothersChanged iter = do
-                    brotherChanged <- Gtk.treeModelGetValue store iter 1 >>= fromGValue :: IO Int32
+                    brotherChanged <- Gtk.treeModelGetValue store iter 1 >>= fromGValue :: IO Bool
                     continue <- Gtk.treeModelIterNext store iter
                     case (brotherChanged, continue) of
-                        (1,_) -> return True
-                        (0,True) -> brothersChanged iter
-                        (0,False) -> return False
+                        (True,_) -> return True
+                        (False,True) -> brothersChanged iter
+                        (False,False) -> return False
             parentChangeVal <- brothersChanged iter
             gvparentchanged <- toGValue parentChangeVal
             Gtk.treeStoreSetValue store parentIter 1 gvparentchanged
@@ -312,7 +312,7 @@ setChangeFlags window store changedProject changedGraph currentPath currentGraph
   path <- readIORef currentPath >>= Gtk.treePathNewFromIndices
   (valid,iter) <- Gtk.treeModelGetIter store path
   if valid
-    then indicateGraphChanged store iter (if changed then 1 else 0)
+    then indicateGraphChanged store iter changed
     else return ()
 
 -- Analise a graph and change the flags that inform if a graph is valid/invalid
@@ -404,8 +404,8 @@ updateRuleNacs store iter graphStatesIORef nacInfoMapIORef context = do
   if not hasNacs
     then return ()
     else do
-      ruleChanged <- Gtk.treeModelGetValue store iter 1 >>= Gtk.fromGValue :: IO Int32
-      if ruleChanged == 0
+      ruleChanged <- Gtk.treeModelGetValue store iter 1 >>= Gtk.fromGValue :: IO Bool
+      if ruleChanged == False
         then return ()
         else do
           ruleIndex <- Gtk.treeModelGetValue store iter 2 >>= Gtk.fromGValue :: IO Int32
