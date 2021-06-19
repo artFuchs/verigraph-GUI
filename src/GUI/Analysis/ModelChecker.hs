@@ -234,7 +234,7 @@ generateGraphState initialStates stateSpace = st'
     ndsGIs = M.fromList $ map (\(n,pos) -> (fromEnum $ G.nodeId n, newNodeGI {position = pos, shape = NRect})) nds
     g = G.fromNodesAndEdges (map fst nds) []
     st = stateSetGI (ndsGIs,M.empty) $ stateSetGraph g $ emptyState
-    st' = M.foldrWithKey (\(a,b) names st -> createEdge st (G.NodeId a) (G.NodeId b) (infoSetLabel Info.empty (init $ unlines names)) False ENormal (0,0,0)) st (SS.transitions stateSpace)
+    st' = M.foldrWithKey (\(a,b) names st -> createEdge st Nothing (G.NodeId a) (G.NodeId b) (infoSetLabel Info.empty (init $ unlines names)) False ENormal (0,0,0)) st (SS.transitions stateSpace)
 
 
 -- definitions taken from Verigraph CLI/ModelChecker.hs -------------------------------------------------------------

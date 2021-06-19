@@ -1,4 +1,4 @@
-module XML.GGXWriter2 (
+module GUI.XML.GGXWriter (
   writeGGX
 )where
 

@@ -1,10 +1,10 @@
 name:                verigraph-GUI
-version:             0.2.0.2
+version:             0.2.0.4
 github:              "artFuchs/verigraph-GUI"
 license:             Apache-2.0
 author:              "Arthur Lucena Fuchs"
 maintainer:          "alfuchs@inf.ufrgs.br"
-copyright:           "2019 Arthur Lucena Fuchs"
+copyright:           "2019-2021 Arthur Lucena Fuchs"
 
 extra-source-files:
 - README.md
@@ -43,6 +43,7 @@ dependencies:
 - optparse-applicative
 - matrix
 - random
+- split
 
 library:
   source-dirs: src

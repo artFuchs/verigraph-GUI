@@ -1,13 +1,14 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 
-{-| 
-    Functions to help handling the graphical information of elements of the graph, 
+{-|
+    Functions to help handling the graphical information of elements of the graph,
       especially concerning the label of nodes and edges.
 -}
 module GUI.Helper.GraphicalInfo(
   getStringDims
 , updateNodesGiDims
 , renameSelected
+, setInfoExtra
 )where
 
 import Data.GI.Base
@@ -49,7 +50,7 @@ updateNodesGiDims ngiM g context = do
                 Nothing -> return (n,gi)
                 Just node -> do
                   let info = nodeInfo node
-                      label = infoLabelStr info
+                      label = infoVisible info
                   dim <- getStringDims label context Nothing
                   return (n, gi {dims = dim})
   return $ M.fromList listOfNGIs
@@ -91,3 +92,27 @@ renameSelected es content context = do
                              ngiM
       newEs   = stateSetGI (newNgiM,egiM) . stateSetGraph newGraph $ es
   return newEs
+
+
+-- given a graph state and a mapping of elements to extra information, set the extra information to info
+-- if the element id is not on the mapping, it has the extra information cleaned
+setInfoExtra :: GraphState -> (M.Map NodeId String, M.Map EdgeId String) -> P.Context -> IO GraphState
+setInfoExtra st (nm,em) context =
+  do
+    let g = stateGetGraph st
+        layouts = stateGetGI st
+        addExtraNode n = let info = nodeInfo n
+                         in case M.lookup (nodeId n) nm of
+                           Nothing -> n { nodeInfo = info {infoExtra = ""}}
+                           Just extra -> n { nodeInfo = info { infoExtra = extra } }
+        addExtraEdge e =  let info = edgeInfo e
+                          in case M.lookup (edgeId e) em of
+                            Nothing -> e { edgeInfo = info {infoExtra = ""}}
+                            Just extra -> e { edgeInfo = info {infoExtra = extra }}
+        nds = map addExtraNode (nodes g)
+        edgs = map addExtraEdge (edges g)
+        g' = fromNodesAndEdges nds edgs
+        (nls,els) = stateGetGI st
+    nls' <- updateNodesGiDims nls g' context
+    let layouts = (nls', els)
+    return (stateSetGraph g' . stateSetGI layouts $ st)

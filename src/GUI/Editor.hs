@@ -37,7 +37,6 @@ import Data.Monoid
 import Data.Ord
 
 -- verigraph modules
-import Abstract.Category
 import Abstract.Rewriting.DPO
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
@@ -126,14 +125,14 @@ startEditor window store
   case changesCol of
     Nothing -> return ()
     Just col -> Gtk.treeViewColumnSetCellDataFunc col changesRenderer $ Just (\column renderer model iter -> do
-      changed <- Gtk.treeModelGetValue model iter 1 >>= fromGValue:: IO Int32
+      changed <- Gtk.treeModelGetValue model iter 1 >>= fromGValue:: IO Bool
       valid <- Gtk.treeModelGetValue model iter 5 >>= fromGValue :: IO Bool
       renderer' <- castTo Gtk.CellRendererText renderer
       case (renderer', changed, valid) of
-        (Just r, 0, True)  -> set r [#text := ""  ]
-        (Just r, 1, True)  -> set r [#text := "*" ]
-        (Just r, 0, False) -> set r [#text := "!" ]
-        (Just r, 1, False) -> set r [#text := "!*"]
+        (Just r, False, True)  -> set r [#text := ""  ]
+        (Just r, True, True)  -> set r [#text := "*" ]
+        (Just r, False, False) -> set r [#text := "!" ]
+        (Just r, True, False) -> set r [#text := "!*"]
         _ -> return ()
 
       )
@@ -160,8 +159,8 @@ startEditor window store
       )
 
   -- "unpack" menuItems
-  let [newm,opn,svn,sva,eggx] = fileItems
-      [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
+  let [newm,opn,svn,sva] = fileItems
+      [del,undo,redo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
       [zin,zut,z50,zdf,z150,z200,vdf] = viewItems
 
   mapM_ (\m -> Gtk.widgetSetSensitive m False) [mrg,spt]
@@ -391,7 +390,7 @@ startEditor window store
                             foldr (\(src, mt) (es,eids) ->
                                       let srcId = nodeId src
                                           (t,estyle,color) = checkType mt (infoType $ nodeInfo src)
-                                          es' = createEdge es srcId nid (infoSetType I.empty t) auto estyle color
+                                          es' = createEdge es Nothing srcId nid (infoSetType I.empty t) auto estyle color
                                           eids' = (snd $ stateGetSelected es') ++ eids
                                       in (es',eids'))
                               (es,[]) edgesTs
@@ -1064,7 +1063,7 @@ startEditor window store
       else do
         n <- Gtk.treeModelIterNChildren store (Just parent)
         iter <- Gtk.treeStoreAppend store (Just parent)
-        storeSetGraphStore store iter ("Rule" ++ (show n), 0, newKey, 3, True, True)
+        storeSetGraphStore store iter ("Rule" ++ (show n), False, newKey, 3, True, True)
         path <- Gtk.treeModelGetPath store iter
         Gtk.treeViewExpandToPath treeview path
         modifyIORef graphStates (M.insert newKey emptyState)
@@ -1138,7 +1137,7 @@ startEditor window store
                 newKey = if M.size states > 0 then maximum (M.keys states) + 1 else 0
             n <- Gtk.treeModelIterNChildren store (Just iterR)
             iterN <- Gtk.treeStoreAppend store (Just iterR)
-            storeSetGraphStore store iterN ("NAC" ++ (show n), 0, newKey, 4, True, True)
+            storeSetGraphStore store iterN ("NAC" ++ (show n), False, newKey, 4, True, True)
             path <- Gtk.treeModelGetPath store iterN
             Gtk.treeViewExpandToPath treeview path
             modifyIORef nacInfoMap (M.insert newKey (DG.empty,(nodeMap,edgeMap)))
@@ -1219,11 +1218,11 @@ startEditor window store
                 writeIORef graphStates M.empty
                 Gtk.treeStoreClear store
                 let toGSandStates n = case n of
-                              Topic name -> ((name,0,0,0,False), (0,(-1,emptyState)))
-                              TypeGraph id name es -> ((name,0,id,1,True), (1, (id,es)))
-                              HostGraph id name es -> ((name,0,id,2,True), (2, (id,es)))
-                              RuleGraph id name es a -> ((name,0,id,3,a), (3, (id,es)))
-                              NacGraph id name _ -> ((name,0,id,4,True), (4,(id,emptyState)))
+                              Topic name -> ((name,False,0,0,False), (0,(-1,emptyState)))
+                              TypeGraph id name es -> ((name,False,id,1,True), (1, (id,es)))
+                              HostGraph id name es -> ((name,False,id,2,True), (2, (id,es)))
+                              RuleGraph id name es a -> ((name,False,id,3,a), (3, (id,es)))
+                              NacGraph id name _ -> ((name,False,id,4,True), (4,(id,emptyState)))
                 let toNACInfos n = case n of
                               NacGraph id name nacInfo -> (id,nacInfo)
                               _ -> (0,(DG.empty,(M.empty,M.empty)))
@@ -1283,17 +1282,7 @@ startEditor window store
       then afterSave store window graphStates changesIORefs fileName
       else return ()
 
-  -- export grammar to .ggx (AGG format)
-  eggx `on` #activate $ do
-    storeCurrentES window currentState storeIORefs nacInfoMap
-    context <- Gtk.widgetGetPangoContext canvas
-    updateAllNacs store graphStates nacInfoMap context
-    structs <- getStructsToSave store graphStates nacInfoMap
-    exportAs structs exportGGX2 window
-    return ()
-
   -- Edit Menu ---------------------------------------------------------------------------------------------------------------
-
   -- delete item
   on del #activate $ do
     es <- readIORef currentState
@@ -1320,7 +1309,7 @@ startEditor window store
     Gtk.widgetQueueDraw canvas
 
   -- undo
-  on udo #activate $ do
+  on undo #activate $ do
     currGraph <- readIORef currentGraph
     uStack <- readIORef undoStack >>= return . fromMaybe [] . M.lookup currGraph
     case uStack of
@@ -1350,7 +1339,7 @@ startEditor window store
         updateByType
 
   -- redo
-  on rdo #activate $ do
+  on redo #activate $ do
     currGraph <- readIORef currentGraph
     rStack <- readIORef redoStack >>= return . fromMaybe [] . M.lookup currGraph
     case rStack of
@@ -1742,7 +1731,7 @@ afterSave store window graphStates (changedProject, changedGraph, lastSavedState
           writeIORef changedGraph (take (length states) (repeat False))
           writeIORef lastSavedState (M.map (\es -> (stateGetGraph es, stateGetGI es)) states)
           -- clean the changed flag foreach graph in treeStore
-          gvChanged <- toGValue (0::Int32)
+          gvChanged <- toGValue False
           Gtk.treeModelForeach store $ \model path iter -> do
             Gtk.treeStoreSetValue store iter 1 gvChanged
             return False

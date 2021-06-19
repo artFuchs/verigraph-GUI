@@ -45,7 +45,7 @@ data GraphState = State { stateGetGraph :: Graph Info Info
                         , stateGetGI :: GraphicalInfo
                         , stateGetSelected :: ([NodeId],[EdgeId])
                         , stateGetZoom :: Double
-                        , stateGetPan :: (Double,Double)} 
+                        , stateGetPan :: (Double,Double)}
                  deriving (Show,Read)
 
 -- empty constructor
@@ -110,12 +110,16 @@ createNode es pos dim info nshape color lcolor = stateSetGraph newGraph . stateS
 
 
 -- | create a single edge between a source node and a target node
-createEdge :: GraphState -> NodeId -> NodeId -> Info -> Bool -> EdgeStyle -> (Double,Double,Double) -> GraphState
-createEdge es srcNode tgtNode info autoNaming estyle ecolor = stateSetGraph newGraph . stateSetGI (ngiM, newEgiM) . stateSetSelected ([],[eid]) $ es
-  where 
+-- If desired, an id can be specified for the edge. In this case, the edge will have the specified id if there is no other edge with the same id
+createEdge :: GraphState -> (Maybe EdgeId) -> NodeId -> NodeId -> Info -> Bool -> EdgeStyle -> (Double,Double,Double) -> GraphState
+createEdge es mEid srcNode tgtNode info autoNaming estyle ecolor = stateSetGraph newGraph . stateSetGI (ngiM, newEgiM) . stateSetSelected ([],[eid]) $ es
+  where
     graph = stateGetGraph es
     (ngiM,egiM) = stateGetGI es
-    eid = head $ newEdges graph
+    eid = let next = head $ newEdges graph
+          in case mEid of
+            Nothing -> next
+            Just e -> if e `elem` edgeIds graph then next else e
     info' = if infoLabel info == (Label "") && autoNaming then infoSetLabel info (show $ fromEnum eid) else info
     newGraph = insertEdgeWithPayload eid srcNode tgtNode info' graph
     newPos = if (tgtNode == srcNode) then newLoopPos srcNode graph else newEdgePos srcNode tgtNode graph

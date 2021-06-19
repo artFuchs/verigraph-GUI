@@ -61,8 +61,11 @@ joinNAC (nacdg, (nM,eM)) lhsdg@(ruleLG,ruleLGI) tg = (nG, nGI')
     swapEdgeId e = case (R.apply eIRLHS (edgeId e) ++ R.apply eIRNAC (edgeId e)) of
                       []       -> e
                       eids -> Edge (maximum eids) (swapNodeId' $ sourceId e) (swapNodeId' $ targetId e) (edgeInfo e)
-    nGnodes = map swapNodeId . map nodeFromJust $ nodes nGJust
-    nGedges = map swapEdgeId . map edgeFromJust $ edges nGJust
+    -- change element operations so that they don't appear when drawing the graph
+    changeNodeOperation n = n { nodeInfo = infoSetOperation (nodeInfo n) Preserve}
+    changeEdgeOperation e = e { edgeInfo = infoSetOperation (edgeInfo e) Preserve}
+    nGnodes = map changeNodeOperation . map swapNodeId . map nodeFromJust $ nodes nGJust
+    nGedges = map changeEdgeOperation . map swapEdgeId . map edgeFromJust $ edges nGJust
     nG = fromNodesAndEdges nGnodes nGedges
 
     -- join the GraphicalInfos
@@ -115,14 +118,14 @@ replaceLoops g gi (nM,eM) = nGI
     -- foreach merged node, check if there are loops pointing to it
     mergeNodesInContext = map (\nid -> fromJust $ lookupNodeInContext nid g) $ removeDuplicates (M.elems nM)
     loops = map (\nc -> (nodeId (fst nc), edgesFromTo nc nc)) mergeNodesInContext -- :: [(NodeId,[Edge])]
-    
+
     -- foreach loop in the list, increment the distance from the node
     -- first, calculate the relative distance foreach (Y here means the distance)
     calcRelY l = foldr (\e lPos -> (edgeId e, 30 * (1 + (fromIntegral $ length lPos))::Double):lPos) [] l
     loopsRelY = map (\(nid,e) -> (nid,calcRelY e)) loops -- :: [(NodeId,[(EdgeId,Double)])]
 
-    -- then update the edges GraphicalInfos with this value + the height of the node            
-    loopsGIs =  concat $ 
+    -- then update the edges GraphicalInfos with this value + the height of the node
+    loopsGIs =  concat $
                 map (\(nid,loopsInfos) -> let ngi = fromJust $ M.lookup (fromEnum nid) (fst gi)
                                               ndims = dims ngi
                                               minY = case shape ngi of
@@ -137,7 +140,7 @@ replaceLoops g gi (nM,eM) = nGI
 
 -- | Merge elements of the NAC
 mergeNACElements :: GraphState -> NacInfo -> Graph Info Info -> P.Context -> IO (Maybe (NacInfo,GraphState))
-mergeNACElements es ((nacg,nacgi), (nM, eM)) tg context = 
+mergeNACElements es ((nacg,nacgi), (nM, eM)) tg context =
   let (snids, seids) = stateGetSelected es
       g = stateGetGraph es
       gi = stateGetGI es
@@ -154,7 +157,7 @@ mergeNACElements es ((nacg,nacgi), (nM, eM)) tg context =
       -- get lhs from graph
       let lhsg = g { nodeMap = filter (infoLocked . nodeInfo . snd) (nodeMap g)
                   , edgeMap = filter (infoLocked . edgeInfo . snd) (edgeMap g)}
-          lhsgi = ( M.filterWithKey (\k _ -> (NodeId k) `elem` (nodeIds g)) (fst gi) 
+          lhsgi = ( M.filterWithKey (\k _ -> (NodeId k) `elem` (nodeIds g)) (fst gi)
                   , M.filterWithKey (\k _ -> (EdgeId k) `elem` (edgeIds g)) (snd gi) )
           -- genereate the merging map for nodes
       let nidsToMerge = map nodeId nodesToMerge
@@ -189,7 +192,7 @@ mergeNACElements es ((nacg,nacgi), (nM, eM)) tg context =
       let newES = stateSetGraph g' . stateSetGI gi' . stateSetSelected ([maxNID], [maxEID]) $ es
 
       return $ Just (nacInfo,newES)
-  
+
 
 -- | split elements of the NAC
 splitNACElements :: GraphState -> NacInfo -> DiaGraph -> Graph Info Info -> P.Context -> IO (NacInfo, GraphState)
@@ -407,7 +410,7 @@ updateNacLabels lhs ((nacg, nacgi), (nM,eM)) = ((nacg'',nacgi),(nM,eM))
     changeInfoLabel id' lbl' i =
       case infoLabel i of
         Label _ -> infoSetLabel i lbl'
-        LabelGroup lbls -> 
+        LabelGroup lbls ->
           let lbls' = map (\(id,lbl) -> if id == id' then (id,lbl') else (id,lbl)) lbls
           in i {infoLabel = LabelGroup lbls'}
 
@@ -422,9 +425,9 @@ updateNacLabels lhs ((nacg, nacgi), (nM,eM)) = ((nacg'',nacgi),(nM,eM))
                                 in updateNodePayload  id
                                                       g
                                                       (changeInfoLabel id' (infoLabelStr $ nodeInfo n)))
-                  nacg 
+                  nacg
                   nodesWithMapping
-    nacg'' = foldr (\(e,id) g -> let id' = if edgeId e == id then 0 else fromEnum $ edgeId e 
+    nacg'' = foldr (\(e,id) g -> let id' = if edgeId e == id then 0 else fromEnum $ edgeId e
                                  in updateEdgePayload id
                                                       g
                                                       (changeInfoLabel id' (infoLabelStr $ edgeInfo e)))
@@ -436,27 +439,27 @@ mountNACGraph :: DiaGraph
               -> Graph Info Info
               -> NacInfo
               -> DiaGraph
-mountNACGraph (lhs,lhsgi) tg (nacdg,mergeM) = do
-      -- 'lock' the nodes from LHS
-      let lhsLockNodes = foldr (\n g -> G.updateNodePayload n g (\info -> infoSetOperation (infoSetLocked info True) Preserve)) lhs (nodeIds lhs)
-          lhs' = foldr (\e g -> G.updateEdgePayload e g (\info -> infoSetLocked info True)) lhsLockNodes (edgeIds lhs)
-      case (G.null $ fst nacdg) of
-        True -> (lhs', lhsgi) -- if there's no nac' diagraph, then the nac is just the lhs
+mountNACGraph (lhs,lhsgi) tg (nacdg,mergeM) =
+  -- 'lock' the nodes from LHS
+  let lhsLockNodes = foldr (\n g -> G.updateNodePayload n g (\info -> infoSetOperation (infoSetLocked info True) Preserve)) lhs (nodeIds lhs)
+      lhs' = foldr (\e g -> G.updateEdgePayload e g (\info -> infoSetLocked info True)) lhsLockNodes (edgeIds lhs)
+  in case (G.null $ fst nacdg) of
+    True -> (lhs', lhsgi) -- if there's no nac' diagraph, then the nac is just the lhs
+    False -> do
+      -- if there's a nac' diagraph, check if the graph is correct
+      let nacValid = isGraphValid (fst nacdg) tg
+      case nacValid of
+        True -> joinNAC (nacdg,mergeM) (lhs', lhsgi) tg
         False -> do
-          -- if there's a nac' diagraph, check if the graph is correct
-          let nacValid = isGraphValid (fst nacdg) tg
-          case nacValid of
-            True -> joinNAC (nacdg,mergeM) (lhs', lhsgi) tg 
-            False -> do
-              -- remove all the elements with type error
-              let validG = correctTypeGraph (fst nacdg) tg
-                  validNids = foldr (\n ns -> if nodeInfo n then (nodeId n):ns else ns) [] (nodes validG)
-                  validEids = foldr (\e es -> if edgeInfo e then (edgeId e):es else es) [] (edges validG)
-                  newNodes = filter (\n -> nodeId n `elem` validNids) (nodes $ fst nacdg)
-                  newEdges = filter (\e -> edgeId e `elem` validEids) (edges $ fst nacdg)
-                  newNG = fromNodesAndEdges newNodes newEdges
-                  newNNGI = M.filterWithKey (\k a -> NodeId k `elem` validNids) (fst . snd $ nacdg)
-                  newNEGI = M.filterWithKey (\k a -> EdgeId k `elem` validEids) (snd . snd $ nacdg)
-                  newNacdg = (newNG,(newNNGI, newNEGI))
-              -- join nac
-              joinNAC (newNacdg, mergeM) (lhs', lhsgi) tg
+          -- remove all the elements with type error
+          let validG = correctTypeGraph (fst nacdg) tg
+              validNids = foldr (\n ns -> if nodeInfo n then (nodeId n):ns else ns) [] (nodes validG)
+              validEids = foldr (\e es -> if edgeInfo e then (edgeId e):es else es) [] (edges validG)
+              newNodes = filter (\n -> nodeId n `elem` validNids) (nodes $ fst nacdg)
+              newEdges = filter (\e -> edgeId e `elem` validEids) (edges $ fst nacdg)
+              newNG = fromNodesAndEdges newNodes newEdges
+              newNNGI = M.filterWithKey (\k a -> NodeId k `elem` validNids) (fst . snd $ nacdg)
+              newNEGI = M.filterWithKey (\k a -> EdgeId k `elem` validEids) (snd . snd $ nacdg)
+              newNacdg = (newNG,(newNNGI, newNEGI))
+          -- join nac
+          joinNAC (newNacdg, mergeM) (lhs', lhsgi) tg
