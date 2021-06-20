@@ -4,8 +4,8 @@
   <requires lib="gtk+" version="3.20"/>
   <object class="GtkAdjustment" id="depth_adjustment">
     <property name="lower">1</property>
-    <property name="upper">1000000</property>
-    <property name="value">10</property>
+    <property name="upper">9.9999999999999996e+110</property>
+    <property name="value">100</property>
     <property name="step_increment">1</property>
     <property name="page_increment">10</property>
   </object>
@@ -75,7 +75,7 @@
               <object class="GtkLabel">
                 <property name="visible">True</property>
                 <property name="can_focus">False</property>
-                <property name="label" translatable="yes">max depth:</property>
+                <property name="label" translatable="yes">max states no.:</property>
               </object>
               <packing>
                 <property name="expand">False</property>
@@ -87,10 +87,10 @@
               <object class="GtkSpinButton" id="depth_spin_button">
                 <property name="visible">True</property>
                 <property name="can_focus">True</property>
-                <property name="tooltip_text" translatable="yes">maximum depth to search the space state</property>
+                <property name="tooltip_text" translatable="yes">maximun desired number of states</property>
                 <property name="adjustment">depth_adjustment</property>
                 <property name="wrap">True</property>
-                <property name="value">10</property>
+                <property name="value">100</property>
               </object>
               <packing>
                 <property name="expand">True</property>

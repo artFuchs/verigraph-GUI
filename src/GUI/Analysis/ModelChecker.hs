@@ -1,4 +1,5 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
+{-# LANGUAGE ScopedTypeVariables        #-}
 module GUI.Analysis.ModelChecker (
   buildStateSpaceBox
 ) where
@@ -15,6 +16,7 @@ import           Control.Concurrent.MVar
 import qualified GI.GLib as GLib
 
 -- Haskell structures
+import           Control.Monad
 import           Data.IORef
 import           Data.Int
 import           Data.Maybe
@@ -24,6 +26,7 @@ import qualified Data.Map    as M
 import qualified Data.Set    as Set
 import qualified Data.List   as List
 import           Data.Char
+import qualified Data.Time.Clock   as Time
 
 
 -- verigraph structures
@@ -100,14 +103,16 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
       Right grammar -> do
         stMVar <- newEmptyMVar
         modelMVar <- newEmptyMVar
+        timeMVar <- newEmptyMVar
         depth <- Gtk.spinButtonGetValueAsInt depthSpinBtn >>= return . fromIntegral
         context <- Gtk.widgetGetPangoContext canvas
         execT <- forkFinally  (do
+                                startTime <- Time.getCurrentTime
+                                putMVar timeMVar startTime
                                 Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
                                     Gtk.spinnerStart statusSpinner
                                     Gtk.labelSetText statusLabel "generating state space"
                                     return False
-
                                 let initialGraph = DPO.start grammar
                                     mconf = (DPO.MorphismsConfig Cat.monic) :: DPO.MorphismsConfig (TGM.TypedGraphMorphism Info Info)
                                     (initialStates, stateSpace) = exploreStateSpace mconf depth grammar [("initialGraph",initialGraph)]
@@ -122,6 +127,15 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
                                 putMVar modelMVar $ Just model
                               )
                               (\_ -> do
+                                endTime <- Time.getCurrentTime
+                                emptyTime <- isEmptyMVar timeMVar
+                                if emptyTime then
+                                  return ()
+                                else do
+                                  startTime <- takeMVar timeMVar
+                                  let diff = Time.diffUTCTime endTime startTime
+                                  print diff
+
                                 Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
                                   let writeIORefIfMVarNotEmpty mvar ioref = do
                                           emptyMvar <- isEmptyMVar mvar
@@ -254,7 +268,7 @@ exploreStateSpace conf maxDepth grammar graphs =
     searchFrom (_, graph) =
       do
         (idx, _) <- SS.putState graph
-        SS.depthSearch maxDepth graph
+        breadthFirstSearch maxDepth [graph]
         return idx
 
     search =
@@ -299,3 +313,59 @@ drawStateSpace state sq maybeGoodStates = drawGraph state sq nodeColors M.empty 
                         in  (M.fromList $ map (\n -> (n,(0,1,0))) goodStates)
                             `M.union`
                             (M.fromList $ map (\n -> (n,(1,0,0))) badStates)
+
+
+
+
+
+-- | Finds all transformations of the given state with the productions of the HLR system being explored, adding them to the state space.
+-- Returns a list of the successor states as @(index, object, isNew)@, where @isNew@ indicates that the state was not present in the state space before.
+-- limits the number of matches applications to @maxNum@
+expandSuccessors' :: forall morph. DPO.DPO morph => Int -> (Int, Cat.Obj morph) -> SS.StateSpaceBuilder morph [(Int, Cat.Obj morph, Bool)]
+expandSuccessors' maxNum (index, object) =
+  do
+    prods <- SS.getProductions
+    conf <- SS.getDpoConfig
+    -- matches <- return $ take maxNum . concat . map (\(name,prod) -> map (\match -> (name,prod,match)) (DPO.findApplicableMatches conf prod object)) $ prods
+    matches <- return . concat . map (\(name,prod) -> map (\match -> (name,prod,match)) (DPO.findApplicableMatches conf prod object)) $ prods
+    -- states <- forM matches $ \(name,prod,match) -> do
+    --   let object' = DPO.rewrite match prod
+    --   (index', isNew) <- SS.putState object'
+    --   SS.putTransition (index, index',name)
+    --   return (index', object', isNew)
+    -- return . take maxNum . filter (\(_,_,isNew) -> isNew) $ states
+    (_,states) <- foldM f (maxNum, []) matches
+    return states
+  where
+    f :: (Int, [(Int, Cat.Obj morph, Bool)]) -> (String, Production morph, morph) -> SS.StateSpaceBuilder morph  (Int, [(Int, Cat.Obj morph, Bool)])
+    f (n,l) (name,prod,match) =
+      if (n > 0) then
+        do
+          let object' = DPO.rewrite match prod
+          (index', isNew) <- SS.putState object'
+          SS.putTransition (index,index',name)
+          return $
+            if isNew then
+              (n-1,(index',object',isNew):l)
+            else
+              (n,l)
+      else
+        return (0,l)
+
+
+
+
+
+-- | Runs a bread-first search on the state space, starting on the given object and limiting
+-- the number of states to the given number.
+breadthFirstSearch :: forall morph. DPO.DPO morph => Int -> [Cat.Obj morph] -> SS.StateSpaceBuilder morph ()
+breadthFirstSearch maxNum [] = return ()
+breadthFirstSearch maxNum (obj:node_list) =
+  if maxNum > 0 then
+    do
+      (objIndex, _) <- SS.putState obj
+      successors <- expandSuccessors' maxNum (objIndex,obj)
+      let successors' = map (\(i,o,n) -> o) successors
+      breadthFirstSearch (maxNum - length successors') (node_list ++ successors')
+  else
+    return ()
