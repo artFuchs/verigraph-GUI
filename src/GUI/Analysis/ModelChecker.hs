@@ -7,12 +7,14 @@ module GUI.Analysis.ModelChecker (
 -- GTK modules
 import qualified GI.Gtk as Gtk
 import qualified GI.Gdk as Gdk
+import qualified GI.Pango as P
 import           Data.GI.Base
 import           Graphics.Rendering.Cairo (Render)
 
 -- modules needed for threads
 import           Control.Concurrent
 import           Control.Concurrent.MVar
+import           Control.Exception.Base
 import qualified GI.GLib as GLib
 
 -- Haskell structures
@@ -102,59 +104,13 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
       Left msg -> showError window (T.pack msg)
       Right grammar -> do
         stMVar <- newEmptyMVar
-        ssMVar <- newEmptyMVar
         modelMVar <- newEmptyMVar
         timeMVar <- newEmptyMVar
         depth <- Gtk.spinButtonGetValueAsInt depthSpinBtn >>= return . fromIntegral
         context <- Gtk.widgetGetPangoContext canvas
-        execT <- forkFinally  (do
-                                startTime <- Time.getCurrentTime
-                                putMVar timeMVar startTime
-                                Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
-                                    Gtk.spinnerStart statusSpinner
-                                    Gtk.labelSetText statusLabel "generating state space"
-                                    return False
-                                let initialGraph = DPO.start grammar
-                                    mconf = (DPO.MorphismsConfig Cat.monic) :: DPO.MorphismsConfig (TGM.TypedGraphMorphism Info Info)
-                                ssIORef <- newIORef Nothing
-                                (initialState, stateSpace) <- exploreStateSpace mconf depth grammar initialGraph ssIORef
-                                let model = SS.toKripkeStructure stateSpace
-                                    st = generateGraphState [initialState] stateSpace
-                                    (ngi,egi) = stateGetGI st
-                                    g = stateGetGraph st
-
-                                ngi' <- updateNodesGiDims ngi g context
-                                st' <- return $ stateSetGI (ngi',egi) st
-                                putMVar stMVar st'
-                                putMVar modelMVar $ Just model
-                              )
-                              (\_ -> do
-                                endTime <- Time.getCurrentTime
-                                emptyTime <- isEmptyMVar timeMVar
-                                if emptyTime then
-                                  return ()
-                                else do
-                                  startTime <- takeMVar timeMVar
-                                  let diff = Time.diffUTCTime endTime startTime
-                                  print diff
-
-                                Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
-                                  let writeIORefIfMVarNotEmpty mvar ioref = do
-                                          emptyMvar <- isEmptyMVar mvar
-                                          if emptyMvar
-                                            then return ()
-                                            else do
-                                              var <- takeMVar mvar
-                                              writeIORef ioref var
-                                  writeIORefIfMVarNotEmpty stMVar ssGraphState
-                                  writeIORefIfMVarNotEmpty modelMVar modelIORef
-                                  writeIORef execThread Nothing
-                                  Gtk.spinnerStop statusSpinner
-                                  Gtk.labelSetText statusLabel ""
-                                  Gtk.widgetQueueDraw canvas
-                                  return False
-                                return ()
-                              )
+        execT <- forkFinally
+                    (generateSSThread statusSpinner statusLabel context timeMVar grammar depth stMVar modelMVar)
+                    (generateSSThreadEnd statusSpinner statusLabel canvas execThread ssGraphState modelIORef timeMVar stMVar modelMVar)
         writeIORef execThread (Just execT)
 
   on generateBtn #pressed $ Gtk.menuItemActivate genStateSpaceItem
@@ -218,6 +174,65 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
       return False
 
   return mainBox
+
+generateSSThread :: Gtk.Spinner -> Gtk.Label -> P.Context
+                 -> MVar Time.UTCTime
+                 -> DPO.Grammar (TGM.TypedGraphMorphism Info Info) -> Int
+                 -> MVar GraphState -> MVar (Maybe (Logic.KripkeStructure String))
+                 -> IO ()
+generateSSThread statusSpinner statusLabel context timeMVar grammar statesNum stMVar modelMVar = do
+  startTime <- Time.getCurrentTime
+  putMVar timeMVar startTime
+  Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
+      Gtk.spinnerStart statusSpinner
+      Gtk.labelSetText statusLabel "generating state space"
+      return False
+  let initialGraph = DPO.start grammar
+      mconf = (DPO.MorphismsConfig Cat.monic) :: DPO.MorphismsConfig (TGM.TypedGraphMorphism Info Info)
+  ssIORef <- newIORef Nothing
+  (initialState, stateSpace) <- exploreStateSpace mconf statesNum grammar initialGraph ssIORef
+  let model = SS.toKripkeStructure stateSpace
+      st = generateGraphState [initialState] stateSpace
+      (ngi,egi) = stateGetGI st
+      g = stateGetGraph st
+
+  ngi' <- updateNodesGiDims ngi g context
+  st' <- return $ stateSetGI (ngi',egi) st
+  putMVar stMVar st'
+  putMVar modelMVar $ Just model
+
+
+generateSSThreadEnd :: Gtk.Spinner -> Gtk.Label -> Gtk.DrawingArea
+                    -> IORef (Maybe ThreadId) -> IORef GraphState -> IORef (Maybe (Logic.KripkeStructure String))
+                    -> MVar Time.UTCTime -> MVar GraphState -> MVar (Maybe (Logic.KripkeStructure String))
+                    -> Either SomeException () -> IO ()
+generateSSThreadEnd statusSpinner statusLabel canvas execThread ssGraphState modelIORef timeMVar stMVar modelMVar e = do
+  endTime <- Time.getCurrentTime
+  emptyTime <- isEmptyMVar timeMVar
+  if emptyTime then
+    return ()
+  else do
+    startTime <- takeMVar timeMVar
+    let diff = Time.diffUTCTime endTime startTime
+    print diff
+
+  Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
+    let writeIORefIfMVarNotEmpty mvar ioref = do
+            emptyMvar <- isEmptyMVar mvar
+            if emptyMvar
+              then return ()
+              else do
+                var <- takeMVar mvar
+                writeIORef ioref var
+    writeIORefIfMVarNotEmpty stMVar ssGraphState
+    writeIORefIfMVarNotEmpty modelMVar modelIORef
+    writeIORef execThread Nothing
+    Gtk.spinnerStop statusSpinner
+    Gtk.labelSetText statusLabel ""
+    Gtk.widgetQueueDraw canvas
+    return False
+  return ()
+
 
 
 generateGraphState :: [Int] -> Space Info Info -> GraphState
