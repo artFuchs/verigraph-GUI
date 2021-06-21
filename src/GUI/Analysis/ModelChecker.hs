@@ -175,6 +175,15 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
 
   return mainBox
 
+
+
+
+
+type NamedPredicate a b = (String, TypedGraphRule a b)
+type NamedProduction a b = (String, TypedGraphRule a b)
+type Space a b = SS.StateSpace (TGM.TypedGraphMorphism a b)
+
+
 generateSSThread :: Gtk.Spinner -> Gtk.Label -> P.Context
                  -> MVar Time.UTCTime
                  -> DPO.Grammar (TGM.TypedGraphMorphism Info Info) -> Int
@@ -189,8 +198,10 @@ generateSSThread statusSpinner statusLabel context timeMVar grammar statesNum st
       return False
   let initialGraph = DPO.start grammar
       mconf = (DPO.MorphismsConfig Cat.monic) :: DPO.MorphismsConfig (TGM.TypedGraphMorphism Info Info)
-  ssIORef <- newIORef Nothing
-  (initialState, stateSpace) <- exploreStateSpace mconf statesNum grammar initialGraph ssIORef
+  ssMVar <- newEmptyMVar
+  indicateThread <- forkIO $ indicateStatus statusLabel ssMVar
+  (initialState, stateSpace) <- exploreStateSpace mconf statesNum grammar initialGraph ssMVar
+  killThread indicateThread
   let model = SS.toKripkeStructure stateSpace
       st = generateGraphState [initialState] stateSpace
       (ngi,egi) = stateGetGI st
@@ -202,11 +213,30 @@ generateSSThread statusSpinner statusLabel context timeMVar grammar statesNum st
   putMVar modelMVar $ Just model
 
 
+indicateStatus :: Gtk.Label -> MVar (Space a b) -> IO ()
+indicateStatus statusLabel ssMVar = do
+  ss <- takeMVar ssMVar
+  let s = IntMap.size $ SS.states ss
+  Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
+    Gtk.labelSetText statusLabel (T.pack ("generating state space ( " ++ (show s) ++ " states)"))
+    return False
+  indicateStatus statusLabel ssMVar
+
+
+
+
+
+
+
+
 generateSSThreadEnd :: Gtk.Spinner -> Gtk.Label -> Gtk.DrawingArea
                     -> IORef (Maybe ThreadId) -> IORef GraphState -> IORef (Maybe (Logic.KripkeStructure String))
                     -> MVar Time.UTCTime -> MVar GraphState -> MVar (Maybe (Logic.KripkeStructure String))
                     -> Either SomeException () -> IO ()
 generateSSThreadEnd statusSpinner statusLabel canvas execThread ssGraphState modelIORef timeMVar stMVar modelMVar e = do
+
+
+
   endTime <- Time.getCurrentTime
   emptyTime <- isEmptyMVar timeMVar
   if emptyTime then
@@ -275,10 +305,6 @@ modelCheck model expr goodStatesIORef =
   in do
     writeIORef goodStatesIORef $ Just (map G.NodeId allGoodStates)
 
-type NamedPredicate a b = (String, TypedGraphRule a b)
-type NamedProduction a b = (String, TypedGraphRule a b)
-type Space a b = SS.StateSpace (TGM.TypedGraphMorphism a b)
-
 -- | Separates the rules that change nothing (which are considered predicates)
 -- from those that have some effect (which are considered productions).
 splitPredicates :: [(String, TypedGraphRule a b)] -> ([NamedProduction a b], [NamedPredicate a b])
@@ -314,8 +340,8 @@ drawStateSpace state sq maybeGoodStates = drawGraph state sq nodeColors M.empty 
 
 
 -- state space generation -------------------------------------------------------------------------------------------------------------------------------------------------------
-exploreStateSpace :: DPO.MorphismsConfig (TGM.TypedGraphMorphism a b) -> Int -> DPO.Grammar (TGM.TypedGraphMorphism a b) -> TG.TypedGraph a b -> IORef (Maybe (Space a b)) -> IO (Int,Space a b)
-exploreStateSpace conf maxDepth grammar graph ssIORef =
+exploreStateSpace :: DPO.MorphismsConfig (TGM.TypedGraphMorphism a b) -> Int -> DPO.Grammar (TGM.TypedGraphMorphism a b) -> TG.TypedGraph a b -> MVar (Space a b) -> IO (Int,Space a b)
+exploreStateSpace conf maxDepth grammar graph ssMVar =
   let
     (productions, predicates) =
       splitPredicates (DPO.productions grammar)
@@ -328,18 +354,24 @@ exploreStateSpace conf maxDepth grammar graph ssIORef =
     initialSpace =
       SS.empty conf productions predicates
   in do
-    space <- breadthFirstSearchIO maxDepth [graph] initialSpace ssIORef
+    space <- breadthFirstSearchIO maxDepth [graph] initialSpace ssMVar
     return (SS.runStateSpaceBuilder getInitialId space)
 
 
 
-breadthFirstSearchIO :: Int -> [(TG.TypedGraph a b)] -> Space a b -> IORef (Maybe (Space a b)) -> IO (Space a b)
-breadthFirstSearchIO 0 _ initialSpace ssIORef = return initialSpace
-breadthFirstSearchIO _ [] initialSpace ssIORef = return initialSpace
-breadthFirstSearchIO maxNum objs initialSpace ssIORef = do
+breadthFirstSearchIO :: Int -> [(TG.TypedGraph a b)] -> Space a b -> MVar (Space a b) -> IO (Space a b)
+breadthFirstSearchIO 0 _ initialSpace ssMVar = return initialSpace
+breadthFirstSearchIO _ [] initialSpace ssMVar = return initialSpace
+breadthFirstSearchIO maxNum objs initialSpace ssMVar = do
   let ((newNum, newObjs), state) = SS.runStateSpaceBuilder (bfsStep maxNum objs) initialSpace
-  writeIORef ssIORef (Just state)
-  breadthFirstSearchIO newNum newObjs state ssIORef
+  empty <- isEmptyMVar ssMVar
+  if empty then
+    putMVar ssMVar state
+  else
+    do
+      swapMVar ssMVar state
+      return ()
+  breadthFirstSearchIO newNum newObjs state ssMVar
 
 
 
