@@ -102,6 +102,7 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
       Left msg -> showError window (T.pack msg)
       Right grammar -> do
         stMVar <- newEmptyMVar
+        ssMVar <- newEmptyMVar
         modelMVar <- newEmptyMVar
         timeMVar <- newEmptyMVar
         depth <- Gtk.spinButtonGetValueAsInt depthSpinBtn >>= return . fromIntegral
@@ -115,9 +116,10 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
                                     return False
                                 let initialGraph = DPO.start grammar
                                     mconf = (DPO.MorphismsConfig Cat.monic) :: DPO.MorphismsConfig (TGM.TypedGraphMorphism Info Info)
-                                    (initialStates, stateSpace) = exploreStateSpace mconf depth grammar [("initialGraph",initialGraph)]
-                                    model = SS.toKripkeStructure stateSpace
-                                    st = generateGraphState initialStates stateSpace
+                                ssIORef <- newIORef Nothing
+                                (initialState, stateSpace) <- exploreStateSpace mconf depth grammar initialGraph ssIORef
+                                let model = SS.toKripkeStructure stateSpace
+                                    st = generateGraphState [initialState] stateSpace
                                     (ngi,egi) = stateGetGI st
                                     g = stateGetGraph st
 
@@ -218,7 +220,6 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
   return mainBox
 
 
-
 generateGraphState :: [Int] -> Space Info Info -> GraphState
 generateGraphState initialStates stateSpace = st'
   where
@@ -259,26 +260,6 @@ modelCheck model expr goodStatesIORef =
   in do
     writeIORef goodStatesIORef $ Just (map G.NodeId allGoodStates)
 
-exploreStateSpace :: DPO.MorphismsConfig (TGM.TypedGraphMorphism a b) -> Int -> DPO.Grammar (TGM.TypedGraphMorphism a b) -> [(String, TG.TypedGraph a b)] -> ([Int], Space a b)
-exploreStateSpace conf maxDepth grammar graphs =
-  let
-    (productions, predicates) =
-      splitPredicates (DPO.productions grammar)
-
-    searchFrom (_, graph) =
-      do
-        (idx, _) <- SS.putState graph
-        breadthFirstSearch maxDepth [graph]
-        return idx
-
-    search =
-      mapM searchFrom graphs
-
-    initialSpace =
-      SS.empty conf productions predicates
-  in
-    SS.runStateSpaceBuilder search initialSpace
-
 type NamedPredicate a b = (String, TypedGraphRule a b)
 type NamedProduction a b = (String, TypedGraphRule a b)
 type Space a b = SS.StateSpace (TGM.TypedGraphMorphism a b)
@@ -317,6 +298,54 @@ drawStateSpace state sq maybeGoodStates = drawGraph state sq nodeColors M.empty 
 
 
 
+-- state space generation -------------------------------------------------------------------------------------------------------------------------------------------------------
+exploreStateSpace :: DPO.MorphismsConfig (TGM.TypedGraphMorphism a b) -> Int -> DPO.Grammar (TGM.TypedGraphMorphism a b) -> TG.TypedGraph a b -> IORef (Maybe (Space a b)) -> IO (Int,Space a b)
+exploreStateSpace conf maxDepth grammar graph ssIORef =
+  let
+    (productions, predicates) =
+      splitPredicates (DPO.productions grammar)
+
+    getInitialId =
+      do
+        (idx, _) <- SS.putState graph
+        return idx
+
+    initialSpace =
+      SS.empty conf productions predicates
+  in do
+    space <- breadthFirstSearchIO maxDepth [graph] initialSpace ssIORef
+    return (SS.runStateSpaceBuilder getInitialId space)
+
+
+
+breadthFirstSearchIO :: Int -> [(TG.TypedGraph a b)] -> Space a b -> IORef (Maybe (Space a b)) -> IO (Space a b)
+breadthFirstSearchIO 0 _ initialSpace ssIORef = return initialSpace
+breadthFirstSearchIO _ [] initialSpace ssIORef = return initialSpace
+breadthFirstSearchIO maxNum objs initialSpace ssIORef = do
+  let ((newNum, newObjs), state) = SS.runStateSpaceBuilder (bfsStep maxNum objs) initialSpace
+  writeIORef ssIORef (Just state)
+  breadthFirstSearchIO newNum newObjs state ssIORef
+
+
+
+
+-- | Runs a bread-first search on the state space, starting on the given object and limiting
+-- the number of states to the given number.
+breadthFirstSearch :: forall morph. DPO.DPO morph => Int -> [Cat.Obj morph] -> SS.StateSpaceBuilder morph ()
+breadthFirstSearch maxNum [] = return ()
+breadthFirstSearch 0 _ = return ()
+breadthFirstSearch maxNum objs = do
+  (newNum,newObjs) <- bfsStep maxNum objs
+  breadthFirstSearch newNum newObjs
+
+
+bfsStep :: forall morph. DPO.DPO morph => Int -> [Cat.Obj morph] -> SS.StateSpaceBuilder morph (Int,[Cat.Obj morph])
+bfsStep maxNum (obj:node_list) = do
+  (objIndex, _) <- SS.putState obj
+  successors <- expandSuccessors' maxNum (objIndex,obj)
+  let successors' = map (\(i,o,n) -> o) successors
+  return (maxNum - length successors', node_list ++ successors')
+
 
 -- | Finds all transformations of the given state with the productions of the HLR system being explored, adding them to the state space.
 -- Returns a list of the successor states as @(index, object, isNew)@, where @isNew@ indicates that the state was not present in the state space before.
@@ -326,14 +355,7 @@ expandSuccessors' maxNum (index, object) =
   do
     prods <- SS.getProductions
     conf <- SS.getDpoConfig
-    -- matches <- return $ take maxNum . concat . map (\(name,prod) -> map (\match -> (name,prod,match)) (DPO.findApplicableMatches conf prod object)) $ prods
     matches <- return . concat . map (\(name,prod) -> map (\match -> (name,prod,match)) (DPO.findApplicableMatches conf prod object)) $ prods
-    -- states <- forM matches $ \(name,prod,match) -> do
-    --   let object' = DPO.rewrite match prod
-    --   (index', isNew) <- SS.putState object'
-    --   SS.putTransition (index, index',name)
-    --   return (index', object', isNew)
-    -- return . take maxNum . filter (\(_,_,isNew) -> isNew) $ states
     (_,states) <- foldM f (maxNum, []) matches
     return states
   where
@@ -351,21 +373,3 @@ expandSuccessors' maxNum (index, object) =
               (n,l)
       else
         return (0,l)
-
-
-
-
-
--- | Runs a bread-first search on the state space, starting on the given object and limiting
--- the number of states to the given number.
-breadthFirstSearch :: forall morph. DPO.DPO morph => Int -> [Cat.Obj morph] -> SS.StateSpaceBuilder morph ()
-breadthFirstSearch maxNum [] = return ()
-breadthFirstSearch maxNum (obj:node_list) =
-  if maxNum > 0 then
-    do
-      (objIndex, _) <- SS.putState obj
-      successors <- expandSuccessors' maxNum (objIndex,obj)
-      let successors' = map (\(i,o,n) -> o) successors
-      breadthFirstSearch (maxNum - length successors') (node_list ++ successors')
-  else
-    return ()
