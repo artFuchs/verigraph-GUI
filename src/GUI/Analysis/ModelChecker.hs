@@ -103,14 +103,16 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
     case eGG of
       Left msg -> showError window (T.pack msg)
       Right grammar -> do
-        stMVar <- newEmptyMVar
-        modelMVar <- newEmptyMVar
         timeMVar <- newEmptyMVar
-        depth <- Gtk.spinButtonGetValueAsInt depthSpinBtn >>= return . fromIntegral
+        ssIORef <- newIORef Nothing
+        initialIORef <- newIORef 0
+        constructThreadIORef <- newIORef Nothing
+        constructEndedMVar <- newEmptyMVar
+        statesNum <- Gtk.spinButtonGetValueAsInt depthSpinBtn >>= return . fromIntegral
         context <- Gtk.widgetGetPangoContext canvas
         execT <- forkFinally
-                    (generateSSThread statusSpinner statusLabel context timeMVar grammar depth stMVar modelMVar)
-                    (generateSSThreadEnd statusSpinner statusLabel canvas execThread ssGraphState modelIORef timeMVar stMVar modelMVar)
+                    (generateSSThread statusSpinner statusLabel canvas context timeMVar grammar statesNum ssIORef initialIORef ssGraphState modelIORef constructThreadIORef constructEndedMVar)
+                    (generateSSThreadEnd statusSpinner statusLabel canvas context execThread timeMVar constructThreadIORef constructEndedMVar)
         writeIORef execThread (Just execT)
 
   on generateBtn #pressed $ Gtk.menuItemActivate genStateSpaceItem
@@ -184,43 +186,81 @@ type NamedProduction a b = (String, TypedGraphRule a b)
 type Space a b = SS.StateSpace (TGM.TypedGraphMorphism a b)
 
 
-generateSSThread :: Gtk.Spinner -> Gtk.Label -> P.Context
+
+generateSSThread :: Gtk.Spinner -> Gtk.Label -> Gtk.DrawingArea -> P.Context
                  -> MVar Time.UTCTime
                  -> DPO.Grammar (TGM.TypedGraphMorphism Info Info) -> Int
-                 -> MVar GraphState -> MVar (Maybe (Logic.KripkeStructure String))
+                 -> IORef (Maybe (Space Info Info)) -> IORef Int
+                 -> IORef GraphState -> IORef (Maybe (Logic.KripkeStructure String))
+                 -> IORef (Maybe ThreadId) -> MVar Bool
                  -> IO ()
-generateSSThread statusSpinner statusLabel context timeMVar grammar statesNum stMVar modelMVar = do
+generateSSThread statusSpinner statusLabel canvas context timeMVar grammar statesNum ssIORef initialIORef ssGraphState modelIORef constructThreadIORef constructEndedMVar = do
+  -- get current time to compare and indicate the duration of the generation
   startTime <- Time.getCurrentTime
   putMVar timeMVar startTime
+
+  -- indicate that the generation started
   Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
       Gtk.spinnerStart statusSpinner
       Gtk.labelSetText statusLabel "generating state space"
       return False
+
+  --
   let initialGraph = DPO.start grammar
       mconf = (DPO.MorphismsConfig Cat.monic) :: DPO.MorphismsConfig (TGM.TypedGraphMorphism Info Info)
+
+  -- start thread to indicate the current status of the generation
   ssMVar <- newEmptyMVar
-  indicateThread <- forkIO $ indicateStatus statusLabel ssMVar
-  (initialState, stateSpace) <- exploreStateSpace mconf statesNum grammar initialGraph ssMVar
-  killThread indicateThread
-  let model = SS.toKripkeStructure stateSpace
-      st = generateGraphState [initialState] stateSpace
-      (ngi,egi) = stateGetGI st
-      g = stateGetGraph st
+  indicateThread <- forkIO $ constructStateSpace statusLabel ssMVar initialGraph canvas context ssGraphState modelIORef constructEndedMVar
+  writeIORef constructThreadIORef (Just indicateThread)
 
-  ngi' <- updateNodesGiDims ngi g context
-  st' <- return $ stateSetGI (ngi',egi) st
-  putMVar stMVar st'
-  putMVar modelMVar $ Just model
+  -- generate state
+  exploreStateSpace mconf statesNum grammar initialGraph ssMVar
+  return ()
 
 
-indicateStatus :: Gtk.Label -> MVar (Space a b) -> IO ()
-indicateStatus statusLabel ssMVar = do
-  ss <- takeMVar ssMVar
-  let s = IntMap.size $ SS.states ss
+-- indicate how many states were created
+constructStateSpace :: Gtk.Label -> MVar (Space Info Info) -> TG.TypedGraph Info Info
+               -> Gtk.DrawingArea -> P.Context
+               -> IORef GraphState -> IORef (Maybe (Logic.KripkeStructure String))
+               -> MVar Bool
+               -> IO ()
+constructStateSpace statusLabel ssMVar initialGraph canvas context ssGraphState modelIORef endedMVar = do
+  -- wait till there is something
+  stateSpace <- takeMVar ssMVar
+  _ <- tryTakeMVar endedMVar
+
+  let getInitialId = do
+          (idx,_) <- SS.putState initialGraph
+          return idx
+
+  let (idx,_) = SS.runStateSpaceBuilder getInitialId stateSpace
+
+  -- indicate the number of states in the current space
+  let s = IntMap.size $ SS.states stateSpace
   Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
     Gtk.labelSetText statusLabel (T.pack ("generating state space ( " ++ (show s) ++ " states)"))
     return False
-  indicateStatus statusLabel ssMVar
+
+  -- build the model to make logical verifications and
+  let model = SS.toKripkeStructure stateSpace
+  writeIORef modelIORef (Just model)
+
+  -- generate the graphState to show the space state
+  let st = generateGraphState [idx] stateSpace
+      (ngi,egi) = stateGetGI st
+      g = stateGetGraph st
+  ngi' <- updateNodesGiDims ngi g context
+  st' <- return $ stateSetGI (ngi',egi) st
+
+  -- update canvas
+  Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
+    writeIORef ssGraphState st'
+    Gtk.widgetQueueDraw canvas
+    return False
+
+  putMVar endedMVar True
+  constructStateSpace statusLabel ssMVar initialGraph canvas context ssGraphState modelIORef endedMVar
 
 
 
@@ -229,14 +269,24 @@ indicateStatus statusLabel ssMVar = do
 
 
 
-generateSSThreadEnd :: Gtk.Spinner -> Gtk.Label -> Gtk.DrawingArea
-                    -> IORef (Maybe ThreadId) -> IORef GraphState -> IORef (Maybe (Logic.KripkeStructure String))
-                    -> MVar Time.UTCTime -> MVar GraphState -> MVar (Maybe (Logic.KripkeStructure String))
+generateSSThreadEnd :: Gtk.Spinner -> Gtk.Label -> Gtk.DrawingArea -> P.Context
+                    -> IORef (Maybe ThreadId)
+                    -> MVar Time.UTCTime
+                    -> IORef (Maybe ThreadId)
+                    -> MVar Bool
                     -> Either SomeException () -> IO ()
-generateSSThreadEnd statusSpinner statusLabel canvas execThread ssGraphState modelIORef timeMVar stMVar modelMVar e = do
+generateSSThreadEnd statusSpinner statusLabel canvas context execThread timeMVar constructThreadIORef constructEndedMVar e = do
+
+  _ <- takeMVar constructEndedMVar
+
+  -- stop the thread that generates the graphState and model for the state space
+  constructThread <- readIORef constructThreadIORef
+  case constructThread of
+    Nothing -> return ()
+    Just t -> killThread t
 
 
-
+  -- get current time to compare and indicate the duration of the generation
   endTime <- Time.getCurrentTime
   emptyTime <- isEmptyMVar timeMVar
   if emptyTime then
@@ -246,22 +296,13 @@ generateSSThreadEnd statusSpinner statusLabel canvas execThread ssGraphState mod
     let diff = Time.diffUTCTime endTime startTime
     print diff
 
+  -- indicate that the generation ended
   Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
-    let writeIORefIfMVarNotEmpty mvar ioref = do
-            emptyMvar <- isEmptyMVar mvar
-            if emptyMvar
-              then return ()
-              else do
-                var <- takeMVar mvar
-                writeIORef ioref var
-    writeIORefIfMVarNotEmpty stMVar ssGraphState
-    writeIORefIfMVarNotEmpty modelMVar modelIORef
-    writeIORef execThread Nothing
     Gtk.spinnerStop statusSpinner
     Gtk.labelSetText statusLabel ""
-    Gtk.widgetQueueDraw canvas
     return False
-  return ()
+
+  writeIORef execThread Nothing
 
 
 
@@ -354,8 +395,9 @@ exploreStateSpace conf maxDepth grammar graph ssMVar =
     initialSpace =
       SS.empty conf productions predicates
   in do
-    space <- breadthFirstSearchIO maxDepth [graph] initialSpace ssMVar
-    return (SS.runStateSpaceBuilder getInitialId space)
+    (idx,space1) <- return $ SS.runStateSpaceBuilder getInitialId initialSpace
+    spacex <- breadthFirstSearchIO maxDepth [graph] space1 ssMVar
+    return (idx,spacex)
 
 
 
