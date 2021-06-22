@@ -112,7 +112,7 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
         context <- Gtk.widgetGetPangoContext canvas
         execT <- forkFinally
                     (generateSSThread statusSpinner statusLabel canvas context timeMVar grammar statesNum ssIORef initialIORef ssGraphState modelIORef constructThreadIORef constructEndedMVar)
-                    (generateSSThreadEnd statusSpinner statusLabel canvas context execThread timeMVar constructThreadIORef constructEndedMVar)
+                    (generateSSThreadEnd statusSpinner statusLabel execThread timeMVar constructThreadIORef constructEndedMVar)
         writeIORef execThread (Just execT)
 
   on generateBtn #pressed $ Gtk.menuItemActivate genStateSpaceItem
@@ -269,13 +269,13 @@ constructStateSpace statusLabel ssMVar initialGraph canvas context ssGraphState 
 
 
 
-generateSSThreadEnd :: Gtk.Spinner -> Gtk.Label -> Gtk.DrawingArea -> P.Context
+generateSSThreadEnd :: Gtk.Spinner -> Gtk.Label
                     -> IORef (Maybe ThreadId)
                     -> MVar Time.UTCTime
                     -> IORef (Maybe ThreadId)
                     -> MVar Bool
                     -> Either SomeException () -> IO ()
-generateSSThreadEnd statusSpinner statusLabel canvas context execThread timeMVar constructThreadIORef constructEndedMVar e = do
+generateSSThreadEnd statusSpinner statusLabel execThread timeMVar constructThreadIORef constructEndedMVar e = do
   _ <- takeMVar constructEndedMVar
   -- stop the thread that generates the graphState and model for the state space
   constructThread <- readIORef constructThreadIORef
