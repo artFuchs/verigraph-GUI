@@ -98,6 +98,7 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
 
   -- bindings ------------------------------------------------------------------------
   -- controls
+  constructEndedMVar <- newEmptyMVar
   on genStateSpaceItem #activate $ do
     eGG <- Edit.prepToExport store graphStatesIORef nacsInfoIORef
     case eGG of
@@ -107,7 +108,6 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
         ssIORef <- newIORef Nothing
         initialIORef <- newIORef 0
         constructThreadIORef <- newIORef Nothing
-        constructEndedMVar <- newEmptyMVar
         statesNum <- Gtk.spinButtonGetValueAsInt depthSpinBtn >>= return . fromIntegral
         context <- Gtk.widgetGetPangoContext canvas
         execT <- forkFinally
@@ -122,6 +122,8 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
     case execT of
       Nothing -> return ()
       Just t -> do
+        tryPutMVar constructEndedMVar False
+        swapMVar constructEndedMVar False
         killThread t
         writeIORef execThread Nothing
 
@@ -225,15 +227,14 @@ constructStateSpace :: Gtk.Label -> MVar (Space Info Info) -> TG.TypedGraph Info
                -> IORef GraphState -> IORef (Maybe (Logic.KripkeStructure String))
                -> MVar Bool
                -> IO ()
-constructStateSpace statusLabel ssMVar initialGraph canvas context ssGraphState modelIORef endedMVar = do
+constructStateSpace statusLabel ssMVar initialGraph canvas context ssGraphState modelIORef constructEndedMVar = do
   -- wait till there is something
   stateSpace <- takeMVar ssMVar
-  _ <- tryTakeMVar endedMVar
+  _ <- tryTakeMVar constructEndedMVar
 
   let getInitialId = do
           (idx,_) <- SS.putState initialGraph
           return idx
-
   let (idx,_) = SS.runStateSpaceBuilder getInitialId stateSpace
 
   -- indicate the number of states in the current space
@@ -259,8 +260,8 @@ constructStateSpace statusLabel ssMVar initialGraph canvas context ssGraphState 
     Gtk.widgetQueueDraw canvas
     return False
 
-  putMVar endedMVar True
-  constructStateSpace statusLabel ssMVar initialGraph canvas context ssGraphState modelIORef endedMVar
+  tryPutMVar constructEndedMVar True
+  constructStateSpace statusLabel ssMVar initialGraph canvas context ssGraphState modelIORef constructEndedMVar
 
 
 
@@ -276,7 +277,8 @@ generateSSThreadEnd :: Gtk.Spinner -> Gtk.Label
                     -> MVar Bool
                     -> Either SomeException () -> IO ()
 generateSSThreadEnd statusSpinner statusLabel execThread timeMVar constructThreadIORef constructEndedMVar e = do
-  _ <- takeMVar constructEndedMVar
+  ended <- takeMVar constructEndedMVar
+
   -- stop the thread that generates the graphState and model for the state space
   constructThread <- readIORef constructThreadIORef
   case constructThread of
@@ -287,23 +289,28 @@ generateSSThreadEnd statusSpinner statusLabel execThread timeMVar constructThrea
   -- get current time to compare and indicate the duration of the generation
   endTime <- Time.getCurrentTime
   emptyTime <- isEmptyMVar timeMVar
-  if emptyTime then
-    return ()
-  else do
-    startTime <- takeMVar timeMVar
-    let diff = Time.diffUTCTime endTime startTime
-    print diff
+  diff <- if emptyTime then
+            return (-1)
+          else do
+            startTime <- takeMVar timeMVar
+            return $ Time.diffUTCTime endTime startTime
+
 
   -- indicate that the generation ended
   Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
     Gtk.spinnerStop statusSpinner
-    Gtk.labelSetText statusLabel ""
+    let text =  if ended then
+                  T.pack $ "generation completed in " ++ (show diff)
+                else
+                  T.pack $ "generation interrupted. Time elapsed: " ++ (show diff)
+    Gtk.labelSetText statusLabel text
     return False
 
   writeIORef execThread Nothing
 
 
 
+-- create diagram
 generateGraphState :: [Int] -> Space Info Info -> GraphState
 generateGraphState initialStates stateSpace = st'
   where
@@ -336,44 +343,7 @@ generateGraphState initialStates stateSpace = st'
     st' = M.foldrWithKey (\(a,b) names st -> createEdge st Nothing (G.NodeId a) (G.NodeId b) (infoSetLabel Info.empty (init $ unlines names)) False ENormal (0,0,0)) st (SS.transitions stateSpace)
 
 
--- definitions taken from Verigraph CLI/ModelChecker.hs -------------------------------------------------------------
-modelCheck :: Logic.KripkeStructure String -> Logic.Expr -> IORef (Maybe [G.NodeId]) -> IO ()
-modelCheck model expr goodStatesIORef =
-  let
-    allGoodStates = Logic.satisfyExpr' model expr
-  in do
-    writeIORef goodStatesIORef $ Just (map G.NodeId allGoodStates)
 
--- | Separates the rules that change nothing (which are considered predicates)
--- from those that have some effect (which are considered productions).
-splitPredicates :: [(String, TypedGraphRule a b)] -> ([NamedProduction a b], [NamedPredicate a b])
-splitPredicates [] =
-  ([], [])
-
-splitPredicates ((name, rule) : rest) =
-  let
-    (productions, predicates) =
-      splitPredicates rest
-  in
-    if Cat.isIsomorphism (leftMorphism rule) && Cat.isIsomorphism (rightMorphism rule) then
-      (productions, (name, rule):predicates)
-    else
-      ((name, rule):productions, predicates)
-
-
--- draw state space graph -------------------------------------------------------------
-drawStateSpace :: GraphState -> Maybe (Double,Double,Double,Double) -> Maybe [G.NodeId] -> Render ()
-drawStateSpace state sq maybeGoodStates = drawGraph state sq nodeColors M.empty M.empty M.empty
-  where
-    g = stateGetGraph state
-    allGoodStates = fromMaybe [] maybeGoodStates
-    nodeColors = case maybeGoodStates of
-                    Nothing            -> M.empty
-                    Just allGoodStates ->
-                        let (goodStates, badStates) = List.partition (`List.elem` allGoodStates) (G.nodeIds g)
-                        in  (M.fromList $ map (\n -> (n,(0,1,0))) goodStates)
-                            `M.union`
-                            (M.fromList $ map (\n -> (n,(1,0,0))) badStates)
 
 
 
@@ -431,6 +401,7 @@ bfsStep maxNum (obj:node_list) = do
 -- | Finds all transformations of the given state with the productions of the HLR system being explored, adding them to the state space.
 -- Returns a list of the successor states as @(index, object, isNew)@, where @isNew@ indicates that the state was not present in the state space before.
 -- limits the number of matches applications to @maxNum@
+-- adapted from module Abstract.Rewriting.DPO.StateSpace
 expandSuccessors' :: forall morph. DPO.DPO morph => Int -> (Int, Cat.Obj morph) -> SS.StateSpaceBuilder morph [(Int, Cat.Obj morph, Bool)]
 expandSuccessors' maxNum (index, object) =
   do
@@ -454,3 +425,49 @@ expandSuccessors' maxNum (index, object) =
               (n,l)
       else
         return (0,l)
+
+
+
+
+-- | Separates the rules that change nothing (which are considered predicates)
+-- from those that have some effect (which are considered productions).
+-- definition taken as is from Verigraph CLI/ModelChecker.hs
+splitPredicates :: [(String, TypedGraphRule a b)] -> ([NamedProduction a b], [NamedPredicate a b])
+splitPredicates [] =
+  ([], [])
+
+splitPredicates ((name, rule) : rest) =
+  let
+    (productions, predicates) =
+      splitPredicates rest
+  in
+    if Cat.isIsomorphism (leftMorphism rule) && Cat.isIsomorphism (rightMorphism rule) then
+      (productions, (name, rule):predicates)
+    else
+      ((name, rule):productions, predicates)
+
+
+
+-- | Given a logic model and a expression to parse, verify wich states are good and wich are bad
+-- adapted from Verigraph CLI/ModelChecker.hs
+modelCheck :: Logic.KripkeStructure String -> Logic.Expr -> IORef (Maybe [G.NodeId]) -> IO ()
+modelCheck model expr goodStatesIORef =
+  let
+    allGoodStates = Logic.satisfyExpr' model expr
+  in do
+    writeIORef goodStatesIORef $ Just (map G.NodeId allGoodStates)
+
+
+-- draw state space graph -------------------------------------------------------------
+drawStateSpace :: GraphState -> Maybe (Double,Double,Double,Double) -> Maybe [G.NodeId] -> Render ()
+drawStateSpace state sq maybeGoodStates = drawGraph state sq nodeColors M.empty M.empty M.empty
+  where
+    g = stateGetGraph state
+    allGoodStates = fromMaybe [] maybeGoodStates
+    nodeColors = case maybeGoodStates of
+                    Nothing            -> M.empty
+                    Just allGoodStates ->
+                        let (goodStates, badStates) = List.partition (`List.elem` allGoodStates) (G.nodeIds g)
+                        in  (M.fromList $ map (\n -> (n,(0,1,0))) goodStates)
+                            `M.union`
+                            (M.fromList $ map (\n -> (n,(1,0,0))) badStates)
