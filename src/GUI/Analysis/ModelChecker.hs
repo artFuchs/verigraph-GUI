@@ -276,9 +276,7 @@ generateSSThreadEnd :: Gtk.Spinner -> Gtk.Label -> Gtk.DrawingArea -> P.Context
                     -> MVar Bool
                     -> Either SomeException () -> IO ()
 generateSSThreadEnd statusSpinner statusLabel canvas context execThread timeMVar constructThreadIORef constructEndedMVar e = do
-
   _ <- takeMVar constructEndedMVar
-
   -- stop the thread that generates the graphState and model for the state space
   constructThread <- readIORef constructThreadIORef
   case constructThread of
@@ -406,13 +404,7 @@ breadthFirstSearchIO 0 _ initialSpace ssMVar = return initialSpace
 breadthFirstSearchIO _ [] initialSpace ssMVar = return initialSpace
 breadthFirstSearchIO maxNum objs initialSpace ssMVar = do
   let ((newNum, newObjs), state) = SS.runStateSpaceBuilder (bfsStep maxNum objs) initialSpace
-  empty <- isEmptyMVar ssMVar
-  if empty then
-    putMVar ssMVar state
-  else
-    do
-      swapMVar ssMVar state
-      return ()
+  putMVar ssMVar state
   breadthFirstSearchIO newNum newObjs state ssMVar
 
 
