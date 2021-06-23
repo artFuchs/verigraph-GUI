@@ -287,11 +287,9 @@ startEditor window store
 
     case (b, click == Gdk.EventType2buttonPress) of
       --double click with left button : rename selection
-      (1, True) -> do
-        let (n,e) = stateGetSelected es
-        if null n && null e
-          then return ()
-          else Gtk.widgetGrabFocus nameEntry
+      (1, True) -> case stateGetSelected es of
+                      ([],[]) -> return ()
+                      _ -> Gtk.widgetGrabFocus nameEntry
       -- right button click: create nodes and insert edges
       (3, False) -> do
         let g = stateGetGraph es
@@ -332,21 +330,7 @@ startEditor window store
 
                 -- if the current graph is a nac, then add the node to nacg
                 if gType == 4
-                  then do
-                    -- get the node and it's gi
-                    es <- readIORef currentState
-                    let g = stateGetGraph es
-                        gi = stateGetGI es
-                        addedNodeId = maximum (nodeIds g)
-                        addedNode = fromJust $ lookupNode addedNodeId g
-                        addedNodeGI = getNodeGI (fromEnum addedNodeId) (fst gi)
-                    -- get the nacg and add the node
-                    nacInfoM <- readIORef nacInfoMap
-                    index <- readIORef currentGraph
-                    let ((nacg,nacgi), mapping) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup index nacInfoM
-                        nacg' = insertNodeWithPayload addedNodeId (nodeInfo addedNode) nacg
-                        nacNgi' = M.insert (fromEnum addedNodeId) addedNodeGI (fst nacgi)
-                    modifyIORef nacInfoMap $ M.insert index ((nacg',(nacNgi', snd nacgi)), mapping)
+                  then updateNacInfo nacInfoMap currentGraph mergeMapping currentState
                   else return ()
 
 
@@ -397,41 +381,15 @@ startEditor window store
 
               writeIORef currentState $ stateSetSelected ([],createdEdges) es'
 
-              if gType > 1
-                then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es' tg createdEdges
-                else return ()
+              changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es' tg createdEdges
 
               setChangeFlags window store changedProject changedGraph currentPath currentGraph True
               setCurrentValidFlag store currentState typeGraph currentPath
 
               -- if the current graph is a nac, then add the created edges in the nacg
-              if gType /= 4
-                then return ()
-                else do
-                  -- get the difference between the new graph and the old one
-                  newEs <- readIORef currentState
-                  let g = stateGetGraph newEs
-                      gi = stateGetGI newEs
-                      oldg = stateGetGraph es
-                      oldgi = stateGetGI es
-                      (g',gi') = diagrSubtract (g,gi) (oldg,oldgi)
-                  -- get nac information
-                  nacInfoM <- readIORef nacInfoMap
-                  index <- readIORef currentGraph
-                  let ((nacg,nacgi), (nM, eM)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup index nacInfoM
-                  -- insert nodes in nacg if they aren't already present
-                  let nacgWithNodes = foldr (\n g -> if nodeId n `elem` (nodeIds g)
-                                                  then g
-                                                  else insertNodeWithPayload (nodeId n) (nodeInfo n) g)
-                                        nacg (nodes g')
-                  -- insert created edges in nacg
-                  let nacg' = foldr (\e g -> insertEdgeWithPayload (edgeId e) (sourceId e) (targetId e) (edgeInfo e) g)
-                                nacgWithNodes (edges g')
-                  let nacEgi' = foldr (\(eid, egi) giM -> M.insert eid egi giM) (snd nacgi) (M.toList $ snd gi')
-                  -- modify mapping if g' have any node from lhs
-                  let nodesFromLHS = filter (\n -> infoLocked $ nodeInfo n) (nodes g')
-                      nM' = foldr (\n m -> if n `elem` (M.elems m) then m else M.insert n n m) nM (map nodeId nodesFromLHS)
-                  modifyIORef nacInfoMap $ M.insert index ((nacg', (fst nacgi, nacEgi')), (nM',eM))
+              if gType == 4
+                then updateNacInfo nacInfoMap currentGraph mergeMapping currentState
+                else return ()
 
         Gtk.widgetQueueDraw canvas
       _           -> return ()
@@ -1475,7 +1433,7 @@ startEditor window store
 
 
 ---------------------------------------------------------------------------------------------------------------------------------
---  Exported Callbacks  ---------------------------------------------------------------------------------------------------------
+--  Callbacks  ---------------------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------------------------------------
 
 
@@ -1484,6 +1442,19 @@ startEditor window store
 ---------------------------------------------------------------------------------------------------------------------------------
 --  Auxiliar Functions  ---------------------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------------------------------------
+
+updateNacInfo :: IORef (M.Map Int32 NacInfo) -> IORef Int32 -> IORef (Maybe MergeMapping) -> IORef GraphState -> IO ()
+updateNacInfo nacInfoMap currentGraph mergeMapping currentState = do
+      mergeM <- readIORef mergeMapping >>= return . fromJust
+      st <- readIORef currentState
+      let g = stateGetGraph st
+          gi = stateGetGI st
+          nacInfo = extractNac g gi mergeM
+      index <- readIORef currentGraph
+      modifyIORef nacInfoMap $ M.insert index nacInfo
+
+
+
 
 -- auxiliar function to check if the project was changed
 -- it does the checking and if no, ask the user if them want to save.
