@@ -13,6 +13,7 @@ module GUI.Editor(
 import qualified GI.Gtk as Gtk
 import qualified GI.Gdk as Gdk
 import qualified GI.Pango as P
+import qualified GI.Cairo.Structs as Cairo
 import Data.GI.Base
 import Data.GI.Base.GValue
 import Data.GI.Base.GType
@@ -208,25 +209,7 @@ startEditor window store
   ----------------------------------------------------------------------------------------------------------------------------
 
   -- drawing event
-  on canvas #draw $ \context -> do
-    es <- readIORef currentState
-    sq <- readIORef squareSelection
-    t <- readIORef currentGraphType
-    case t of
-      0 -> return ()
-      1 -> renderWithContext context $ drawTypeGraph es sq
-      2 -> do
-        tg <- readIORef typeGraph
-        renderWithContext context $ drawHostGraph es sq tg
-      3 -> do
-        tg <- readIORef typeGraph
-        renderWithContext context $ drawRuleGraph es sq tg
-      4 -> do
-        tg <- readIORef typeGraph
-        mm <- readIORef mergeMapping >>= return . fromMaybe (M.empty, M.empty)
-        renderWithContext context $ drawNACGraph es sq tg mm
-      _ -> return ()
-    return False
+  on canvas #draw $ drawGraphByType currentState typeGraph squareSelection currentGraphType mergeMapping
 
   -- mouse button pressed on canvas
   -- set callback to select elements on canvas
@@ -238,13 +221,10 @@ startEditor window store
     y <- get eventButton #y
     ms <- get eventButton #state
     click <- get eventButton #type
+
     es <- readIORef currentState
     gType <- readIORef currentGraphType
     tg <- readIORef typeGraph
-
-    if gType > 1
-      then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es tg []
-      else return ()
 
     let z = stateGetZoom es
         (px,py) = stateGetPan es
@@ -283,17 +263,19 @@ startEditor window store
             created <- createEdgeCallback typeGraph currentGraphType currentState currentEdgeType possibleEdgeTypes currentStyle currentLC auto nid
             if created then
               do
-                es <- readIORef currentState
-                let sEdges = snd . stateGetSelected $ es
-                changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es tg sEdges
-                setChangeFlags window store changedProject changedGraph currentPath currentGraph True
                 updateByType
+                setChangeFlags window store changedProject changedGraph currentPath currentGraph True
             else
               return ()
 
 
         Gtk.widgetQueueDraw canvas
       _           -> return ()
+
+
+    if gType > 1
+      then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox currentState tg
+      else return ()
 
     updateInspector currentGraphType currentState currentC currentLC typeInspWidgets (fillColorBox, nodeShapeFrame, edgeStyleFrame)
                     possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMapping
@@ -343,7 +325,7 @@ startEditor window store
         case (length sNodes > 0 || length sEdges > 0) of
           True -> do
             if gType > 1
-              then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es tg sEdges
+              then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox currentState tg
               else return ()
             updateInspector currentGraphType currentState currentC currentLC typeInspWidgets (fillColorBox, nodeShapeFrame, edgeStyleFrame)
                             possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMapping
@@ -1314,6 +1296,37 @@ startEditor window store
 --  Callbacks  ---------------------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------------------------------------
 
+
+drawGraphByType :: IORef GraphState
+                -> IORef (Graph Info Info)
+                -> IORef (Maybe (Double,Double,Double,Double) )
+                -> IORef Int32
+                -> IORef (Maybe MergeMapping)
+                -> Cairo.Context
+                -> IO Bool
+drawGraphByType currentState typeGraph squareSelection currentGraphType mergeMapping context =
+  do
+    es <- readIORef currentState
+    sq <- readIORef squareSelection
+    t <- readIORef currentGraphType
+    case t of
+      1 -> renderWithContext context $ drawTypeGraph es sq
+      2 -> do
+        tg <- readIORef typeGraph
+        renderWithContext context $ drawHostGraph es sq tg
+      3 -> do
+        tg <- readIORef typeGraph
+        renderWithContext context $ drawRuleGraph es sq tg
+      4 -> do
+        tg <- readIORef typeGraph
+        mm <- readIORef mergeMapping >>= return . fromMaybe (M.empty, M.empty)
+        renderWithContext context $ drawNACGraph es sq tg mm
+      _ -> return ()
+    return False
+
+
+
+
 createNodeCallback :: IORef Int32
                    -> IORef GraphState
                    -> IORef (Maybe String)
@@ -1567,11 +1580,12 @@ updateComboBoxText cbox texts = do
 changeEdgeTypeCBoxByContext :: IORef (M.Map String (M.Map (String,String)EdgeGI,Int32))
                             -> IORef (M.Map String (M.Map (String,String)EdgeGI,Int32))
                             -> Gtk.ComboBoxText
-                            -> GraphState
+                            -> IORef GraphState
                             -> Graph Info Info
-                            -> [EdgeId]
                             -> IO ()
-changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es tg sEdges = do
+changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox currentState tg = do
+  es <- readIORef currentState
+  sEdges <- return . snd . stateGetSelected $ es
   pET <- readIORef possibleEdgeTypes
   let defaultAction = do
         writeIORef possibleSelectableEdgeTypes pET
