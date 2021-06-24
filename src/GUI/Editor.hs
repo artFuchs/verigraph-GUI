@@ -218,17 +218,21 @@ startEditor window store
     -- create nodes or edges
     b <- get eventButton #button
     click <- get eventButton #type
+    ms <- get eventButton #state
 
-    created <- case (b, click == Gdk.EventType2buttonPress) of
+    let doubleLeftClick = (b == 1) && (click == Gdk.EventType2buttonPress)
+    let rightButton = (b == 3) && not (Gdk.ModifierTypeControlMask `elem` ms)
+
+    created <- case (doubleLeftClick, rightButton) of
         -- left button with double click -> rename element
-        (1,True) -> do
+        (True,False) -> do
           es <- readIORef currentState
           case stateGetSelected es of
             ([],[]) -> return ()
             _ -> Gtk.widgetGrabFocus nameEntry
           return False
         -- right button -> create a node or edge
-        (3,False) -> createNodesOrEdgesCallback canvas nameEntry autoLabelNCheckBtn autoLabelECheckBtn
+        (False,True) -> createNodesOrEdgesCallback canvas nameEntry autoLabelNCheckBtn autoLabelECheckBtn
                                currentState currentGraph currentGraphType typeGraph mergeMapping
                                undoStack redoStack
                                currentNodeType possibleNodeTypes currentEdgeType possibleEdgeTypes
