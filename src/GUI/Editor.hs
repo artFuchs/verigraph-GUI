@@ -214,69 +214,43 @@ startEditor window store
   -- mouse button pressed on canvas
   -- set callback to select elements on canvas
   on canvas #buttonPressEvent $ basicCanvasButtonPressedCallback currentState oldPoint squareSelection canvas
-  -- additional callback to edit label on double-click and create new elements when right click
   on canvas #buttonPressEvent $ \eventButton -> do
+    -- create nodes or edges
     b <- get eventButton #button
-    x <- get eventButton #x
-    y <- get eventButton #y
-    ms <- get eventButton #state
     click <- get eventButton #type
 
-    es <- readIORef currentState
-    gType <- readIORef currentGraphType
+    created <- case (b, click == Gdk.EventType2buttonPress) of
+        -- left button with double click -> rename element
+        (1,True) -> do
+          es <- readIORef currentState
+          case stateGetSelected es of
+            ([],[]) -> return ()
+            _ -> Gtk.widgetGrabFocus nameEntry
+          return False
+        -- right button -> create a node or edge
+        (3,False) -> createNodesOrEdgesCallback canvas nameEntry autoLabelNCheckBtn autoLabelECheckBtn
+                               currentState currentGraph currentGraphType typeGraph mergeMapping
+                               undoStack redoStack
+                               currentNodeType possibleNodeTypes currentEdgeType possibleEdgeTypes
+                               currentShape currentStyle currentC currentLC
+                               eventButton
+        _ -> return False
+    -- if a node or edges were created then update the UI to indicate changes and possibly invalid flags
+    if created then
+      do
+        updateByType
+        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+    else
+      return ()
+
+    -- changed the edge type box displayed options based on wich edges are selected
     tg <- readIORef typeGraph
-
-    let z = stateGetZoom es
-        (px,py) = stateGetPan es
-        (x',y') = (x/z - px, y/z - py)
-
-    case (b, click == Gdk.EventType2buttonPress) of
-      --double click with left button : rename selection
-      (1, True) -> case stateGetSelected es of
-                      ([],[]) -> return ()
-                      _ -> Gtk.widgetGrabFocus nameEntry
-      -- right button click: create nodes and insert edges
-      (3, False) -> do
-        let g = stateGetGraph es
-            gi = stateGetGI es
-            dstNode = selectNodeInPosition gi (x',y')
-        context <- Gtk.widgetGetPangoContext canvas
-        -- if current graph is a nac, then add mergeM to the undoStack
-        case gType of
-          4 -> do mergeM <- readIORef mergeMapping
-                  stackUndo undoStack redoStack currentGraph es mergeM
-          _ -> stackUndo undoStack redoStack currentGraph es Nothing
-        case (dstNode) of
-          -- no selected node: create node
-          Nothing -> do
-            auto <- Gtk.toggleButtonGetActive autoLabelNCheckBtn
-            created <- createNodeCallback currentGraphType currentState currentNodeType possibleNodeTypes currentShape currentC currentLC (x,y) auto context
-            if created then
-              do
-                updateByType
-                setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-            else
-              return ()
-          -- one node selected: create edges targeting this node
-          Just nid -> do
-            auto <- Gtk.toggleButtonGetActive autoLabelECheckBtn
-            created <- createEdgeCallback typeGraph currentGraphType currentState currentEdgeType possibleEdgeTypes currentStyle currentLC auto nid
-            if created then
-              do
-                updateByType
-                setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-            else
-              return ()
-
-
-        Gtk.widgetQueueDraw canvas
-      _           -> return ()
-
-
+    gType <- readIORef currentGraphType
     if gType > 1
       then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox currentState tg
       else return ()
 
+    -- update inspector UI
     updateInspector currentGraphType currentState currentC currentLC typeInspWidgets (fillColorBox, nodeShapeFrame, edgeStyleFrame)
                     possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMapping
                     hostInspWidgets ruleInspWidgets nacInspWidgets (nodeTypeBox, edgeTypeBox)
@@ -1293,7 +1267,7 @@ startEditor window store
 
 
 ---------------------------------------------------------------------------------------------------------------------------------
---  Callbacks  ---------------------------------------------------------------------------------------------------------
+-- Auxiliar functions for Callbacks  --------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------------------------------------
 
 
@@ -1324,7 +1298,42 @@ drawGraphByType currentState typeGraph squareSelection currentGraphType mergeMap
       _ -> return ()
     return False
 
-
+createNodesOrEdgesCallback :: Gtk.DrawingArea -> Gtk.Entry -> Gtk.CheckButton -> Gtk.CheckButton
+                           -> IORef GraphState -> IORef Int32 -> IORef Int32 -> IORef (Graph Info Info) -> IORef (Maybe MergeMapping)
+                           -> IORef (M.Map Int32 ChangeStack) -> IORef (M.Map Int32 ChangeStack)
+                           -> IORef (Maybe String) -> IORef (M.Map String (NodeGI,Int32)) -> IORef (Maybe String) -> IORef (M.Map String (M.Map (String, String) EdgeGI, Int32))
+                           -> IORef NodeShape -> IORef EdgeStyle -> IORef GIColor -> IORef GIColor
+                           -> Gdk.EventButton
+                           -> IO Bool
+createNodesOrEdgesCallback canvas nameEntry autoLabelNCheckBtn autoLabelECheckBtn
+                           currentState currentGraph currentGraphType typeGraph mergeMapping
+                           undoStack redoStack
+                           currentNodeType possibleNodeTypes currentEdgeType possibleEdgeTypes
+                           currentShape currentStyle currentC currentLC
+                           eventButton  =
+  do
+    x <- get eventButton #x
+    y <- get eventButton #y
+    es <- readIORef currentState
+    let z = stateGetZoom es
+        (px,py) = stateGetPan es
+        (x',y') = (x/z - px, y/z - py)
+    -- add the current state to the undo stack
+    mergeM <- readIORef mergeMapping
+    stackUndo undoStack redoStack currentGraph es mergeM
+    let g = stateGetGraph es
+        gi = stateGetGI es
+        dstNode = selectNodeInPosition gi (x',y')
+    context <- Gtk.widgetGetPangoContext canvas
+    case (dstNode) of
+      -- no selected node: create node
+      Nothing -> do
+        auto <- Gtk.toggleButtonGetActive autoLabelNCheckBtn
+        createNodeCallback currentGraphType currentState currentNodeType possibleNodeTypes currentShape currentC currentLC (x',y') auto context
+      -- one node selected: create edges targeting this node
+      Just nid -> do
+        auto <- Gtk.toggleButtonGetActive autoLabelECheckBtn
+        createEdgeCallback typeGraph currentGraphType currentState currentEdgeType possibleEdgeTypes currentStyle currentLC auto nid
 
 
 createNodeCallback :: IORef Int32
