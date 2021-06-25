@@ -107,7 +107,7 @@ startEditor window store
       [circleRadioBtn, rectRadioBtn, squareRadioBtn] = radioShapes
       [normalRadioBtn, slashedRadioBtn, pointedRadioBtn] = radioStyles
   let
-    typeInspWidgets = (nameEntry, fillColorBtn, lineColorBtn, radioShapes, radioStyles)
+    typeInspWidgets = (nameEntry, fillColorBox, fillColorBtn, lineColorBtn, nodeShapeFrame, radioShapes, edgeStyleFrame, radioStyles)
     hostInspWidgets = (nameEntry, nodeTypeCBox, edgeTypeCBox)
     ruleInspWidgets = (nameEntry, nodeTypeCBox, edgeTypeCBox, operationCBox)
     nacInspWidgets  = (nameEntry, nodeTypeCBox, edgeTypeCBox, mergeBtn, splitBtn)
@@ -172,6 +172,8 @@ startEditor window store
   possibleSelectableEdgeTypes <- newIORef (M.empty :: M.Map String (M.Map (String, String) EdgeGI, Int32))
   currentNodeType     <- newIORef ( Nothing :: Maybe String)
   currentEdgeType     <- newIORef ( Nothing :: Maybe String)
+
+  let selectableTypesIORefs = (possibleNodeTypes, possibleEdgeTypes, currentNodeType, currentEdgeType)
 
 
   -- "unpack" IORefs
@@ -248,13 +250,17 @@ startEditor window store
       return ()
 
     -- changed the edge type box displayed options based on wich edges are selected
+    gType <- readIORef currentGraphType
     tg <- readIORef typeGraph
-    changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox currentState tg
+    if gType > 1
+      then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox currentState tg
+      else return ()
 
     -- update inspector UI
-    updateInspector currentGraphType currentState currentC currentLC typeInspWidgets (fillColorBox, nodeShapeFrame, edgeStyleFrame)
-                    possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMapping
-                    hostInspWidgets ruleInspWidgets nacInspWidgets (nodeTypeBox, edgeTypeBox)
+    updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
+                    currentC currentLC
+                    typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
+                    (nodeTypeBox, edgeTypeBox)
 
     return True
 
@@ -267,7 +273,7 @@ startEditor window store
   -- mouse button release on canvas
   -- set callback to select elements that are inside squareSelection
   on canvas #buttonReleaseEvent $ basicCanvasButtonReleasedCallback currentState squareSelection canvas
-  -- colateral effects to selected elements
+  -- if there are elements selected by the squareSelection, then update the inspector and the edge type selection comboBox
   on canvas #buttonReleaseEvent $ \eventButton -> do
     b <- get eventButton #button
     gType <- readIORef currentGraphType
@@ -282,9 +288,10 @@ startEditor window store
             if gType > 1
               then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox currentState tg
               else return ()
-            updateInspector currentGraphType currentState currentC currentLC typeInspWidgets (fillColorBox, nodeShapeFrame, edgeStyleFrame)
-                            possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMapping
-                            hostInspWidgets ruleInspWidgets nacInspWidgets (nodeTypeBox, edgeTypeBox)
+            updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
+                            currentC currentLC
+                            typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
+                            (nodeTypeBox, edgeTypeBox)
           False -> return ()
       _ -> return ()
     return True
@@ -301,45 +308,6 @@ startEditor window store
       (False,False,'\65471') -> Gtk.widgetGrabFocus nameEntry
       -- 'delete' while the focus is on canvas - delete elements
       (False,False,'\65535') -> Gtk.menuItemActivate del
-      (_,_,'1') -> do
-        gType <- readIORef currentGraphType
-        if gType == 2
-          then do
-            cShape <- readIORef currentShape
-            cColor <- readIORef currentC
-            cLColor <- readIORef currentLC
-            auto <- Gtk.toggleButtonGetActive autoLabelNCheckBtn
-            context <- Gtk.widgetGetPangoContext canvas
-            mntype <- readIORef currentNodeType
-            (t, shape, c, lc) <- case mntype of
-              Nothing -> return ("", cShape, cColor, cLColor)
-              Just t -> do
-                possibleNT <- readIORef possibleNodeTypes
-                let possibleNT' = M.map (\(gi,i) -> gi) possibleNT
-                    mngi = M.lookup t possibleNT'
-                case mngi of
-                  Nothing -> return ("", cShape, cColor, cLColor)
-                  Just gi -> return (t, shape gi, fillColor gi, lineColor gi)
-
-            st <- readIORef currentState
-            let desiredNum = 1024
-                columsNum = 32
-                g = stateGetGraph st
-                firstId = fromEnum $ head $ newNodes g
-            forM_ [firstId..(firstId + desiredNum - 1)] $ \i -> do
-              let x = 50 * (((i - firstId) `mod` columsNum) + 1)
-                  y = 50 * (((i - firstId) `quot` columsNum) + 1)
-              nid <- createNode' currentState (infoSetType I.empty t) auto (fromIntegral x, fromIntegral y) shape c lc context
-              return ()
-
-            Gtk.widgetQueueDraw canvas
-
-            setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-            setCurrentValidFlag store currentState typeGraph currentPath
-
-
-          else return ()
-
       _ -> return ()
     return True
 
@@ -381,9 +349,10 @@ startEditor window store
 
     writeIORef currentState es''
     Gtk.widgetQueueDraw canvas
-    updateInspector currentGraphType currentState currentC currentLC typeInspWidgets (fillColorBox, nodeShapeFrame, edgeStyleFrame)
-                    possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMapping
-                    hostInspWidgets ruleInspWidgets nacInspWidgets (nodeTypeBox, edgeTypeBox)
+    updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
+                    currentC currentLC
+                    typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
+                    (nodeTypeBox, edgeTypeBox)
     updateByType
     return False
 
@@ -1206,9 +1175,10 @@ startEditor window store
             writeIORef currentState $ es'
             stackUndo undoStack redoStack currentGraph es (Just $ snd nacInfo)
             Gtk.widgetQueueDraw canvas
-            updateInspector currentGraphType currentState currentC currentLC typeInspWidgets (fillColorBox, nodeShapeFrame, edgeStyleFrame)
-                            possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMapping
-                            hostInspWidgets ruleInspWidgets nacInspWidgets (nodeTypeBox, edgeTypeBox)
+            updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
+                            currentC currentLC
+                            typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
+                            (nodeTypeBox, edgeTypeBox)
 
   -- split elements in NACs
   on spt #activate $ do

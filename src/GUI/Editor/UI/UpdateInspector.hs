@@ -26,31 +26,32 @@ import GUI.Data.Info
 import GUI.Data.Nac
 
 updateInspector :: IORef Int32
-                -> IORef GraphState 
-                -> IORef (Double,Double,Double) 
-                -> IORef (Double,Double,Double)
-                -> (Gtk.Entry, Gtk.ColorButton, Gtk.ColorButton, [Gtk.RadioButton], [Gtk.RadioButton]) 
-                -> (Gtk.Box, Gtk.Frame, Gtk.Frame)
-                -> IORef (M.Map String (NodeGI, Int32))
-                -> IORef (M.Map String (M.Map (String, String) EdgeGI, Int32)) 
-                -> IORef (Maybe String)
-                -> IORef (Maybe String)
+                -> IORef GraphState
                 -> IORef (Maybe MergeMapping)
+                ->  ( IORef (M.Map String (NodeGI, Int32))
+                    , IORef (M.Map String (M.Map (String, String) EdgeGI, Int32))
+                    , IORef (Maybe String)
+                    , IORef (Maybe String)
+                    )
+                -> IORef GIColor
+                -> IORef GIColor
+                -> (Gtk.Entry, Gtk.Box, Gtk.ColorButton, Gtk.ColorButton, Gtk.Frame, [Gtk.RadioButton], Gtk.Frame, [Gtk.RadioButton])
                 -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText)
-                -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.ComboBoxText) 
+                -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.ComboBoxText)
                 -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.Button, Gtk.Button)
                 -> (Gtk.Box, Gtk.Box)
                 -> IO ()
-updateInspector gType 
-                st c lc typeInspWidgets (hBoxColor, frameShape, frameStyle) 
-                pNodeTypes pEdgeTypes nodeType edgeType mergeMappingIORef
+updateInspector gType st mergeMappingIORef
+                (pNodeTypes, pEdgeTypes, nodeType, edgeType)
+                c lc
+                typeInspWidgets
                 hostInspWidgets
                 ruleInspWidgets
                 nacInspWidgets
                 (nodeTypeBox, edgeTypeBox)
                 = do
   gt <- readIORef gType
-  updateTypeInspector st c lc typeInspWidgets (hBoxColor, frameShape, frameStyle)
+  updateTypeInspector st c lc typeInspWidgets
   es <- readIORef st
   pNT <- readIORef pNodeTypes >>= return . M.map snd
   pET <- readIORef pEdgeTypes >>= return . M.map snd
@@ -64,10 +65,10 @@ updateInspector gType
     _ -> return ()
 
 -- update the inspector --------------------------------------------------------
-updateTypeInspector :: IORef GraphState -> IORef (Double,Double,Double) -> IORef (Double,Double,Double) ->
-                      (Gtk.Entry, Gtk.ColorButton, Gtk.ColorButton, [Gtk.RadioButton], [Gtk.RadioButton]) ->
-                      (Gtk.Box, Gtk.Frame, Gtk.Frame)-> IO ()
-updateTypeInspector st currentC currentLC (nameEntry, colorBtn, lcolorBtn, radioShapes, radioStyles) (hBoxColor, frameShape, frameStyle) = do
+updateTypeInspector :: IORef GraphState -> IORef (Double,Double,Double) -> IORef (Double,Double,Double)
+                    -> (Gtk.Entry, Gtk.Box, Gtk.ColorButton, Gtk.ColorButton, Gtk.Frame, [Gtk.RadioButton], Gtk.Frame, [Gtk.RadioButton])
+                    -> IO ()
+updateTypeInspector st currentC currentLC (nameEntry, hBoxColor, colorBtn, lcolorBtn, frameShape, radioShapes, frameStyle, radioStyles) = do
   emptyColor <- new Gdk.RGBA [#red := 0.5, #blue := 0.5, #green := 0.5, #alpha := 1.0]
   est <- readIORef st
   let g = stateGetGraph est
@@ -135,7 +136,7 @@ updateTypeInspector st currentC currentLC (nameEntry, colorBtn, lcolorBtn, radio
       set frameShape [#visible := True]
       set frameStyle [#visible := True]
 
-updateHostInspector :: GraphState -> M.Map String Int32 -> M.Map String Int32 -> String -> String 
+updateHostInspector :: GraphState -> M.Map String Int32 -> M.Map String Int32 -> String -> String
                     -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText) -> (Gtk.Box, Gtk.Box) -> IO()
 updateHostInspector est pNT pET cNT cET (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox) = do
   let g = stateGetGraph est
@@ -144,16 +145,16 @@ updateHostInspector est pNT pET cNT cET (entry, nodeTCBox, edgeTCBox) (nodeTBox,
       (ngiM,egiM) = stateGetGI est
       unifyNames [] = ""
       unifyNames (x:xs) = if all (==x) xs then x else ""
-      
-      typeN = if null ns 
+
+      typeN = if null ns
                 then cNT
                 else unifyNames $ map (infoType . nodeInfo) ns
-      typeE = if null es 
+      typeE = if null es
                 then cET
                 else unifyNames $ map (infoType . edgeInfo) es
       typeNIndex = fromMaybe (-1) $ M.lookup typeN pNT
       typeEIndex = fromMaybe (-1) $ M.lookup typeE pET
-                    
+
   Gtk.comboBoxSetActive nodeTCBox typeNIndex
   Gtk.comboBoxSetActive edgeTCBox typeEIndex
 
@@ -168,7 +169,7 @@ updateHostInspector est pNT pET cNT cET (entry, nodeTCBox, edgeTCBox) (nodeTBox,
       set edgeTBox [#visible := True]
       set nodeTBox [#visible := True]
 
-updateRuleInspector :: GraphState -> M.Map String Int32 -> M.Map String Int32 -> String -> String 
+updateRuleInspector :: GraphState -> M.Map String Int32 -> M.Map String Int32 -> String -> String
                     -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.ComboBoxText) -> (Gtk.Box, Gtk.Box) -> IO()
 updateRuleInspector est possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox, operationCBox) (nodeTBox, edgeTBox) = do
   updateHostInspector est possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox)
