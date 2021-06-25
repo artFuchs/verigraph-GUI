@@ -249,10 +249,7 @@ startEditor window store
 
     -- changed the edge type box displayed options based on wich edges are selected
     tg <- readIORef typeGraph
-    gType <- readIORef currentGraphType
-    if gType > 1
-      then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox currentState tg
-      else return ()
+    changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox currentState tg
 
     -- update inspector UI
     updateInspector currentGraphType currentState currentC currentLC typeInspWidgets (fillColorBox, nodeShapeFrame, edgeStyleFrame)
@@ -264,28 +261,8 @@ startEditor window store
   -- mouse motion on canvas
   -- set callback to move elements or expand the square selection area
   on canvas #motionNotifyEvent $ basicCanvasMotionCallBack currentState oldPoint squareSelection canvas
-  -- add colateral actions such as modiffing the undo stack and setting the 'changeFlags'
-  on canvas #motionNotifyEvent $ \eventMotion -> do
-    ms <- get eventMotion #state
-    es <- readIORef currentState
-    gtype <- readIORef currentGraphType
-    let leftButton = Gdk.ModifierTypeButton1Mask `elem` ms
-        middleButton = Gdk.ModifierTypeButton2Mask `elem` ms || Gdk.ModifierTypeButton3Mask `elem` ms && Gdk.ModifierTypeControlMask `elem` ms
-        (sNodes, sEdges) = stateGetSelected es
-    case (leftButton, middleButton, sNodes, sEdges) of
-      (True, False, n, e) -> do
-        mv <- readIORef movingGI
-        if not mv
-          then do
-            writeIORef movingGI True
-            setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-            mergeM <- case gtype of
-                        4 -> readIORef mergeMapping
-                        _ -> return Nothing
-            stackUndo undoStack redoStack currentGraph es mergeM
-          else return ()
-      _ -> return ()
-    return True
+  -- if the left button is hold while moving, indicate changes and add the previous diagram to the undo stack
+  on canvas #motionNotifyEvent $ indicateChangesWhenMovingElements window store movingGI currentState mergeMapping undoStack redoStack storeIORefs changesIORefs
 
   -- mouse button release on canvas
   -- set callback to select elements that are inside squareSelection
@@ -1410,6 +1387,33 @@ createEdgeCallback typeGraph currentGraphType currentState currentEdgeType possi
         writeIORef currentState $ stateSetSelected ([],createdEdges) es'
         return True
 
+indicateChangesWhenMovingElements :: Gtk.Window -> Gtk.TreeStore
+                                  -> IORef Bool ->  IORef GraphState -> IORef (Maybe MergeMapping)
+                                  -> IORef (M.Map Int32 ChangeStack) -> IORef (M.Map Int32 ChangeStack)
+                                  -> StoreIORefs -> ChangesIORefs -> Gdk.EventMotion
+                                  -> IO Bool
+indicateChangesWhenMovingElements window store movingGI currentState mergeMapping undoStack redoStack (_,currentPath,currentGraph,currentGraphType) (changedProject, changedGraph, _) eventMotion =
+  do
+    ms <- get eventMotion #state
+    es <- readIORef currentState
+    gtype <- readIORef currentGraphType
+    let leftButton = Gdk.ModifierTypeButton1Mask `elem` ms
+        (sNodes, sEdges) = stateGetSelected es
+    if leftButton && ((length sNodes) + (length sEdges) > 0) then
+      do
+        mv <- readIORef movingGI
+        if not mv then
+          do
+            writeIORef movingGI True
+            setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+            mergeM <- readIORef mergeMapping
+            stackUndo undoStack redoStack currentGraph es mergeM
+        else
+          return ()
+    else
+      return ()
+
+    return True
 
 ---------------------------------------------------------------------------------------------------------------------------------
 --  Auxiliar Functions  ---------------------------------------------------------------------------------------------------------
