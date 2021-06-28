@@ -216,11 +216,14 @@ startEditor window store
   -- mouse button pressed on canvas
   -- set callback to select elements on canvas
   on canvas #buttonPressEvent $ basicCanvasButtonPressedCallback currentState oldPoint squareSelection canvas
+  -- set callback to create nodes or edges
   on canvas #buttonPressEvent $ \eventButton -> do
-    -- create nodes or edges
     b <- get eventButton #button
     click <- get eventButton #type
     ms <- get eventButton #state
+
+    es <- readIORef currentState
+    mergeM <- readIORef mergeMapping
 
     let doubleLeftClick = (b == 1) && (click == Gdk.EventType2buttonPress)
     let rightButton = (b == 3) && not (Gdk.ModifierTypeControlMask `elem` ms)
@@ -236,7 +239,6 @@ startEditor window store
         -- right button -> create a node or edge
         (False,True) -> createNodesOrEdgesCallback canvas nameEntry autoLabelNCheckBtn autoLabelECheckBtn
                                currentState currentGraph currentGraphType typeGraph mergeMapping
-                               undoStack redoStack
                                currentNodeType possibleNodeTypes currentEdgeType possibleEdgeTypes
                                currentShape currentStyle currentC currentLC
                                eventButton
@@ -245,7 +247,7 @@ startEditor window store
     if created then
       do
         updateByType
-        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+        indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
     else
       return ()
 
@@ -333,7 +335,10 @@ startEditor window store
 
   -- when the nameEntry lose focus, rename selected element(s)
   on nameEntry #focusOutEvent $ \event -> do
-    renameSelectedCallback window store nameEntry canvas currentState mergeMapping possibleEdgeTypes typeGraph undoStack redoStack storeIORefs changesIORefs
+    es <- readIORef currentState
+    mergeM <- readIORef mergeMapping
+    renameSelectedCallback nameEntry canvas currentState possibleEdgeTypes typeGraph
+    indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
     updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
                     currentC currentLC
                     typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
@@ -342,23 +347,24 @@ startEditor window store
     return False
 
 
-
-
-
-
-
   -- select a fill color
   -- change the selection fill color and
   -- set the current fill color as the selected color
   on fillColorBtn #colorSet $ do
-    setNewColor window store canvas fillColorBtn currentC False currentState undoStack redoStack storeIORefs changesIORefs
+    st <- readIORef currentState
+    mergeM <- readIORef mergeMapping
+    setNewColor canvas fillColorBtn currentC False currentState
     updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM st
 
   -- select a line color
   -- same as above, except it's for the line color
   on lineColorBtn #colorSet $ do
-    setNewColor window store canvas lineColorBtn currentLC True currentState undoStack redoStack storeIORefs changesIORefs
+    st <- readIORef currentState
+    mergeM <- readIORef mergeMapping
+    setNewColor canvas lineColorBtn currentLC True currentState
     updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM st
 
 
   -- toogle the radio buttons for node shapes
@@ -1175,8 +1181,6 @@ startEditor window store
 
 
 
-
-
 ---------------------------------------------------------------------------------------------------------------------------------
 -- Auxiliar functions for Callbacks  --------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------------------------------------
@@ -1209,16 +1213,16 @@ drawGraphByType currentState typeGraph squareSelection currentGraphType mergeMap
       _ -> return ()
     return False
 
+
+-- create a node or n edges and return if the
 createNodesOrEdgesCallback :: Gtk.DrawingArea -> Gtk.Entry -> Gtk.CheckButton -> Gtk.CheckButton
                            -> IORef GraphState -> IORef Int32 -> IORef Int32 -> IORef (Graph Info Info) -> IORef (Maybe MergeMapping)
-                           -> IORef (M.Map Int32 ChangeStack) -> IORef (M.Map Int32 ChangeStack)
                            -> IORef (Maybe String) -> IORef (M.Map String (NodeGI,Int32)) -> IORef (Maybe String) -> IORef (M.Map String (M.Map (String, String) EdgeGI, Int32))
                            -> IORef NodeShape -> IORef EdgeStyle -> IORef GIColor -> IORef GIColor
                            -> Gdk.EventButton
                            -> IO Bool
 createNodesOrEdgesCallback canvas nameEntry autoLabelNCheckBtn autoLabelECheckBtn
                            currentState currentGraph currentGraphType typeGraph mergeMapping
-                           undoStack redoStack
                            currentNodeType possibleNodeTypes currentEdgeType possibleEdgeTypes
                            currentShape currentStyle currentC currentLC
                            eventButton  =
@@ -1231,7 +1235,6 @@ createNodesOrEdgesCallback canvas nameEntry autoLabelNCheckBtn autoLabelECheckBt
         (x',y') = (x/z - px, y/z - py)
     -- add the current state to the undo stack
     mergeM <- readIORef mergeMapping
-    stackUndo undoStack redoStack currentGraph es mergeM
     let g = stateGetGraph es
         gi = stateGetGI es
         dstNode = selectNodeInPosition gi (x',y')
@@ -1317,16 +1320,23 @@ createEdgeCallback typeGraph currentGraphType currentState currentEdgeType possi
         writeIORef currentState $ stateSetSelected ([],createdEdges) es'
         return True
 
+
+
+
+
+
+
 indicateChangesWhenMovingElements :: Gtk.Window -> Gtk.TreeStore
                                   -> IORef Bool ->  IORef GraphState -> IORef (Maybe MergeMapping)
                                   -> IORef (M.Map Int32 ChangeStack) -> IORef (M.Map Int32 ChangeStack)
                                   -> StoreIORefs -> ChangesIORefs -> Gdk.EventMotion
                                   -> IO Bool
-indicateChangesWhenMovingElements window store movingGI currentState mergeMapping undoStack redoStack (_,currentPath,currentGraph,currentGraphType) (changedProject, changedGraph, _) eventMotion =
+indicateChangesWhenMovingElements window store movingGI currentState mergeMapping undoStack redoStack
+                                  storeIORefs changesIORefs eventMotion =
   do
     ms <- get eventMotion #state
     es <- readIORef currentState
-    gtype <- readIORef currentGraphType
+    mergeM <- readIORef mergeMapping
     let leftButton = Gdk.ModifierTypeButton1Mask `elem` ms
         (sNodes, sEdges) = stateGetSelected es
     if leftButton && ((length sNodes) + (length sEdges) > 0) then
@@ -1335,9 +1345,7 @@ indicateChangesWhenMovingElements window store movingGI currentState mergeMappin
         if not mv then
           do
             writeIORef movingGI True
-            setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-            mergeM <- readIORef mergeMapping
-            stackUndo undoStack redoStack currentGraph es mergeM
+            indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
         else
           return ()
     else
@@ -1346,13 +1354,10 @@ indicateChangesWhenMovingElements window store movingGI currentState mergeMappin
     return True
 
 
-renameSelectedCallback :: Gtk.Window -> Gtk.TreeStore -> Gtk.Entry -> Gtk.DrawingArea
-               -> IORef GraphState -> IORef (Maybe MergeMapping)
-               -> IORef (M.Map String (M.Map (String, String) EdgeGI, Int32)) -> IORef (Graph Info Info)
-               -> IORef (M.Map Int32 ChangeStack) -> IORef (M.Map Int32 ChangeStack)
-               -> StoreIORefs -> ChangesIORefs
+renameSelectedCallback :: Gtk.Entry -> Gtk.DrawingArea
+               -> IORef GraphState -> IORef (M.Map String (M.Map (String, String) EdgeGI, Int32)) -> IORef (Graph Info Info)
                -> IO ()
-renameSelectedCallback window store nameEntry canvas currentState mergeMapping possibleEdgeTypes typeGraph undoStack redoStack (_,currentPath,currentGraph,_) (changedProject, changedGraph, _) =
+renameSelectedCallback nameEntry canvas currentState possibleEdgeTypes typeGraph =
   do
     es <- readIORef currentState
     name <- Gtk.entryGetText nameEntry >>= return . T.unpack
@@ -1367,19 +1372,12 @@ renameSelectedCallback window store nameEntry canvas currentState mergeMapping p
       es'' = infereEdgesTypesAfterNodeChange es' tg typesE'
 
     -- show changes
-    mergeM <- readIORef mergeMapping
-    stackUndo undoStack redoStack currentGraph es mergeM
-    setChangeFlags window store changedProject changedGraph currentPath currentGraph True
     writeIORef currentState es''
     Gtk.widgetQueueDraw canvas
 
 
-setNewColor :: Gtk.Window -> Gtk.TreeStore -> Gtk.DrawingArea -> Gtk.ColorButton
-            -> IORef GIColor -> Bool
-            -> IORef GraphState -> IORef (M.Map Int32 ChangeStack) -> IORef (M.Map Int32 ChangeStack)
-            -> StoreIORefs -> ChangesIORefs
-            -> IO ()
-setNewColor window store canvas colorBtn colorIORef isLineC currentState undoStack redoStack (_,currentPath,currentGraph,_) (changedProject, changedGraph, _) =
+setNewColor :: Gtk.DrawingArea -> Gtk.ColorButton -> IORef GIColor -> Bool -> IORef GraphState -> IO ()
+setNewColor canvas colorBtn colorIORef isLineC currentState =
   do
     gtkcolor <- Gtk.colorChooserGetRgba colorBtn
     r <- get gtkcolor #red
@@ -1404,13 +1402,26 @@ setNewColor window store canvas colorBtn colorIORef isLineC currentState undoSta
       Nothing -> return ()
       Just newgi -> do
         modifyIORef currentState $ stateSetGI newgi
-        stackUndo undoStack redoStack currentGraph es Nothing
-        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
         Gtk.widgetQueueDraw canvas
+
+
+
+
+
 
 ---------------------------------------------------------------------------------------------------------------------------------
 --  Auxiliar Functions  ---------------------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------------------------------------
+
+
+-- indicate if the was changes in the project and add 'oldSt' to the undoStack
+indicateChanges :: Gtk.Window -> Gtk.TreeStore -> StoreIORefs -> ChangesIORefs
+                -> IORef (M.Map Int32 ChangeStack) -> IORef (M.Map Int32 ChangeStack) -> Maybe MergeMapping -> GraphState -> IO ()
+indicateChanges window store (_,currentPath,currentGraph,currentGraphType) (changedProject, changedGraph, _)
+                undoStack redoStack oldMergeM oldSt =
+  do
+    setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+    stackUndo undoStack redoStack currentGraph oldSt oldMergeM
 
 getNodeLayoutPrimitives :: IORef (Maybe String)
                         -> IORef (M.Map String (NodeGI, Int32))
