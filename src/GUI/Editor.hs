@@ -352,114 +352,74 @@ startEditor window store
   -- set the current fill color as the selected color
   on fillColorBtn #colorSet $ do
     st <- readIORef currentState
-    mergeM <- readIORef mergeMapping
     setNewColor canvas fillColorBtn currentC False currentState
     updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
-    indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM st
+    indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
 
   -- select a line color
   -- same as above, except it's for the line color
   on lineColorBtn #colorSet $ do
     st <- readIORef currentState
-    mergeM <- readIORef mergeMapping
     setNewColor canvas lineColorBtn currentLC True currentState
     updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
-    indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM st
+    indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
 
 
   -- toogle the radio buttons for node shapes
   -- change the shape of the selected nodes and set the current shape for new nodes
   circleRadioBtn `on` #toggled $ do
-    writeIORef currentShape NCircle
-    es <- readIORef currentState
-    active <- get circleRadioBtn #active
-    let nds = fst $ stateGetSelected es
-        giM = fst $ stateGetGI es
-    if not active || M.null (M.filterWithKey (\k gi -> NodeId k `elem` nds && shape gi /= NCircle) giM)
-      then return ()
-      else do
-        stackUndo undoStack redoStack currentGraph es Nothing
-        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-        modifyIORef currentState (\es -> changeNodeShape es NCircle)
-        Gtk.widgetQueueDraw canvas
-        updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    st <- readIORef currentState
+    changed <- setNewShape circleRadioBtn canvas NCircle currentShape currentState
+    if changed then
+      do indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
+         updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    else return ()
 
   rectRadioBtn `on` #toggled $ do
-    writeIORef currentShape NRect
-    es <- readIORef currentState
-    active <- get rectRadioBtn #active
-    let nds = fst $ stateGetSelected es
-        giM = fst $ stateGetGI es
-    if not active || M.null (M.filterWithKey (\k gi -> NodeId k `elem` nds && shape gi /= NRect) giM)
-      then return ()
-      else do
-        stackUndo undoStack redoStack currentGraph es Nothing
-        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-        modifyIORef currentState (\es -> changeNodeShape es NRect)
-        Gtk.widgetQueueDraw canvas
-        updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    st <- readIORef currentState
+    changed <- setNewShape rectRadioBtn canvas NRect currentShape currentState
+    if changed then
+      do  indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
+          updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    else return ()
 
   squareRadioBtn `on` #toggled $ do
-    writeIORef currentShape NSquare
-    es <- readIORef currentState
-    active <- get squareRadioBtn #active
-    let nds = fst $ stateGetSelected es
-        giM = fst $ stateGetGI es
-    if not active || M.null (M.filterWithKey (\k gi -> NodeId k `elem` nds && shape gi /= NSquare) giM)
-      then return ()
-      else do
-        stackUndo undoStack redoStack currentGraph es Nothing
-        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-        modifyIORef currentState (\es -> changeNodeShape es NSquare)
-        Gtk.widgetQueueDraw canvas
-        updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    st <- readIORef currentState
+    changed <- setNewShape squareRadioBtn canvas NSquare currentShape currentState
+    if changed then
+      do  indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
+          updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    else return ()
+
+
+
+
 
   -- toogle the radio buttons for edge styles
   -- change the style of the selected edges and set the current style for new edges
   normalRadioBtn `on` #toggled $ do
-    writeIORef currentStyle ENormal
-    es <- readIORef currentState
-    active <- get normalRadioBtn #active
-    let edgs = snd $ stateGetSelected es
-        giM = snd $ stateGetGI es
-    if not active || M.null (M.filterWithKey (\k gi -> EdgeId k `elem` edgs && style gi /= ENormal) giM)
-      then return ()
-      else do
-        stackUndo undoStack redoStack currentGraph es Nothing
-        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-        modifyIORef currentState (\es -> changeEdgeStyle es ENormal)
-        Gtk.widgetQueueDraw canvas
-        updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    st <- readIORef currentState
+    changed <- setNewStyle normalRadioBtn canvas ENormal currentStyle currentState
+    if changed then
+      do  indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
+          updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    else return ()
 
   pointedRadioBtn `on` #toggled $ do
-    writeIORef currentStyle EPointed
-    es <- readIORef currentState
-    active <- get pointedRadioBtn #active
-    let edgs = snd $ stateGetSelected es
-        giM = snd $ stateGetGI es
-    if not active || M.null (M.filterWithKey (\k gi -> EdgeId k `elem` edgs && style gi /= EPointed) giM)
-      then return ()
-      else do
-        stackUndo undoStack redoStack currentGraph es Nothing
-        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-        modifyIORef currentState (\es -> changeEdgeStyle es EPointed)
-        Gtk.widgetQueueDraw canvas
-        updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    st <- readIORef currentState
+    changed <- setNewStyle pointedRadioBtn canvas EPointed currentStyle currentState
+    if changed then
+      do  indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
+          updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    else return ()
 
   slashedRadioBtn `on` #toggled $ do
-    writeIORef currentStyle ESlashed
-    es <- readIORef currentState
-    active <- get slashedRadioBtn #active
-    let edgs = snd $ stateGetSelected es
-        giM = snd $ stateGetGI es
-    if not active || M.null (M.filterWithKey (\k gi -> EdgeId k `elem` edgs && style gi /= ESlashed) giM)
-      then return ()
-      else do
-        stackUndo undoStack redoStack currentGraph es Nothing
-        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-        modifyIORef currentState (\es -> changeEdgeStyle es ESlashed)
-        Gtk.widgetQueueDraw canvas
-        updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    st <- readIORef currentState
+    changed <- setNewStyle slashedRadioBtn canvas ESlashed currentStyle currentState
+    if changed then
+      do  indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
+          updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    else return ()
 
 
   -- choose a type in the type nodeTypeCBox for nodes
@@ -1405,6 +1365,36 @@ setNewColor canvas colorBtn colorIORef isLineC currentState =
         Gtk.widgetQueueDraw canvas
 
 
+
+setNewShape :: Gtk.RadioButton -> Gtk.DrawingArea -> NodeShape -> IORef NodeShape -> IORef GraphState -> IO Bool
+setNewShape radioBtn canvas newShape currentShape currentState =
+  do
+    active <- get radioBtn #active
+    es <- readIORef currentState
+    let nds = fst $ stateGetSelected es
+        giM = fst $ stateGetGI es
+    if not active || M.null (M.filterWithKey (\k gi -> NodeId k `elem` nds && shape gi /= newShape) giM)
+      then return False
+      else do
+        writeIORef currentShape newShape
+        modifyIORef currentState (\es -> changeNodeShape es newShape)
+        Gtk.widgetQueueDraw canvas
+        return True
+
+setNewStyle :: Gtk.RadioButton -> Gtk.DrawingArea -> EdgeStyle -> IORef EdgeStyle -> IORef GraphState -> IO Bool
+setNewStyle radioBtn canvas newStyle currentStyle currentState =
+  do
+    active <- get radioBtn #active
+    es <- readIORef currentState
+    let edgs = snd $ stateGetSelected es
+        giM = snd $ stateGetGI es
+    if not active || M.null (M.filterWithKey (\k gi -> EdgeId k `elem` edgs && style gi /= newStyle) giM)
+      then return False
+      else do
+        writeIORef currentStyle newStyle
+        modifyIORef currentState (\es -> changeEdgeStyle es newStyle)
+        Gtk.widgetQueueDraw canvas
+        return True
 
 
 
