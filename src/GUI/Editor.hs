@@ -311,6 +311,7 @@ startEditor window store
       _ -> return ()
     return True
 
+  -- if the canvas is focused, then set this canvas to respond to the events of the view menu, like zoom in and zoom out
   on canvas #focusInEvent $ \event -> do
     writeIORef focusedCanvas $ Just canvas
     writeIORef focusedStateIORef $ Just currentState
@@ -320,35 +321,19 @@ startEditor window store
   -- Event Bindings for the Inspector Panel  ---------------------------------------------------------------------------------
   ----------------------------------------------------------------------------------------------------------------------------
 
+  -- if the user press enter, then change focus to the canvas so that the selected elements are renamed
   on nameEntry #keyPressEvent $ \eventKey -> do
     k <- get eventKey #keyval >>= return . chr . fromIntegral
-    --if it's Return or Enter (Numpad), then change the name of the selected elements
+    --if it's Return or Enter (Numpad), change focus to the canvas
     case k of
        '\65293' -> Gtk.widgetGrabFocus canvas
        '\65421' -> Gtk.widgetGrabFocus canvas
        _       -> return ()
     return False
 
-  -- when the entry lose focus
+  -- when the nameEntry lose focus, rename selected element(s)
   on nameEntry #focusOutEvent $ \event -> do
-    -- rename selected element(s)
-    es <- readIORef currentState
-    stackUndo undoStack redoStack currentGraph es Nothing
-    setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-    name <- Gtk.entryGetText nameEntry >>= return . T.unpack
-    context <- Gtk.widgetGetPangoContext canvas
-    es <- readIORef currentState
-    es' <- renameSelected es name context
-
-    -- infere the types of edge(s) connected to the renamed node(s)
-    typesE <- readIORef possibleEdgeTypes
-    tg <- readIORef typeGraph
-    let
-      typesE' = M.map fst typesE
-      es'' = infereEdgesTypesAfterNodeChange es' tg typesE'
-
-    writeIORef currentState es''
-    Gtk.widgetQueueDraw canvas
+    renameSelectedCallback window store nameEntry canvas currentState mergeMapping possibleEdgeTypes typeGraph undoStack redoStack storeIORefs changesIORefs
     updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
                     currentC currentLC
                     typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
@@ -356,51 +341,25 @@ startEditor window store
     updateByType
     return False
 
+
+
+
+
+
+
   -- select a fill color
   -- change the selection fill color and
   -- set the current fill color as the selected color
   on fillColorBtn #colorSet $ do
-    gtkcolor <- Gtk.colorChooserGetRgba fillColorBtn
-    es <- readIORef currentState
-    r <- get gtkcolor #red
-    g <- get gtkcolor #green
-    b <- get gtkcolor #blue
-    let color = (r,g,b)
-        (nds,edgs) = stateGetSelected es
-    writeIORef currentC color
-    if null nds
-      then return ()
-      else do
-        let (ngiM, egiM) = stateGetGI es
-            newngiM = M.mapWithKey (\k ngi -> if NodeId k `elem` nds then ngi {fillColor = color} else ngi) ngiM
-        stackUndo undoStack redoStack currentGraph es Nothing
-        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-        modifyIORef currentState (\es -> stateSetGI (newngiM, egiM) es)
-        Gtk.widgetQueueDraw canvas
-        updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    setNewColor window store canvas fillColorBtn currentC False currentState undoStack redoStack storeIORefs changesIORefs
+    updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
 
   -- select a line color
   -- same as above, except it's for the line color
   on lineColorBtn #colorSet $ do
-    gtkcolor <- Gtk.colorChooserGetRgba lineColorBtn
-    es <- readIORef currentState
-    r <- get gtkcolor #red
-    g <- get gtkcolor #green
-    b <- get gtkcolor #blue
-    let color = (r,g,b)
-        (nds,edgs) = stateGetSelected es
-    writeIORef currentLC color
-    if null nds && null edgs
-      then return ()
-      else do
-        let (ngiM, egiM) = stateGetGI es
-            newngiM = M.mapWithKey (\k ngi -> if NodeId k `elem` nds then ngi {lineColor = color} else ngi) ngiM
-            newegiM = M.mapWithKey (\k egi -> if EdgeId k `elem` edgs then egi {color = color} else egi) egiM
-        stackUndo undoStack redoStack currentGraph es Nothing
-        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-        modifyIORef currentState (\es -> stateSetGI (newngiM, newegiM) es)
-        Gtk.widgetQueueDraw canvas
-        updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    setNewColor window store canvas lineColorBtn currentLC True currentState undoStack redoStack storeIORefs changesIORefs
+    updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+
 
   -- toogle the radio buttons for node shapes
   -- change the shape of the selected nodes and set the current shape for new nodes
@@ -1217,6 +1176,7 @@ startEditor window store
 
 
 
+
 ---------------------------------------------------------------------------------------------------------------------------------
 -- Auxiliar functions for Callbacks  --------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------------------------------------
@@ -1384,6 +1344,69 @@ indicateChangesWhenMovingElements window store movingGI currentState mergeMappin
       return ()
 
     return True
+
+
+renameSelectedCallback :: Gtk.Window -> Gtk.TreeStore -> Gtk.Entry -> Gtk.DrawingArea
+               -> IORef GraphState -> IORef (Maybe MergeMapping)
+               -> IORef (M.Map String (M.Map (String, String) EdgeGI, Int32)) -> IORef (Graph Info Info)
+               -> IORef (M.Map Int32 ChangeStack) -> IORef (M.Map Int32 ChangeStack)
+               -> StoreIORefs -> ChangesIORefs
+               -> IO ()
+renameSelectedCallback window store nameEntry canvas currentState mergeMapping possibleEdgeTypes typeGraph undoStack redoStack (_,currentPath,currentGraph,_) (changedProject, changedGraph, _) =
+  do
+    es <- readIORef currentState
+    name <- Gtk.entryGetText nameEntry >>= return . T.unpack
+    context <- Gtk.widgetGetPangoContext canvas
+    es' <- renameSelected es name context
+
+    -- infere the types of edge(s) connected to the renamed node(s)
+    typesE <- readIORef possibleEdgeTypes
+    tg <- readIORef typeGraph
+    let
+      typesE' = M.map fst typesE
+      es'' = infereEdgesTypesAfterNodeChange es' tg typesE'
+
+    -- show changes
+    mergeM <- readIORef mergeMapping
+    stackUndo undoStack redoStack currentGraph es mergeM
+    setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+    writeIORef currentState es''
+    Gtk.widgetQueueDraw canvas
+
+
+setNewColor :: Gtk.Window -> Gtk.TreeStore -> Gtk.DrawingArea -> Gtk.ColorButton
+            -> IORef GIColor -> Bool
+            -> IORef GraphState -> IORef (M.Map Int32 ChangeStack) -> IORef (M.Map Int32 ChangeStack)
+            -> StoreIORefs -> ChangesIORefs
+            -> IO ()
+setNewColor window store canvas colorBtn colorIORef isLineC currentState undoStack redoStack (_,currentPath,currentGraph,_) (changedProject, changedGraph, _) =
+  do
+    gtkcolor <- Gtk.colorChooserGetRgba colorBtn
+    r <- get gtkcolor #red
+    g <- get gtkcolor #green
+    b <- get gtkcolor #blue
+    let color = (r,g,b)
+    writeIORef colorIORef color
+
+    es <- readIORef currentState
+    let (nds,eds) = stateGetSelected es
+        (ngiM,egiM) = stateGetGI es
+        newGI = case (isLineC, null nds && null eds, null nds) of
+                  (True,False,_) ->
+                      let newngiM = M.mapWithKey (\k ngi -> if NodeId k `elem` nds then ngi {lineColor = color} else ngi) ngiM
+                          newegiM = M.mapWithKey (\k egi -> if EdgeId k `elem` eds then egi {color = color} else egi) egiM
+                      in Just (newngiM,newegiM)
+                  (False,_,False) ->
+                      let newngiM = M.mapWithKey (\k ngi -> if NodeId k `elem` nds then ngi {fillColor = color} else ngi) ngiM
+                      in Just (newngiM,egiM)
+                  _ -> Nothing
+    case newGI of
+      Nothing -> return ()
+      Just newgi -> do
+        modifyIORef currentState $ stateSetGI newgi
+        stackUndo undoStack redoStack currentGraph es Nothing
+        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+        Gtk.widgetQueueDraw canvas
 
 ---------------------------------------------------------------------------------------------------------------------------------
 --  Auxiliar Functions  ---------------------------------------------------------------------------------------------------------
