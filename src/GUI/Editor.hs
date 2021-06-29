@@ -437,38 +437,17 @@ startEditor window store
         case selectedType of
           Nothing -> return ()
           Just (typeNGI,_) -> do
+            writeIORef currentNodeType $ Just typeInfo
             es <- readIORef currentState
             mergeM <- readIORef mergeMapping
-            putStrLn "changed Node Type ComboBox"
-            indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
-
-
-            let (sNids,sEids) = stateGetSelected es
-                g = stateGetGraph es
-                -- foreach selected node, change their types
-                unlockedSNids = filter (\nid -> case lookupNode nid g of
-                                                    Nothing -> False
-                                                    Just n -> not $ infoLocked (nodeInfo n)) sNids
-                giM = stateGetGI es
-                g' = foldr (\nid g -> updateNodePayload nid g (\info -> infoSetType info typeInfo)) g unlockedSNids
-                newNGI = foldr  (\nid giM -> let ngi = getNodeGI (fromEnum nid) giM
-                                             in M.insert (fromEnum nid) (typeNGI {position = position ngi, dims = dims ngi}) giM)
-                                (fst giM)
-                                unlockedSNids
-                es' = stateSetGraph g' . stateSetGI (newNGI, snd giM) . stateSetSelected (unlockedSNids,sEids) $ es
-
-                -- foreach changed node, change the type of the edges connected to it
-            typesE <- readIORef possibleEdgeTypes >>= return . M.map fst
-            tg <- readIORef typeGraph
-            let es'' = infereEdgesTypesAfterNodeChange es' tg typesE
-            writeIORef currentState es''
-            writeIORef currentNodeType $ Just typeInfo
-            Gtk.widgetQueueDraw canvas
-
-            if gt == 4
-              then updateNacInfo nacInfoMap currentGraph mergeMapping currentState
-              else return ()
-
+            changed <- changeNodesType typeGraph possibleEdgeTypes currentState typeInfo typeNGI
+            if changed then do
+              if gt == 4
+                then updateNacInfo nacInfoMap currentGraph mergeMapping currentState
+                else return ()
+              indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
+              Gtk.widgetQueueDraw canvas
+            else return ()
 
 
   -- choose a type in the type comboBox for edges
@@ -486,71 +465,45 @@ startEditor window store
               Just (pET,_) -> do
                 writeIORef currentEdgeType $ Just typeInfo
                 es <- readIORef currentState
-
-                let (sNids,sEids) = stateGetSelected es
-                    g = stateGetGraph es
-                    giM = stateGetGI es
-                    unlockedSEids = filter (\eid -> case lookupEdge eid g of
-                                                          Nothing -> False
-                                                          Just e -> (not $ infoLocked (edgeInfo e)) &&
-                                                                    (infoType $ edgeInfo e) /= typeInfo) sEids
-                    edgesInContext = catMaybes $ map (\eid -> lookupEdgeInContext eid g) unlockedSEids
-
-                if length edgesInContext > 0 then
+                mergeM <- readIORef mergeMapping
+                changed <- changeEdgesType currentState typeInfo pET
+                if changed then
                   do
-                    mergeM <- readIORef mergeMapping
-                    indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
-                    let changeEdgeGI ((src,_),e,(tgt,_)) giM =
-                              let eid = fromEnum $ edgeId e
-                                  egi = getEdgeGI eid giM
-                              in case M.lookup (infoType $ nodeInfo src, infoType $ nodeInfo tgt) pET of
-                                      Nothing -> giM
-                                      Just typeGI -> M.insert eid (typeGI {cPosition = cPosition egi}) giM
-                        newEGI = foldr changeEdgeGI (snd giM) edgesInContext
-                        newGI = (fst giM, newEGI)
-                        newGraph = foldr (\eid g -> updateEdgePayload eid g (\info -> infoSetType info typeInfo)) g unlockedSEids
-
-                    writeIORef currentState (stateSetGI newGI . stateSetGraph newGraph $ es)
-                    Gtk.widgetQueueDraw canvas
                     if gt == 4
                       then updateNacInfo nacInfoMap currentGraph mergeMapping currentState
                       else return ()
-                else return ()
+                    indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
+                    Gtk.widgetQueueDraw canvas
+                else
+                  return ()
+
+
+
 
   -- choose a operaion in the operation comboBox
   on operationCBox #changed $ do
     gt <- readIORef currentGraphType
     index <- Gtk.comboBoxGetActive operationCBox
-    case (index<0 || index > 2, gt<3) of
+    case (index<0 || index > 2, gt/=3) of
       (True,_) -> return ()
       (_,True) -> return ()
       (False,False) -> do
-          es <- readIORef currentState
           operationInfo <- return $ case index of
             0 -> Preserve
             1 -> Create
             2 -> Delete
-          let (sNids,sEids) = stateGetSelected es
-              g = stateGetGraph es
-              gi = stateGetGI es
-              newGraph  = foldl (\g nid -> updateNodePayload nid g (\info -> infoSetOperation info operationInfo)) g sNids
-              newGraph' = foldl (\g eid -> updateEdgePayload eid g (\info -> infoSetOperation info operationInfo)) newGraph sEids
-          context <- Gtk.widgetGetPangoContext canvas
-          font <- case operationInfo == Preserve of
-            True -> return Nothing
-            False -> return $ Just "Sans Bold 10"
-          maybeNodedims <- forM sNids $ \nid -> do
-            let maybeNode = G.lookupNode nid newGraph'
-            case maybeNode of
-              Nothing -> return Nothing
-              Just n -> do
-                dim <- getStringDims (infoVisible $ nodeInfo n) context font
-                return $ Just (nid, dim)
-          let ndims = catMaybes maybeNodedims
-              newNgiM = foldl (\giM (nid, dim) -> let gi = (getNodeGI (fromEnum nid) giM) {dims = dim}
-                                                  in M.insert (fromEnum nid) gi giM) (fst gi) ndims
-          writeIORef currentState (stateSetGI (newNgiM, snd gi) . stateSetGraph newGraph' $ es)
-          Gtk.widgetQueueDraw canvas
+          es <- readIORef currentState
+          mergeM <- readIORef mergeMapping
+          changed <- changeElementsOperation canvas currentState operationInfo
+          if changed then
+            do
+              if gt == 4
+                then updateNacInfo nacInfoMap currentGraph mergeMapping currentState
+                else return ()
+              indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
+              Gtk.widgetQueueDraw canvas
+          else
+            return ()
 
 
   -- merge or split buttons pressed: merge or split elements in nac
@@ -1393,7 +1346,96 @@ setNewStyle radioBtn canvas newStyle currentStyle currentState =
         Gtk.widgetQueueDraw canvas
         return True
 
+changeNodesType :: IORef (Graph Info Info) -> IORef (M.Map String (M.Map (String, String) EdgeGI, Int32)) ->
+                  IORef GraphState -> String -> NodeGI -> IO Bool
+changeNodesType typeGraph possibleEdgeTypes currentState typeInfo typeNGI = do
+          es <- readIORef currentState
+          let (sNids,sEids) = stateGetSelected es
+              g = stateGetGraph es
+              -- foreach selected node, change their types
+              unlockedSNids = filter (\nid -> case lookupNode nid g of
+                                                  Nothing -> False
+                                                  Just n -> not $ infoLocked (nodeInfo n)) sNids
+          if length unlockedSNids > 0 then
+            do
+              let giM = stateGetGI es
+                  g' = foldr (\nid g -> updateNodePayload nid g (\info -> infoSetType info typeInfo)) g unlockedSNids
+                  newNGI = foldr  (\nid giM -> let ngi = getNodeGI (fromEnum nid) giM
+                                               in M.insert (fromEnum nid) (typeNGI {position = position ngi, dims = dims ngi}) giM)
+                                  (fst giM)
+                                  unlockedSNids
+                  es' = stateSetGraph g' . stateSetGI (newNGI, snd giM) . stateSetSelected (unlockedSNids,sEids) $ es
 
+                  -- foreach changed node, change the type of the edges connected to it
+              typesE <- readIORef possibleEdgeTypes >>= return . M.map fst
+              tg <- readIORef typeGraph
+              let es'' = infereEdgesTypesAfterNodeChange es' tg typesE
+              writeIORef currentState es''
+
+
+              return True
+          else
+            return False
+
+changeEdgesType :: IORef GraphState -> String -> M.Map (String, String) EdgeGI -> IO Bool
+changeEdgesType currentState typeInfo pET = do
+      es <- readIORef currentState
+      let (sNids,sEids) = stateGetSelected es
+          g = stateGetGraph es
+          giM = stateGetGI es
+          unlockedSEids = filter (\eid -> case lookupEdge eid g of
+                                                Nothing -> False
+                                                Just e -> (not $ infoLocked (edgeInfo e)) &&
+                                                          (infoType $ edgeInfo e) /= typeInfo) sEids
+          edgesInContext = catMaybes $ map (\eid -> lookupEdgeInContext eid g) unlockedSEids
+      if length edgesInContext > 0 then
+          do
+
+            let changeEdgeGI ((src,_),e,(tgt,_)) giM =
+                      let eid = fromEnum $ edgeId e
+                          egi = getEdgeGI eid giM
+                      in case M.lookup (infoType $ nodeInfo src, infoType $ nodeInfo tgt) pET of
+                              Nothing -> giM
+                              Just typeGI -> M.insert eid (typeGI {cPosition = cPosition egi}) giM
+                newEGI = foldr changeEdgeGI (snd giM) edgesInContext
+                newGI = (fst giM, newEGI)
+                newGraph = foldr (\eid g -> updateEdgePayload eid g (\info -> infoSetType info typeInfo)) g unlockedSEids
+
+            writeIORef currentState (stateSetGI newGI . stateSetGraph newGraph $ es)
+            return True
+      else return False
+
+
+changeElementsOperation :: Gtk.DrawingArea -> IORef GraphState -> InfoOperation -> IO Bool
+changeElementsOperation canvas currentState operationInfo = do
+        es <- readIORef currentState
+
+        let (sNids,sEids) = stateGetSelected es
+
+        if (length sNids) + (length sEids) > 0 then
+          do
+            let g = stateGetGraph es
+                gi = stateGetGI es
+                newGraph  = foldl (\g nid -> updateNodePayload nid g (\info -> infoSetOperation info operationInfo)) g sNids
+                newGraph' = foldl (\g eid -> updateEdgePayload eid g (\info -> infoSetOperation info operationInfo)) newGraph sEids
+            context <- Gtk.widgetGetPangoContext canvas
+            font <- case operationInfo == Preserve of
+              True -> return Nothing
+              False -> return $ Just "Sans Bold 10"
+            maybeNodedims <- forM sNids $ \nid -> do
+              let maybeNode = G.lookupNode nid newGraph'
+              case maybeNode of
+                Nothing -> return Nothing
+                Just n -> do
+                  dim <- getStringDims (infoVisible $ nodeInfo n) context font
+                  return $ Just (nid, dim)
+            let ndims = catMaybes maybeNodedims
+                newNgiM = foldl (\giM (nid, dim) -> let gi = (getNodeGI (fromEnum nid) giM) {dims = dim}
+                                                    in M.insert (fromEnum nid) gi giM) (fst gi) ndims
+            writeIORef currentState (stateSetGI (newNgiM, snd gi) . stateSetGraph newGraph' $ es)
+            return True
+        else
+          return False
 
 
 ---------------------------------------------------------------------------------------------------------------------------------
