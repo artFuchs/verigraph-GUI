@@ -5,7 +5,6 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 module GUI.Editor(
   startEditor
-, prepToExport
 , confirmOperation
 , storeCurrentES
 )where
@@ -1550,22 +1549,7 @@ confirmOperation window store changedProject currentState nacInfoMap fileName st
       saveFile structs fileName window -- returns True if saved the file
     _ -> return False
 
-prepToExport :: Gtk.TreeStore
-             -> IORef (M.Map Int32 GraphState)
-             -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
-             -> IO (Either String (Grammar (TGM.TypedGraphMorphism Info Info)))
-prepToExport store graphStates nacInfoMap = do
-  sts <- readIORef graphStates
 
-  let tg = stateGetGraph . fromJust $ M.lookup 0 sts
-      hg = stateGetGraph . fromJust $ M.lookup 1 sts
-
-  rules <- getRules store graphStates nacInfoMap
-  let rulesNames = map (\(_,_,name) -> name) rules
-      rulesNnacs = map (\(r,ns,_) -> (r,ns)) rules
-
-  let efstOrderGG = makeGrammar tg hg rulesNnacs rulesNames
-  return efstOrderGG
 
 
 
