@@ -52,7 +52,7 @@ startGUI = do
   --------  IORefs  -----------------------------------------------------------------------------------------------------------
   -----------------------------------------------------------------------------------------------------------------------------
 
-  -- variables to editStore the multiple graphs of the grammar
+  -- variables to editorStore the multiple graphs of the grammar
   -- map of graph ids to graphs, containing the GraphStates of all graphs in the grammar
   statesMap       <- newIORef (M.empty :: M.Map Int32 GraphState)
   currentPath     <- newIORef [0] -- indexes of the path of the current graph in the TreeStore
@@ -77,7 +77,7 @@ startGUI = do
 
   -- variables to specify NACs
   -- Diagraph from the rule - togetter with lhs it make the editor state
-  nacInfoMap    <- newIORef (M.empty :: M.Map Int32 (DiaGraph, MergeMapping))
+  nacInfoMap    <- newIORef (M.empty :: M.Map Int32 NacInfo)
   mergeMapping  <- newIORef (Nothing :: Maybe MergeMapping) -- current merge mapping. important to undo/redo with nacs
   let nacIORefs = (nacInfoMap, mergeMapping)
 
@@ -106,10 +106,10 @@ startGUI = do
 
 
   -- init an model to display in the editor tree panel --------------------------------
-  editStore <- Gtk.treeStoreNew [gtypeString, gtypeBoolean, gtypeInt, gtypeInt, gtypeBoolean, gtypeBoolean]
-  Edit.initStore editStore
+  editorStore <- Gtk.treeStoreNew [gtypeString, gtypeBoolean, gtypeInt, gtypeInt, gtypeBoolean, gtypeBoolean]
+  Edit.initStore editorStore
   -- start editor module
-  editorItems <- Edit.startEditor window editStore
+  editorItems <- Edit.startEditor window editorStore
                                   fileName typeGraph
                                   storeIORefs changesIORefs nacIORefs
                                   fileItems editItems viewItems
@@ -123,7 +123,7 @@ startGUI = do
   let (execPane, execCanvas, execNacCBox, execState, execStarted, execNacListMap) = execItems
 
   -- start analysis module
-  cpaBox <- buildCpaBox window editStore statesMap nacInfoMap
+  cpaBox <- buildCpaBox window editorStore statesMap nacInfoMap
 
   -- set the tabs
   editorTabLabel <- new Gtk.Label [#label := "Editor"]
@@ -141,22 +141,22 @@ startGUI = do
   --------  EVENT BINDINGS  --------------------------------------------------------------------------------------------------
   ----------------------------------------------------------------------------------------------------------------------------
 
-  -- update execStore (TreeStore of Executor module) based on editStore (TreeStore of Editor module) -------------------------
-  -- when a editStore row changes, update the execStore
-  after editStore #rowChanged $ \path iter -> do
-    n   <- Gtk.treeModelGetValue editStore iter 0 >>= (\n -> fromGValue n :: IO (Maybe String)) >>= return . fromJust
-    gid <- Gtk.treeModelGetValue editStore iter 2 >>= fromGValue :: IO Int32
-    t   <- Gtk.treeModelGetValue editStore iter 3 >>= fromGValue :: IO Int32
-    a   <- Gtk.treeModelGetValue editStore iter 4 >>= fromGValue :: IO Bool
-    v   <- Gtk.treeModelGetValue editStore iter 5 >>= fromGValue :: IO Bool
+  -- update execStore (TreeStore of Executor module) based on editorStore (TreeStore of Editor module) -------------------------
+  -- when a editorStore row changes, update the execStore
+  after editorStore #rowChanged $ \path iter -> do
+    n   <- Gtk.treeModelGetValue editorStore iter 0 >>= (\n -> fromGValue n :: IO (Maybe String)) >>= return . fromJust
+    gid <- Gtk.treeModelGetValue editorStore iter 2 >>= fromGValue :: IO Int32
+    t   <- Gtk.treeModelGetValue editorStore iter 3 >>= fromGValue :: IO Int32
+    a   <- Gtk.treeModelGetValue editorStore iter 4 >>= fromGValue :: IO Bool
+    v   <- Gtk.treeModelGetValue editorStore iter 5 >>= fromGValue :: IO Bool
     case (v,t) of
       (True,3) -> Exec.updateTreeStore execStore (n,gid,1,0,n)
       (True,4) -> do
-        (valid,parent) <- Gtk.treeModelIterParent editStore iter
+        (valid,parent) <- Gtk.treeModelIterParent editorStore iter
         if valid
           then do
             -- update possible nac selections for the rule in the executor
-            p <- Gtk.treeModelGetValue editStore parent 2 >>= fromGValue :: IO Int32
+            p <- Gtk.treeModelGetValue editorStore parent 2 >>= fromGValue :: IO Int32
             nacListMap <- readIORef execNacListMap
             let invertPair = \(x,y) -> (y,x)
                 nacList = map invertPair $ fromMaybe [] $ M.lookup p nacListMap
@@ -169,10 +169,10 @@ startGUI = do
           else return ()
       (False,3) -> Exec.removeFromTreeStore execStore gid
       (False,4) -> do
-        (valid,parent) <- Gtk.treeModelIterParent editStore iter
+        (valid,parent) <- Gtk.treeModelIterParent editorStore iter
         if valid
           then do
-            p <- Gtk.treeModelGetValue editStore parent 2 >>= fromGValue :: IO Int32
+            p <- Gtk.treeModelGetValue editorStore parent 2 >>= fromGValue :: IO Int32
             nacListMap <- readIORef execNacListMap
             let nacList = fromMaybe [] $ M.lookup p nacListMap
                 nacUpdatedList = M.toList $ M.delete n $ M.fromList nacList
@@ -184,18 +184,18 @@ startGUI = do
           else return ()
       _ -> return ()
 
-  -- when a rule or nac is deleted from editStore, remove the correspondent from execStore
-  after editStore #rowDeleted $ \path -> do
-    -- get the list of rule indexes in the editStore
+  -- when a rule or nac is deleted from editorStore, remove the correspondent from execStore
+  after editorStore #rowDeleted $ \path -> do
+    -- get the list of rule indexes in the editorStore
     let getIndexes iter = do
-          i <- Gtk.treeModelGetValue editStore iter 2 >>= fromGValue :: IO Int32
-          continue <- Gtk.treeModelIterNext editStore iter
+          i <- Gtk.treeModelGetValue editorStore iter 2 >>= fromGValue :: IO Int32
+          continue <- Gtk.treeModelIterNext editorStore iter
           next <- if continue
             then getIndexes iter
             else return []
           return (i:next)
 
-    (hasRules, fstRuleIter) <- Gtk.treeModelGetIterFromString editStore "2:0"
+    (hasRules, fstRuleIter) <- Gtk.treeModelGetIterFromString editorStore "2:0"
     if hasRules
       then do
         ruleIndexes <- getIndexes fstRuleIter
@@ -244,10 +244,13 @@ startGUI = do
   ----------------------------------------------------------------------------------------------------------------------------
   -- File Menu ---------------------------------------------------------------------------------------------------------------
   -- new project
-  on newm #activate $ startNewProject window fileName storeIORefs editStore editorTreeView editorState changesIORefs (undoStack,redoStack) nacIORefs
-
+  on newm #activate $ startNewProject window fileName storeIORefs editorStore editorTreeView editorState changesIORefs (undoStack,redoStack) nacIORefs
   -- open project
-  on opn #activate $ loadProject window fileName storeIORefs editStore editorTreeView editorState changesIORefs (undoStack,redoStack) nacIORefs
+  on opn #activate $ loadProject window fileName storeIORefs editorStore editorTreeView editorState changesIORefs (undoStack,redoStack) nacIORefs
+  -- save project
+  on svn #activate $ saveProject window editorCanvas fileName editorStore editorState storeIORefs changesIORefs nacInfoMap
+  -- save project as
+  sva `on` #activate $ saveProjectAs window editorCanvas fileName editorStore editorState storeIORefs changesIORefs nacInfoMap
 
   -- Edit Menu ---------------------------------------------------------------------------------------------------------------
 
@@ -378,7 +381,7 @@ startGUI = do
   -- event bindings for the main window --------------------------------------------------------------------------------------
   -- when click in the close button, the application must close
   on window #deleteEvent $ return $ do
-    continue <- Edit.confirmOperation window editStore changedProject editorState nacInfoMap fileName storeIORefs
+    continue <- Edit.confirmOperation window editorStore changedProject editorState nacInfoMap fileName storeIORefs
     if continue
       then do
         Gtk.mainQuit
@@ -456,15 +459,15 @@ startNewProject :: Gtk.Window -> IORef (Maybe String)
                 -> IO ()
 startNewProject window fileName
                 storeIORefs@(statesMap,currentPath,currentGraph,currentGraphType)
-                editStore editorTreeView editorState
+                editorStore editorTreeView editorState
                 changesIORefs@(changedProject, changedGraph, lastSavedState)
                 changeStacks
                 nacIORefs@(nacInfoMap, mergeMapping) = do
-  continue <- Edit.confirmOperation window editStore changedProject editorState nacInfoMap fileName storeIORefs
+  continue <- Edit.confirmOperation window editorStore changedProject editorState nacInfoMap fileName storeIORefs
   if continue
     then do
-      Gtk.treeStoreClear editStore
-      Edit.initStore editStore
+      Gtk.treeStoreClear editorStore
+      Edit.initStore editorStore
       Edit.initTreeView editorTreeView
       writeIORef fileName Nothing
       writeIORef editorState emptyState
@@ -505,11 +508,11 @@ loadProject :: Gtk.Window -> IORef (Maybe String)
                 -> IO ()
 loadProject window fileName
             storeIORefs@(statesMap,currentPath,currentGraph,currentGraphType)
-            editStore editorTreeView editorState
+            editorStore editorTreeView editorState
             changesIORefs@(changedProject, changedGraph, lastSavedState)
             changeStacks
             nacIORefs@(nacInfoMap, mergeMapping) = do
-    continue <- confirmOperation window editStore changedProject editorState nacInfoMap fileName storeIORefs
+    continue <- confirmOperation window editorStore changedProject editorState nacInfoMap fileName storeIORefs
     if continue
       then do
         mg <- loadFile window
@@ -517,19 +520,19 @@ loadProject window fileName
           Nothing -> return ()
           Just (forest,fn) -> do
                 writeIORef statesMap M.empty
-                Gtk.treeStoreClear editStore
+                Gtk.treeStoreClear editorStore
                 let infoForest = map (fmap toGSandStates) forest
                     nameForest = map (fmap fst) infoForest
                     statesForest = map (fmap snd) infoForest
                     statesList = map snd . filter (\st-> fst st /= 0) . concat . map Tree.flatten $ statesForest
                     nacInfos = filter (\ni -> fst ni /= 0). concat . map Tree.flatten $ map (fmap toNACInfos) forest
-                mapM (\n -> putInStore editStore n Nothing) nameForest
                 let (i,es) = if length statesList > 0 then statesList!!0 else (0,emptyState)
                 writeIORef fileName $ Just fn
                 writeIORef editorState es
                 setDefaults storeIORefs changesIORefs nacIORefs changeStacks
                 let statesM = M.fromList statesList
                 writeIORef statesMap statesM
+                mapM (\n -> putInStore editorStore n Nothing) nameForest
                 writeIORef lastSavedState $ M.map (\es -> (stateGetGraph es, stateGetGI es)) statesM
                 writeIORef currentGraph i
                 writeIORef nacInfoMap $ M.fromList nacInfos
@@ -537,7 +540,7 @@ loadProject window fileName
                 Gtk.treeViewExpandToPath editorTreeView p
                 namesCol <- Gtk.treeViewGetColumn editorTreeView 1
                 Gtk.treeViewSetCursor editorTreeView p namesCol False
-                Edit.afterSave editStore window statesMap changesIORefs fileName
+                Edit.afterSave editorStore window statesMap changesIORefs fileName
       else return ()
 
 
@@ -562,3 +565,41 @@ putInStore store (Tree.Node (name,c,i,t,a,v) fs) mparent = do
     0 -> mapM_ (\n -> putInStore store n (Just iter)) fs
     3 -> mapM_ (\n -> putInStore store n (Just iter)) fs
     _ -> return ()
+
+
+
+
+
+saveProject :: Gtk.Window -> Gtk.DrawingArea -> IORef (Maybe String) -> Gtk.TreeStore -> IORef GraphState
+            -> (IORef (M.Map Int32 GraphState), IORef [Int32], IORef Int32, IORef Int32)
+            -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 DiaGraph))
+            -> IORef (M.Map Int32 NacInfo)
+            -> IO ()
+saveProject = saveProjectBase saveFile
+
+saveProjectAs :: Gtk.Window -> Gtk.DrawingArea -> IORef (Maybe String) -> Gtk.TreeStore -> IORef GraphState
+            -> (IORef (M.Map Int32 GraphState), IORef [Int32], IORef Int32, IORef Int32)
+            -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 DiaGraph))
+            -> IORef (M.Map Int32 NacInfo)
+            -> IO ()
+saveProjectAs = saveProjectBase saveFileAs
+
+saveProjectBase :: (Tree.Forest SaveInfo -> IORef (Maybe String) -> Gtk.Window -> IO Bool)
+              -> Gtk.Window -> Gtk.DrawingArea -> IORef (Maybe String) -> Gtk.TreeStore -> IORef GraphState
+              -> (IORef (M.Map Int32 GraphState), IORef [Int32], IORef Int32, IORef Int32)
+              -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 DiaGraph))
+              -> IORef (M.Map Int32 NacInfo)
+              -> IO ()
+saveProjectBase saveF window editorCanvas fileName editorStore editorState
+                storeIORefs@(statesMap,_,_,_)
+                changesIORefs
+                nacInfoMap =
+  do
+    Edit.storeCurrentES window editorState storeIORefs nacInfoMap
+    context <- Gtk.widgetGetPangoContext editorCanvas
+    Edit.updateAllNacs editorStore statesMap nacInfoMap context
+    structs <- Edit.getStructsToSave editorStore statesMap nacInfoMap
+    saved <- saveF structs fileName window
+    if saved
+      then do Edit.afterSave editorStore window statesMap changesIORefs fileName
+      else return ()

@@ -512,11 +512,16 @@ startEditor window store
   -- Event Bindings for the TreeView and TreeStore ---------------------------------------------------------------------------
   ----------------------------------------------------------------------------------------------------------------------------
 
-  -- when the typeGraph row is changes or created, update the typeGraph
+  -- when the typeGraph row is changed or created, update the typeGraph
   after store #rowChanged $ \path iter -> do
+    gid <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
     t   <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
     case t of
-      1 -> updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+      1 -> do
+        gt <- readIORef currentGraphType
+        if gt == t then do
+          updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+        else return ()
       _ -> return ()
 
   -- event: changed the selected graph
@@ -755,29 +760,6 @@ startEditor window store
   -- Event Bindings for the MenuItems  ---------------------------------------------------------------------------------------
   ----------------------------------------------------------------------------------------------------------------------------
 
-  -- File Menu Items ---------------------------------------------------------------------------------------------------------
-
-  -- save project
-  on svn #activate $ do
-    storeCurrentES window currentState storeIORefs nacInfoMap
-    context <- Gtk.widgetGetPangoContext canvas
-    updateAllNacs store graphStates nacInfoMap context
-    structs <- getStructsToSave store graphStates nacInfoMap
-    saved <- saveFile structs fileName window
-    if saved
-      then do afterSave store window graphStates changesIORefs fileName
-      else return ()
-
-  -- save project as
-  sva `on` #activate $ do
-    storeCurrentES window currentState storeIORefs nacInfoMap
-    context <- Gtk.widgetGetPangoContext canvas
-    updateAllNacs store graphStates nacInfoMap context
-    structs <- getStructsToSave store graphStates nacInfoMap
-    saved <- saveFileAs structs fileName window
-    if saved
-      then afterSave store window graphStates changesIORefs fileName
-      else return ()
 
   -- Edit Menu ---------------------------------------------------------------------------------------------------------------
   -- delete item
