@@ -41,6 +41,7 @@ import           GUI.Helper.FilePath
 import           GUI.HelpWindow
 
 import           GUI.Editor.Helper.SaveLoad
+import           GUI.Editor.Helper.UndoRedo (ChangeStack)
 
 
 -- | creates the Graphical User Interface and bind actions to events
@@ -107,16 +108,18 @@ startGUI = do
   editStore <- Gtk.treeStoreNew [gtypeString, gtypeBoolean, gtypeInt, gtypeInt, gtypeBoolean, gtypeBoolean]
   Edit.initStore editStore
   -- start editor module
-  (editorPane, editorCanvas, editorState) <- Edit.startEditor window editStore
-                                                fileName typeGraph
-                                                storeIORefs changesIORefs nacIORefs
-                                                fileItems editItems viewItems
-                                                focusedCanvas focusedStateIORef
+  editorItems <- Edit.startEditor window editStore
+                                  fileName typeGraph
+                                  storeIORefs changesIORefs nacIORefs
+                                  fileItems editItems viewItems
+                                  focusedCanvas focusedStateIORef
+  let (editorPane, editorCanvas, editorTreeView, editorState, undoStack, redoStack) = editorItems
 
   -- start executor module
   execStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt, gtypeString]
   Exec.updateTreeStore execStore ("Rule0", 2, 1, 0, "Rule0")
-  (execPane, execCanvas, execNacCBox, execState, execStarted, execNacListMap) <- Exec.buildExecutor execStore statesMap typeGraph nacInfoMap focusedCanvas focusedStateIORef
+  execItems <- Exec.buildExecutor execStore statesMap typeGraph nacInfoMap focusedCanvas focusedStateIORef
+  let (execPane, execCanvas, execNacCBox, execState, execStarted, execNacListMap) = execItems
 
   -- start analysis module
   cpaBox <- buildCpaBox window editStore statesMap nacInfoMap
@@ -140,13 +143,13 @@ startGUI = do
   -- update execStore (TreeStore of Executor module) based on editStore (TreeStore of Editor module) -------------------------
   -- when a editStore row changes, update the execStore
   after editStore #rowChanged $ \path iter -> do
-    n  <- Gtk.treeModelGetValue editStore iter 0 >>= (\n -> fromGValue n :: IO (Maybe String)) >>= return . fromJust
-    id <- Gtk.treeModelGetValue editStore iter 2 >>= fromGValue :: IO Int32
-    t  <- Gtk.treeModelGetValue editStore iter 3 >>= fromGValue :: IO Int32
-    a  <- Gtk.treeModelGetValue editStore iter 4 >>= fromGValue :: IO Bool
-    v  <- Gtk.treeModelGetValue editStore iter 5 >>= fromGValue :: IO Bool
+    n   <- Gtk.treeModelGetValue editStore iter 0 >>= (\n -> fromGValue n :: IO (Maybe String)) >>= return . fromJust
+    gid <- Gtk.treeModelGetValue editStore iter 2 >>= fromGValue :: IO Int32
+    t   <- Gtk.treeModelGetValue editStore iter 3 >>= fromGValue :: IO Int32
+    a   <- Gtk.treeModelGetValue editStore iter 4 >>= fromGValue :: IO Bool
+    v   <- Gtk.treeModelGetValue editStore iter 5 >>= fromGValue :: IO Bool
     case (v,t) of
-      (True,3) -> Exec.updateTreeStore execStore (n,id,1,0,n)
+      (True,3) -> Exec.updateTreeStore execStore (n,gid,1,0,n)
       (True,4) -> do
         (valid,parent) <- Gtk.treeModelIterParent editStore iter
         if valid
@@ -156,14 +159,14 @@ startGUI = do
             nacListMap <- readIORef execNacListMap
             let invertPair = \(x,y) -> (y,x)
                 nacList = map invertPair $ fromMaybe [] $ M.lookup p nacListMap
-                nacUpdatedList = map invertPair $ M.toList $ M.insert id n $ M.fromList nacList
+                nacUpdatedList = map invertPair $ M.toList $ M.insert gid n $ M.fromList nacList
             modifyIORef execNacListMap $ M.insert p nacUpdatedList
             -- update text on the nacCBox
             Gtk.comboBoxTextRemoveAll execNacCBox
             forM_ (nacUpdatedList) $ \(str,index) -> Gtk.comboBoxTextAppendText execNacCBox (T.pack str)
             Gtk.comboBoxSetActive execNacCBox 0
           else return ()
-      (False,3) -> Exec.removeFromTreeStore execStore id
+      (False,3) -> Exec.removeFromTreeStore execStore gid
       (False,4) -> do
         (valid,parent) <- Gtk.treeModelIterParent editStore iter
         if valid
@@ -239,7 +242,8 @@ startGUI = do
 
   ----------------------------------------------------------------------------------------------------------------------------
   -- File Menu ---------------------------------------------------------------------------------------------------------------
-
+  -- new project
+  on newm #activate $ startNewProject window fileName storeIORefs editStore editorTreeView editorState changesIORefs (undoStack,redoStack) nacIORefs
 
   -- Edit Menu ---------------------------------------------------------------------------------------------------------------
 
@@ -437,3 +441,39 @@ buildMainWindow = do
   let helpItems = [helpItem, aboutItem]
 
   return ( window, tabs, fileItems, editItems, viewItems, helpItems)
+
+
+startNewProject :: Gtk.Window -> IORef (Maybe String)
+                -> (IORef (M.Map Int32 GraphState), IORef [Int32], IORef Int32, IORef Int32)
+                -> Gtk.TreeStore -> Gtk.TreeView -> IORef GraphState
+                -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 DiaGraph))
+                -> (IORef (M.Map Int32 ChangeStack), IORef (M.Map Int32 ChangeStack))
+                -> (IORef (M.Map Int32 NacInfo), IORef (Maybe MergeMapping))
+                -> IO ()
+startNewProject window fileName
+                storeIORefs@(statesMap,currentPath,currentGraph,currentGraphType)
+                editStore editorTreeView editorState
+                (changedProject, changedGraph, lastSavedState)
+                (undoStack,redoStack)
+                (nacInfoMap, mergeMapping) = do
+  continue <- Edit.confirmOperation window editStore changedProject editorState nacInfoMap fileName storeIORefs
+  if continue
+    then do
+      Gtk.treeStoreClear editStore
+      Edit.initStore editStore
+      Edit.initTreeView editorTreeView
+      writeIORef editorState emptyState
+      writeIORef undoStack $ M.fromList [(a, []) | a <- [0..2]]
+      writeIORef redoStack $ M.fromList [(a, []) | a <- [0..2]]
+      writeIORef fileName Nothing
+      writeIORef currentPath [0]
+      writeIORef currentGraphType 1
+      writeIORef currentGraph 0
+      writeIORef statesMap $ M.fromList [(a, emptyState) | a <- [0..2]]
+      writeIORef lastSavedState M.empty
+      writeIORef changedProject False
+      writeIORef changedGraph [False]
+      writeIORef nacInfoMap M.empty
+      writeIORef mergeMapping Nothing
+      set window [#title := "Verigraph-GUI"]
+    else return ()

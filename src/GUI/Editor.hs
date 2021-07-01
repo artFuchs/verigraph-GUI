@@ -91,7 +91,7 @@ startEditor :: Gtk.Window -> Gtk.TreeStore
                -> StoreIORefs -> ChangesIORefs -> NacIORefs
                -> [Gtk.MenuItem] -> [Gtk.MenuItem] -> [Gtk.MenuItem]
                -> IORef (Maybe Gtk.DrawingArea) -> IORef (Maybe (IORef GraphState))
-               -> IO (Gtk.Paned, Gtk.DrawingArea, IORef GraphState)
+               -> IO (Gtk.Paned, Gtk.DrawingArea, Gtk.TreeView, IORef GraphState, IORef (M.Map Int32 ChangeStack), IORef (M.Map Int32 ChangeStack))
 startEditor window store
             fileName typeGraph
             storeIORefs changesIORefs nacIORefs
@@ -748,30 +748,7 @@ startEditor window store
 
   -- File Menu Items ---------------------------------------------------------------------------------------------------------
 
-  -- new project
-  on newm #activate $ do
-    continue <- confirmOperation window store changedProject currentState nacInfoMap fileName storeIORefs
-    if continue
-      then do
-        Gtk.treeStoreClear store
-        initStore store
-        initTreeView treeview
-        writeIORef currentState emptyState
-        writeIORef undoStack $ M.fromList [(a, []) | a <- [0..2]]
-        writeIORef redoStack $ M.fromList [(a, []) | a <- [0..2]]
-        writeIORef fileName Nothing
-        writeIORef currentPath [0]
-        writeIORef currentGraphType 1
-        writeIORef currentGraph 0
-        writeIORef graphStates $ M.fromList [(a, emptyState) | a <- [0..2]]
-        writeIORef lastSavedState M.empty
-        writeIORef changedProject False
-        writeIORef changedGraph [False]
-        writeIORef nacInfoMap M.empty
-        writeIORef mergeMapping Nothing
-        set window [#title := "Verigraph-GUI"]
-        Gtk.widgetQueueDraw canvas
-      else return ()
+
 
   -- open project
   on opn #activate $ do
@@ -1024,7 +1001,7 @@ startEditor window store
         stackUndo undoStack redoStack currentGraph es (Just (nM,eM))
         Gtk.widgetQueueDraw canvas
 
-  return (mainPane, canvas, currentState)
+  return (mainPane, canvas, treeview, currentState, undoStack, redoStack)
 
 
 
