@@ -478,8 +478,6 @@ startEditor window store
                   return ()
 
 
-
-
   -- choose a operaion in the operation comboBox
   on operationCBox #changed $ do
     gt <- readIORef currentGraphType
@@ -520,26 +518,24 @@ startEditor window store
     case sel of
       False -> return ()
       True -> do
-        -- get the current path for update
-        path <- Gtk.treeModelGetPath model iter >>= Gtk.treePathGetIndices >>= return . fromMaybe [0]
-        -- compare the selected graph with the current one
-        cIndex <- readIORef currentGraph
-        cGType <- readIORef currentGraphType
-        index <- Gtk.treeModelGetValue model iter 2 >>= fromGValue  :: IO Int32
         gType <- Gtk.treeModelGetValue model iter 3 >>= fromGValue  :: IO Int32
+        path <- Gtk.treeModelGetPath model iter >>= Gtk.treePathGetIndices >>= return . fromMaybe [0]
+        if gType /= 0 then do
+          -- update the current path
+          writeIORef currentPath path
+        else return ()
 
-        -- change the graph according to selection
+        cIndex <- readIORef currentGraph
+        index <- Gtk.treeModelGetValue model iter 2 >>= fromGValue  :: IO Int32
+        -- compare the selected graph with the current one and change the graph according to selection
         case (cIndex == index, gType) of
-          -- case the selection did not change, just update the path
-          (True, _)  -> writeIORef currentPath path
-
-          -- case the selection in the treeview is just a Topic, do nothing
+          -- case the index did not change or the graph is a topic, then do nothing
+          (True, _)  -> return ()
           (False, 0) -> return ()
 
           -- case the selection is a NAC, mount the graph with the LHS part, the additional elements and the merge information
           (False, 4) -> do
-            -- update the current path
-            writeIORef currentPath path
+
             -- update the current graph in the tree
             storeCurrentES window currentState storeIORefs nacInfoMap
 
@@ -596,85 +592,33 @@ startEditor window store
                 writeIORef mergeMapping Nothing
               Nothing -> return ()
 
-        -- auxiliar function to update nodes and edges elements according to the active typeGraph
-        let updateElements = do
-              pnt <- readIORef possibleNodeTypes
-              pet <- readIORef possibleEdgeTypes
-              es <- readIORef currentState
-              let g = stateGetGraph es
-                  (ngi, egi) = stateGetGI es
-                  fn node = (nid, infoType (nodeInfo node), getNodeGI nid ngi)
-                            where nid = fromEnum (nodeId node)
-                  gn (i,t,gi) = case M.lookup t pnt of
-                                  Nothing -> (i,gi)
-                                  Just (gi',_) -> (i, gi {fillColor = (fillColor gi'), shape = (shape gi')})
-                  fe ((src,_), edge, (tgt,_)) = (eid, eType, srcType, tgtType, getEdgeGI eid egi)
-                            where eid = fromEnum (edgeId edge)
-                                  eType = infoType (edgeInfo edge)
-                                  srcType = infoType $ nodeInfo src
-                                  tgtType = infoType $ nodeInfo tgt
-                  ge (i,et,currentState,tt,gi) = case M.lookup et pet of
-                                  Nothing -> (i,gi)
-                                  Just (sm,_) -> case M.lookup (currentState,tt) sm of
-                                    Nothing -> (i,gi)
-                                    Just gi' -> (i, gi' {cPosition = cPosition gi})
-                  newNodeGI = M.fromList . map gn . map fn $ nodes g
-                  newEdgeGI = M.fromList . map ge . map fe $ edgesInContext g
-              writeIORef currentState (stateSetGI (newNodeGI, newEdgeGI) es)
 
-        -- auxiliar function to set the GI of new elements to a default
-        let resetCurrentGI = do
-                writeIORef currentShape NCircle
-                writeIORef currentStyle ENormal
-                writeIORef currentC (1,1,1)
-                writeIORef currentLC (0,0,0)
+        -- set the GI of new elements to a default and update the elments of a graph according to the current typegraph
+        -- when the graph is not the typegraph
+        if gType > 1 then do
+          writeIORef currentShape NCircle
+          writeIORef currentStyle ENormal
+          writeIORef currentC (1,1,1)
+          writeIORef currentLC (0,0,0)
+          updateElements currentState possibleNodeTypes possibleEdgeTypes
+        else return ()
 
-        -- change the UI elements according to the selected graph
-        case gType of
-          1 -> do
-            #show layoutBox
-            #hide typeSelectionBox
-            mapM_ (\m -> Gtk.widgetSetSensitive m False) [mrg,spt]
-          2 -> do
-            #hide layoutBox
-            #show typeSelectionBox
-            #hide operationBox
-            #hide mergeBtn
-            #hide splitBtn
-            resetCurrentGI
-            updateElements
-            mapM_ (\m -> Gtk.widgetSetSensitive m False) [mrg,spt]
-          3 -> do
-            #hide layoutBox
-            #show typeSelectionBox
-            #show operationBox
-            #hide mergeBtn
-            #hide splitBtn
-            resetCurrentGI
-            updateElements
-            mapM_ (\m -> Gtk.widgetSetSensitive m False) [mrg,spt]
-          4 -> do
-            #hide layoutBox
-            #show typeSelectionBox
-            #hide operationBox
-            #show mergeBtn
-            #show splitBtn
-            resetCurrentGI
-            updateElements
-            mapM_ (\m -> Gtk.widgetSetSensitive m True) [mrg,spt]
-          _ -> return ()
+        -- draw the graph
+        Gtk.widgetQueueDraw canvas
 
-        if gType == 3 || gType == 4
-          then do
+        -- update the inspector pane according to the current graph type
+        changeInspector layoutBox typeSelectionBox operationBox mergeBtn splitBtn mrg spt gType
+
+        -- show the create Nac button and the remove button when the current graph is a Rule or Nac
+        if gType == 3 || gType == 4 then do
             #show createNBtn
             #show removeBtn
             case gType of
               3 -> set removeBtn [#label := T.pack "Remove Rule"]
               4 -> set removeBtn [#label := T.pack "Remove NAC"]
-          else do
+        else do
             #hide createNBtn
             #hide removeBtn
-        Gtk.widgetQueueDraw canvas
 
   -- pressed the 'new rule' button on the treeview area
   -- create a new Rule
@@ -1089,10 +1033,10 @@ startEditor window store
 
 
 ---------------------------------------------------------------------------------------------------------------------------------
--- Auxiliar functions for Callbacks  --------------------------------------------------------------------------------------------
+-- Auxiliar functions for the canvas callbacks ----------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------------------------------------
 
-
+-- callback used to display a
 drawGraphByType :: IORef GraphState
                 -> IORef (Graph Info Info)
                 -> IORef (Maybe (Double,Double,Double,Double) )
@@ -1121,7 +1065,7 @@ drawGraphByType currentState typeGraph squareSelection currentGraphType mergeMap
     return False
 
 
--- create a node or n edges and return if the
+-- create a node or n edges and return if something was created or not
 createNodesOrEdgesCallback :: Gtk.DrawingArea -> Gtk.Entry -> Gtk.CheckButton -> Gtk.CheckButton
                            -> IORef GraphState -> IORef Int32 -> IORef Int32 -> IORef (Graph Info Info) -> IORef (Maybe MergeMapping)
                            -> IORef (Maybe String) -> IORef (M.Map String (NodeGI,Int32)) -> IORef (Maybe String) -> IORef (M.Map String (M.Map (String, String) EdgeGI, Int32))
@@ -1438,6 +1382,62 @@ changeElementsOperation canvas currentState operationInfo = do
           return False
 
 
+-- auxiliar functions used in changedCursor callback --------------------------------------------------------------------------
+-- auxiliar function to update nodes and edges elements according to the active typeGraph
+updateElements :: IORef GraphState -> IORef (M.Map String (NodeGI, Int32)) -> IORef (M.Map String (M.Map (String,String) EdgeGI, Int32)) -> IO ()
+updateElements currentState possibleNodeTypes possibleEdgeTypes= do
+              pnt <- readIORef possibleNodeTypes
+              pet <- readIORef possibleEdgeTypes
+              es <- readIORef currentState
+              let g = stateGetGraph es
+                  (ngi, egi) = stateGetGI es
+                  fn node = (nid, infoType (nodeInfo node), getNodeGI nid ngi)
+                            where nid = fromEnum (nodeId node)
+                  gn (i,t,gi) = case M.lookup t pnt of
+                                  Nothing -> (i,gi)
+                                  Just (gi',_) -> (i, gi {fillColor = (fillColor gi'), shape = (shape gi')})
+                  fe ((src,_), edge, (tgt,_)) = (eid, eType, srcType, tgtType, getEdgeGI eid egi)
+                            where eid = fromEnum (edgeId edge)
+                                  eType = infoType (edgeInfo edge)
+                                  srcType = infoType $ nodeInfo src
+                                  tgtType = infoType $ nodeInfo tgt
+                  ge (i,et,currentState,tt,gi) = case M.lookup et pet of
+                                  Nothing -> (i,gi)
+                                  Just (sm,_) -> case M.lookup (currentState,tt) sm of
+                                    Nothing -> (i,gi)
+                                    Just gi' -> (i, gi' {cPosition = cPosition gi})
+                  newNodeGI = M.fromList . map gn . map fn $ nodes g
+                  newEdgeGI = M.fromList . map ge . map fe $ edgesInContext g
+              writeIORef currentState (stateSetGI (newNodeGI, newEdgeGI) es)
+
+-- change the Inspector elements according to the selected graph
+changeInspector :: Gtk.Box -> Gtk.Box -> Gtk.Box -> Gtk.Button -> Gtk.Button -> Gtk.MenuItem -> Gtk.MenuItem -> Int32 -> IO ()
+changeInspector layoutBox typeSelectionBox operationBox mergeBtn splitBtn mrg spt gType = do
+              -- if the current graph is the typeGraph then show the layout box else show the typeSelectionBox
+              if gType == 1 then do
+                #show layoutBox
+                #hide typeSelectionBox
+              else do
+                #hide layoutBox
+                #show typeSelectionBox
+
+              -- if the current graph is a ruleGraph, then show the operation box
+              if gType == 3 then
+                #show operationBox
+              else
+                #hide operationBox
+
+              -- if the currentGraph is a nac, then show the merge and split options
+              if gType == 4 then do
+                #show mergeBtn
+                #show splitBtn
+                mapM_ (\m -> Gtk.widgetSetSensitive m True) [mrg,spt]
+              else do
+                #hide mergeBtn
+                #hide splitBtn
+                mapM_ (\m -> Gtk.widgetSetSensitive m False) [mrg,spt]
+
+
 ---------------------------------------------------------------------------------------------------------------------------------
 --  Auxiliar Functions  ---------------------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------------------------------------
@@ -1508,6 +1508,18 @@ updateNacInfo nacInfoMap currentGraph mergeMapping currentState = do
           nacInfo = extractNac g gi mergeM
       index <- readIORef currentGraph
       modifyIORef nacInfoMap $ M.insert index nacInfo
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
