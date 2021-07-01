@@ -18,6 +18,7 @@ import           Data.Int
 import           Data.Maybe
 import           Data.Either
 import qualified Data.Text as T
+import qualified Data.Tree as Tree
 import qualified Data.Map as M
 
 -- verigraph modules
@@ -245,6 +246,9 @@ startGUI = do
   -- new project
   on newm #activate $ startNewProject window fileName storeIORefs editStore editorTreeView editorState changesIORefs (undoStack,redoStack) nacIORefs
 
+  -- open project
+  on opn #activate $ loadProject window fileName storeIORefs editStore editorTreeView editorState changesIORefs (undoStack,redoStack) nacIORefs
+
   -- Edit Menu ---------------------------------------------------------------------------------------------------------------
 
 
@@ -453,27 +457,108 @@ startNewProject :: Gtk.Window -> IORef (Maybe String)
 startNewProject window fileName
                 storeIORefs@(statesMap,currentPath,currentGraph,currentGraphType)
                 editStore editorTreeView editorState
-                (changedProject, changedGraph, lastSavedState)
-                (undoStack,redoStack)
-                (nacInfoMap, mergeMapping) = do
+                changesIORefs@(changedProject, changedGraph, lastSavedState)
+                changeStacks
+                nacIORefs@(nacInfoMap, mergeMapping) = do
   continue <- Edit.confirmOperation window editStore changedProject editorState nacInfoMap fileName storeIORefs
   if continue
     then do
       Gtk.treeStoreClear editStore
       Edit.initStore editStore
       Edit.initTreeView editorTreeView
-      writeIORef editorState emptyState
-      writeIORef undoStack $ M.fromList [(a, []) | a <- [0..2]]
-      writeIORef redoStack $ M.fromList [(a, []) | a <- [0..2]]
       writeIORef fileName Nothing
-      writeIORef currentPath [0]
-      writeIORef currentGraphType 1
-      writeIORef currentGraph 0
-      writeIORef statesMap $ M.fromList [(a, emptyState) | a <- [0..2]]
-      writeIORef lastSavedState M.empty
-      writeIORef changedProject False
-      writeIORef changedGraph [False]
-      writeIORef nacInfoMap M.empty
-      writeIORef mergeMapping Nothing
+      writeIORef editorState emptyState
+      setDefaults storeIORefs changesIORefs nacIORefs changeStacks
       set window [#title := "Verigraph-GUI"]
     else return ()
+
+
+setDefaults :: (IORef (M.Map Int32 GraphState), IORef [Int32], IORef Int32, IORef Int32)
+            -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 DiaGraph))
+            -> (IORef (M.Map Int32 NacInfo), IORef (Maybe MergeMapping))
+            -> (IORef (M.Map Int32 ChangeStack), IORef (M.Map Int32 ChangeStack))
+            -> IO ()
+setDefaults (statesMap,currentPath,currentGraph,currentGraphType)
+            (changedProject, changedGraph, lastSavedState)
+            (nacInfoMap, mergeMapping)
+            (undoStack, redoStack) = do
+  writeIORef statesMap $ M.fromList [(a, emptyState) | a <- [0..2]]
+  writeIORef currentPath [0]
+  writeIORef currentGraph 0
+  writeIORef currentGraphType 1
+  writeIORef changedProject False
+  writeIORef changedGraph [False]
+  writeIORef lastSavedState M.empty
+  writeIORef nacInfoMap M.empty
+  writeIORef mergeMapping Nothing
+  writeIORef undoStack $ M.fromList [(a, []) | a <- [0..2]]
+  writeIORef redoStack $ M.fromList [(a, []) | a <- [0..2]]
+
+
+
+loadProject :: Gtk.Window -> IORef (Maybe String)
+                -> (IORef (M.Map Int32 GraphState), IORef [Int32], IORef Int32, IORef Int32)
+                -> Gtk.TreeStore -> Gtk.TreeView -> IORef GraphState
+                -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 DiaGraph))
+                -> (IORef (M.Map Int32 ChangeStack), IORef (M.Map Int32 ChangeStack))
+                -> (IORef (M.Map Int32 NacInfo), IORef (Maybe MergeMapping))
+                -> IO ()
+loadProject window fileName
+            storeIORefs@(statesMap,currentPath,currentGraph,currentGraphType)
+            editStore editorTreeView editorState
+            changesIORefs@(changedProject, changedGraph, lastSavedState)
+            changeStacks
+            nacIORefs@(nacInfoMap, mergeMapping) = do
+    continue <- confirmOperation window editStore changedProject editorState nacInfoMap fileName storeIORefs
+    if continue
+      then do
+        mg <- loadFile window
+        case mg of
+          Nothing -> return ()
+          Just (forest,fn) -> do
+                writeIORef statesMap M.empty
+                Gtk.treeStoreClear editStore
+                let infoForest = map (fmap toGSandStates) forest
+                    nameForest = map (fmap fst) infoForest
+                    statesForest = map (fmap snd) infoForest
+                    statesList = map snd . filter (\st-> fst st /= 0) . concat . map Tree.flatten $ statesForest
+                    nacInfos = filter (\ni -> fst ni /= 0). concat . map Tree.flatten $ map (fmap toNACInfos) forest
+                mapM (\n -> putInStore editStore n Nothing) nameForest
+                let (i,es) = if length statesList > 0 then statesList!!0 else (0,emptyState)
+                writeIORef fileName $ Just fn
+                writeIORef editorState es
+                setDefaults storeIORefs changesIORefs nacIORefs changeStacks
+                let statesM = M.fromList statesList
+                writeIORef statesMap statesM
+                writeIORef lastSavedState $ M.map (\es -> (stateGetGraph es, stateGetGI es)) statesM
+                writeIORef currentGraph i
+                writeIORef nacInfoMap $ M.fromList nacInfos
+                p <- Gtk.treePathNewFromIndices [0]
+                Gtk.treeViewExpandToPath editorTreeView p
+                namesCol <- Gtk.treeViewGetColumn editorTreeView 1
+                Gtk.treeViewSetCursor editorTreeView p namesCol False
+                Edit.afterSave editStore window statesMap changesIORefs fileName
+      else return ()
+
+
+toGSandStates :: SaveInfo -> (Edit.GraphStore,(Int32,(Int32,GraphState)))
+toGSandStates n = case n of
+  Topic name -> ((name,False,0,0,False,True), (0,(-1,emptyState)))
+  TypeGraph id name es -> ((name,False,id,1,True,True), (1, (id,es)))
+  HostGraph id name es -> ((name,False,id,2,True,True), (2, (id,es)))
+  RuleGraph id name es a -> ((name,False,id,3,a,True), (3, (id,es)))
+  NacGraph id name _ -> ((name,False,id,4,True,True), (4,(id,emptyState)))
+
+toNACInfos :: SaveInfo -> (Int32,NacInfo)
+toNACInfos n = case n of
+  NacGraph id name nacInfo -> (id,nacInfo)
+  _ -> (0,(DG.empty,(M.empty,M.empty)))
+
+putInStore :: Gtk.TreeStore -> Tree.Tree Edit.GraphStore -> Maybe Gtk.TreeIter -> IO ()
+putInStore store (Tree.Node (name,c,i,t,a,v) fs) mparent = do
+  iter <- Gtk.treeStoreAppend store mparent
+  Edit.storeSetGraphStore store iter (name,c,i,t,a,v)
+  case t of
+    0 -> mapM_ (\n -> putInStore store n (Just iter)) fs
+    3 -> mapM_ (\n -> putInStore store n (Just iter)) fs
+    _ -> return ()

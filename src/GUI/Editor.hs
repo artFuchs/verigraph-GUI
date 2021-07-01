@@ -7,6 +7,7 @@ module GUI.Editor(
   startEditor
 , confirmOperation
 , storeCurrentES
+, afterSave
 )where
 
 import qualified GI.Gtk as Gtk
@@ -508,8 +509,16 @@ startEditor window store
   on splitBtn #clicked $ Gtk.menuItemActivate spt
 
   ----------------------------------------------------------------------------------------------------------------------------
-  -- Event Bindings for the TreeView  ----------------------------------------------------------------------------------------
+  -- Event Bindings for the TreeView and TreeStore ---------------------------------------------------------------------------
   ----------------------------------------------------------------------------------------------------------------------------
+
+  -- when the typeGraph row is changes or created, update the typeGraph
+  after store #rowChanged $ \path iter -> do
+    t   <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
+    case t of
+      1 -> updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+      _ -> return ()
+
   -- event: changed the selected graph
   on treeview #cursorChanged $ do
     selection <- Gtk.treeViewGetSelection treeview
@@ -747,63 +756,6 @@ startEditor window store
   ----------------------------------------------------------------------------------------------------------------------------
 
   -- File Menu Items ---------------------------------------------------------------------------------------------------------
-
-
-
-  -- open project
-  on opn #activate $ do
-    continue <- confirmOperation window store changedProject currentState nacInfoMap fileName storeIORefs
-    if continue
-      then do
-        mg <- loadFile window
-        case mg of
-          Nothing -> return ()
-          Just (forest,fn) -> do
-                writeIORef graphStates M.empty
-                Gtk.treeStoreClear store
-                let toGSandStates n = case n of
-                              Topic name -> ((name,False,0,0,False), (0,(-1,emptyState)))
-                              TypeGraph id name es -> ((name,False,id,1,True), (1, (id,es)))
-                              HostGraph id name es -> ((name,False,id,2,True), (2, (id,es)))
-                              RuleGraph id name es a -> ((name,False,id,3,a), (3, (id,es)))
-                              NacGraph id name _ -> ((name,False,id,4,True), (4,(id,emptyState)))
-                let toNACInfos n = case n of
-                              NacGraph id name nacInfo -> (id,nacInfo)
-                              _ -> (0,(DG.empty,(M.empty,M.empty)))
-                    infoForest = map (fmap toGSandStates) forest
-                    nameForest = map (fmap fst) infoForest
-                    statesForest = map (fmap snd) infoForest
-                    statesList = map snd . filter (\st-> fst st /= 0) . concat . map Tree.flatten $ statesForest
-                    nacInfos = filter (\ni -> fst ni /= 0). concat . map Tree.flatten $ map (fmap toNACInfos) forest
-                let putInStore (Tree.Node (name,c,i,t,a) fs) mparent = do
-                        iter <- Gtk.treeStoreAppend store mparent
-                        storeSetGraphStore store iter (name,c,i,t,a,True)
-                        case t of
-                          0 -> mapM_ (\n -> putInStore n (Just iter)) fs
-                          3 -> mapM_ (\n -> putInStore n (Just iter)) fs
-                          _ -> return ()
-                mapM (\n -> putInStore n Nothing) nameForest
-                let (i,es) = if length statesList > 0 then statesList!!0 else (0,emptyState)
-                writeIORef currentState es
-                writeIORef undoStack $ M.fromList [(i,[]) | i <- [0 .. (maximum $ map fst statesList)]]
-                writeIORef redoStack $ M.fromList [(i,[]) | i <- [0 .. (maximum $ map fst statesList)]]
-                let statesMap = M.fromList statesList
-                writeIORef graphStates statesMap
-                writeIORef lastSavedState $ M.map (\es -> (stateGetGraph es, stateGetGI es)) statesMap
-                writeIORef fileName $ Just fn
-                writeIORef currentGraph i
-                writeIORef currentPath [0]
-                writeIORef currentGraphType 1
-                writeIORef mergeMapping Nothing
-                writeIORef nacInfoMap $ M.fromList nacInfos
-                p <- Gtk.treePathNewFromIndices [0]
-                Gtk.treeViewExpandToPath treeview p
-                namesCol <- Gtk.treeViewGetColumn treeview 1
-                Gtk.treeViewSetCursor treeview p namesCol False
-                afterSave store window graphStates changesIORefs fileName
-                updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
-                Gtk.widgetQueueDraw canvas
-      else return ()
 
   -- save project
   on svn #activate $ do
