@@ -4,6 +4,7 @@ module GUI.Data.Nac (
 , extractNac
 , extractNacGraph
 , extractNacGI
+, mergeElements
 , updateEdgeEndsIds
 , addToGroup
 )where
@@ -83,36 +84,45 @@ extractNacGI g (ngi,egi) (nM,eM) = (ngi',egi')
 
 
 
--- | Merge a list of Info in one Info, with their labels separated by "\n ".
---   The rest of the data of first Info (type, operation, locked) in the list is used for the result.
--- examples: mergeInfos ["1{1}","2{1}","3{1}"] = "1\n2\n3{1}"
---           mergeInfos ["1{1}","2{2}","3{3}"] = "1\n2\n3{1}"
-mergeInfos :: [(Int,Info)] -> Info
-mergeInfos infos = newInfo
+mergeElements :: NacInfo -> ([NodeId],[EdgeId]) -> NacInfo
+mergeElements ((g,gi),(nM,eM)) (nids, eids) = mergeElements' ((g,gi),(nM,eM)) (nidsToMerge, eidsToMerge)
   where
-    (k,i):is = reverse $ sortOn fst infos
-    newInfo = foldr
-            (\(k,i) info -> case infoLabel i of
-              Label str -> infoAddLabel info k str
-              LabelGroup lbls -> foldr
-                                  (\(k',str) info' -> case k of
-                                    0 -> infoAddLabel info' k str
-                                    n -> infoAddLabel info' k' str
-                                  )
-                                  info lbls
-            )
-            i is
+    nidsToMerge = map (\n -> nodeId n) nodesToMerge
+    nodesToMerge = filter (\n -> Just (infoType (nodeInfo n)) == nodeType) selectedNodes
+    selectedNodes = Maybe.catMaybes $ map (\id -> lookupNode id g) nids
+    nodeType = case selectedNodes of
+                [] -> Nothing
+                n:_ -> Just (infoType . nodeInfo $ n)
+    eidsToMerge = map (\e -> edgeId e) edgesToMerge
+    edgesToMerge = filter (\e -> Just (infoType (edgeInfo e)) == edgeType) selectedEdges
+    selectedEdges = Maybe.catMaybes $ map (\id -> lookupEdge id g) eids
+    edgeType = case selectedEdges of
+                [] -> Nothing
+                e:_ -> Just (infoType . edgeInfo $ e)
 
 
--- | Given a mapping of element keys to group keys , a function to extract a key from an element,
--- the element and a mapping of keys to lists of elements (aka. groups),
--- add the element to the group indicated by the mapping
-addToGroup:: Ord k => Eq k => M.Map k k -> (a->k) -> a -> M.Map k [a] -> M.Map k [a]
-addToGroup mapping getKey element groupMapping =
-  let key = getKey element
-  in case M.lookup key mapping of
-    Nothing -> groupMapping
-    Just k' -> M.insertWith (++) k' [element] groupMapping
+mergeElements' :: NacInfo -> ([NodeId],[EdgeId]) -> NacInfo
+mergeElements' ((g,gi),(nM,eM)) (nids, eids) = ((g',gi'),(nM',eM'))
+  where
+    nM' = mergeElementsInMapping nM nids
+    eM' = mergeElementsInMapping eM eids
+    mergedNodes = applyNodeMerging (nodes g) nM'
+    mergedEdges = applyEdgeMerging (edges g) eM'
+    g' = fromNodesAndEdges mergedNodes mergedEdges
+    ngi' = M.filterWithKey (\k _ -> k `elem` (map fromEnum $ nodeIds g')) (fst gi)
+    egi' = M.filterWithKey (\k _ -> k `elem` (map fromEnum $ edgeIds g')) (snd gi)
+    gi' = (ngi',egi')
+
+
+-- given an map of IDs to IDs and a list of IDs, modify the mapping in a way that all the IDs in the list of IDs point to the
+-- maximum element on the list of IDs
+-- example: M.fromList [(1,1),(2,2),(3,3)] [1,3] = M.fromList [(1,3),(2,2),(3,3)]
+mergeElementsInMapping :: (Num n, Eq n, Ord n) => M.Map n n -> [n] -> M.Map n n
+mergeElementsInMapping mapping idsToMerge = mapping'
+  where
+    idsToMerge' = filter (\id -> id `elem` M.keys mapping) idsToMerge
+    targetId = maximum idsToMerge
+    mapping' = foldr (\id m -> M.insert id targetId m) mapping idsToMerge'
 
 
 -- | Given a list of nodes and a node merge mapping, merge the list of nodes according to the mapping
@@ -160,6 +170,42 @@ applyEdgeMerging edges mapping = mergedEdges
                     (targetId $ head es)
                     (mergeInfos $ map (\e -> (fromEnum $ edgeId e, edgeInfo e)) es)
     mergedEdges = map mergeGroup edgesGroups
+
+
+
+-- | Merge a list of Info in one Info, with their labels separated by "\n ".
+--   The rest of the data of first Info (type, operation, locked) in the list is used for the result.
+-- examples: mergeInfos ["1{1}","2{1}","3{1}"] = "1\n2\n3{1}"
+--           mergeInfos ["1{1}","2{2}","3{3}"] = "1\n2\n3{1}"
+mergeInfos :: [(Int,Info)] -> Info
+mergeInfos infos = newInfo
+  where
+    (k,i):is = reverse $ sortOn fst infos
+    newInfo = foldr
+            (\(k,i) info -> case infoLabel i of
+              Label str -> infoAddLabel info k str
+              LabelGroup lbls -> foldr
+                                  (\(k',str) info' -> case k of
+                                    0 -> infoAddLabel info' k str
+                                    n -> infoAddLabel info' k' str
+                                  )
+                                  info lbls
+            )
+            i is
+
+
+-- | Given a mapping of element keys to group keys , a function to extract a key from an element,
+-- the element and a mapping of keys to lists of elements (aka. groups),
+-- add the element to the group indicated by the mapping
+addToGroup:: Ord k => Eq k => M.Map k k -> (a->k) -> a -> M.Map k [a] -> M.Map k [a]
+addToGroup mapping getKey element groupMapping =
+  let key = getKey element
+  in case M.lookup key mapping of
+    Nothing -> groupMapping
+    Just k' -> M.insertWith (++) k' [element] groupMapping
+
+
+
 
 updateNodeId :: NodeId -> M.Map NodeId NodeId -> NodeId
 updateNodeId nid m = Maybe.fromMaybe nid $ M.lookup nid m

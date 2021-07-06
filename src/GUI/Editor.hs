@@ -196,11 +196,7 @@ startEditor window store
         case gt of
           0 -> return ()
           1 -> updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
-          _ -> do
-            if gt == 4
-              then updateNacInfo nacInfoMap currentGraph mergeMapping currentState
-              else return ()
-            setCurrentValidFlag store currentState typeGraph currentPath
+          _ -> setCurrentValidFlag store currentState typeGraph currentPath
 
 
 
@@ -442,9 +438,6 @@ startEditor window store
             mergeM <- readIORef mergeMapping
             changed <- changeNodesType typeGraph possibleEdgeTypes currentState typeInfo typeNGI
             if changed then do
-              if gt == 4
-                then updateNacInfo nacInfoMap currentGraph mergeMapping currentState
-                else return ()
               indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
               Gtk.widgetQueueDraw canvas
             else return ()
@@ -469,9 +462,6 @@ startEditor window store
                 changed <- changeEdgesType currentState typeInfo pET
                 if changed then
                   do
-                    if gt == 4
-                      then updateNacInfo nacInfoMap currentGraph mergeMapping currentState
-                      else return ()
                     indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
                     Gtk.widgetQueueDraw canvas
                 else
@@ -495,9 +485,6 @@ startEditor window store
           changed <- changeElementsOperation canvas currentState operationInfo
           if changed then
             do
-              if gt == 4
-                then updateNacInfo nacInfoMap currentGraph mergeMapping currentState
-                else return ()
               indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
               Gtk.widgetQueueDraw canvas
           else
@@ -545,49 +532,6 @@ startEditor window store
           -- case the index did not change or the graph is a topic, then do nothing
           (True, _)  -> return ()
           (False, 0) -> return ()
-
-          -- case the selection is a NAC, mount the graph with the LHS part, the additional elements and the merge information
-          (False, 4) -> do
-
-            -- update the current graph in the tree
-            storeCurrentES window currentState storeIORefs nacInfoMap
-
-            -- build the graph for the nac
-            writeIORef currentGraphType gType
-            states <- readIORef graphStates
-            let maybeState = M.lookup index states
-            case maybeState of
-              Just es -> do
-                tg <- readIORef typeGraph
-                -- load lhs diagraph
-                (lhs,lgi) <- getParentLHSDiaGraph store path graphStates
-                let lhsIsValid = isGraphValid lhs tg
-
-                case lhsIsValid of
-                  False -> do
-                    showError window "Parent rule have type errors. Please, correct them before loading nacGraph."
-                    if (length path > 1)
-                      then do
-                        parentPath <- Gtk.treePathNewFromIndices (init path)
-                        Gtk.treeViewSetCursor treeview parentPath (Nothing :: Maybe Gtk.TreeViewColumn) False
-                      else return ()
-                  True -> do
-                    -- load nac' diagraph
-                    context <- Gtk.widgetGetPangoContext canvas
-                    lhsNgi <- updateNodesGiDims (fst lgi) lhs context
-                    let lhsgi = (lhsNgi, snd lgi)
-                    nacInfoM <- readIORef nacInfoMap
-                    (nG,nGI) <- case M.lookup index nacInfoM of
-                      Nothing -> return (lhs,lhsgi)
-                      Just (nacdg,mergeM) -> do
-                        (nacdg',mergeM') <- applyLhsChangesToNac lhs (nacdg,mergeM) (Just context)
-                        writeIORef mergeMapping $ Just mergeM'
-                        modifyIORef nacInfoMap $ M.insert index (nacdg', mergeM')
-                        return $ mountNACGraph (lhs,lhsgi) tg (nacdg', mergeM')
-                    writeIORef currentState $ stateSetGI nGI . stateSetGraph nG $ es
-                    writeIORef currentGraph index
-              Nothing -> return ()
-
           -- case the selection is another type of graph, get the graph from the map
           (False, _) -> do
             -- update the current path
@@ -602,7 +546,13 @@ startEditor window store
               Just es -> do
                 writeIORef currentState es
                 writeIORef currentGraph index
-                writeIORef mergeMapping Nothing
+                if gType == 4 then
+                  do
+                    nacInfoM <- readIORef nacInfoMap
+                    mergeM <- return $ snd <$> M.lookup index nacInfoM
+                    writeIORef mergeMapping mergeM
+                else
+                  writeIORef mergeMapping Nothing
               Nothing -> return ()
 
 
@@ -710,11 +660,14 @@ startEditor window store
             states <- readIORef graphStates
             let es = fromMaybe emptyState $ M.lookup index states
                 (lhs,_,_) = graphToRuleGraphs (stateGetGraph es)
+                nNodes = map (\n -> let info = nodeInfo n in n {nodeInfo = (infoSetLocked info True)}) (nodes lhs)
+                nEdges = map (\e -> let info = edgeInfo e in e {edgeInfo = (infoSetLocked info True)}) (edges lhs)
+                g = fromNodesAndEdges nNodes nEdges
                 gi = stateGetGI es
                 ngi' = M.filterWithKey (\k a -> (NodeId k) `elem` (nodeIds lhs)) (fst gi)
                 egi' = M.filterWithKey (\k a -> (EdgeId k) `elem` (edgeIds lhs)) (snd gi)
-                nodeMap = M.empty
-                edgeMap = M.empty
+                nodeMap = M.fromList $ map (\id -> (id,id)) (nodeIds g)
+                edgeMap = M.fromList $ map (\id -> (id,id)) (edgeIds g)
                 newKey = if M.size states > 0 then maximum (M.keys states) + 1 else 0
             n <- Gtk.treeModelIterNChildren store (Just iterR)
             iterN <- Gtk.treeStoreAppend store (Just iterR)
@@ -722,7 +675,7 @@ startEditor window store
             path <- Gtk.treeModelGetPath store iterN
             Gtk.treeViewExpandToPath treeview path
             modifyIORef nacInfoMap (M.insert newKey (DG.empty,(nodeMap,edgeMap)))
-            modifyIORef graphStates (M.insert newKey (stateSetGraph lhs . stateSetGI (ngi',egi') $ emptyState))
+            modifyIORef graphStates (M.insert newKey (stateSetGraph g . stateSetGI (ngi',egi') $ emptyState))
             modifyIORef undoStack (M.insert newKey [])
             modifyIORef redoStack (M.insert newKey [])
           else showError window "Selected Graph is not a rule, it's not possible to create NACs for it."
@@ -766,22 +719,8 @@ startEditor window store
   on del #activate $ do
     es <- readIORef currentState
     gtype <- readIORef currentGraphType
-    case gtype of
-      4 -> do
-        -- remove elements from nacg
-        index <- readIORef currentGraph
-        nacInfoM <- readIORef nacInfoMap
-        let ((nacg,nacgi), mapping) = fromJust $ M.lookup index nacInfoM
-            selected = stateGetSelected es
-            nacES = stateSetSelected selected . stateSetGraph nacg . stateSetGI nacgi $ emptyState
-            nacES' = deleteSelected nacES
-            nacg' = stateGetGraph nacES'
-            nacgi' = stateGetGI nacES'
-        modifyIORef nacInfoMap $ M.insert index ((nacg',nacgi'), mapping)
-        -- add mergeMapping information to undo stack
-        mergeM <- readIORef mergeMapping
-        stackUndo undoStack redoStack currentGraph es mergeM
-      _ -> stackUndo undoStack redoStack currentGraph es Nothing
+    mergeM <- readIORef mergeMapping
+    stackUndo undoStack redoStack currentGraph es mergeM
     modifyIORef currentState (\es -> deleteSelected es)
     setChangeFlags window store changedProject changedGraph currentPath currentGraph True
     updateByType
@@ -798,9 +737,6 @@ startEditor window store
         applyUndo undoStack redoStack currentGraph currentState mergeMapping
         -- reset nac diagraph
         gtype <- readIORef currentGraphType
-        if gtype == 4
-          then updateNacInfo nacInfoMap currentGraph mergeMapping currentState
-          else return ()
 
         -- indicate changes
         index <- readIORef currentGraph
@@ -821,11 +757,6 @@ startEditor window store
       _ -> do
         -- apply redo
         applyRedo undoStack redoStack currentGraph currentState mergeMapping
-        -- change nac diagraph
-        gtype <- readIORef currentGraphType
-        if gtype == 4
-          then updateNacInfo nacInfoMap currentGraph mergeMapping currentState
-          else return ()
         -- indicate changes
         index <- readIORef currentGraph
         sst <- readIORef lastSavedState
@@ -846,12 +777,7 @@ startEditor window store
   on pst #activate $ do
     es <- readIORef currentState
     clip <- readIORef clipboard
-    gtype <- readIORef currentGraphType
-    case gtype of
-      4 -> do
-        mergeM <- readIORef mergeMapping
-        stackUndo undoStack redoStack currentGraph es mergeM
-      _ -> stackUndo undoStack redoStack currentGraph es Nothing
+    stackUndo undoStack redoStack currentGraph es Nothing
     setChangeFlags window store changedProject changedGraph currentPath currentGraph True
     modifyIORef currentState (pasteClipBoard clip)
     Gtk.widgetQueueDraw canvas
@@ -860,15 +786,9 @@ startEditor window store
   -- cut
   on cut #activate $ do
     es <- readIORef currentState
-    gtype <- readIORef currentGraphType
     writeIORef clipboard $ copySelected es
     modifyIORef currentState (\es -> deleteSelected es)
-    gtype <- readIORef currentGraphType
-    case gtype of
-      4 -> do
-        mergeM <- readIORef mergeMapping
-        stackUndo undoStack redoStack currentGraph es mergeM
-      _ -> stackUndo undoStack redoStack currentGraph es Nothing
+    stackUndo undoStack redoStack currentGraph es Nothing
     setChangeFlags window store changedProject changedGraph currentPath currentGraph  True
     Gtk.widgetQueueDraw canvas
     updateByType
@@ -886,25 +806,39 @@ startEditor window store
 
         -- load NAC
         index <- readIORef currentGraph
-        nacInfoM <- readIORef nacInfoMap
-        let nacInfo = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup index nacInfoM
+        maybeMergeM <- readIORef mergeMapping
 
-        -- merge elements
-        merging <- mergeNACElements es nacInfo tg context
-
-        case merging of
+        case maybeMergeM of
           Nothing -> return ()
-          Just (((ng,ngi),mergeM),es') -> do
-            -- modify IORefs and update the UI
-            modifyIORef nacInfoMap $ M.insert index ((ng,ngi),mergeM)
-            writeIORef mergeMapping $ Just (mergeM)
-            writeIORef currentState $ es'
-            stackUndo undoStack redoStack currentGraph es (Just $ snd nacInfo)
+          Just mergeM -> do
+            let nacInfo = ((stateGetGraph es, stateGetGI es), mergeM)
+            let ((g',gi'),mergeM') = mergeElements nacInfo (stateGetSelected es)
+            modifyIORef nacInfoMap $ M.insert index ((g',gi'),mergeM')
+            writeIORef mergeMapping (Just mergeM')
+            modifyIORef currentState $ stateSetGraph g' . stateSetGI gi'
+            stackUndo undoStack redoStack currentGraph es maybeMergeM
             Gtk.widgetQueueDraw canvas
             updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
-                            currentC currentLC
-                            typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
-                            (nodeTypeBox, edgeTypeBox)
+                              currentC currentLC
+                              typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
+                              (nodeTypeBox, edgeTypeBox)
+
+        -- merge elements
+        -- merging <- mergeNACElements es nacInfo tg context
+
+        -- case merging of
+        --   Nothing -> return ()
+        --   Just (((ng,ngi),mergeM),es') -> do
+        --     -- modify IORefs and update the UI
+        --     modifyIORef nacInfoMap $ M.insert index ((ng,ngi),mergeM)
+        --     writeIORef mergeMapping $ Just (mergeM)
+        --     writeIORef currentState $ es'
+        --     stackUndo undoStack redoStack currentGraph es (Just $ snd nacInfo)
+        --     Gtk.widgetQueueDraw canvas
+        --     updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
+        --                     currentC currentLC
+        --                     typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
+        --                     (nodeTypeBox, edgeTypeBox)
 
   -- split elements in NACs
   on spt #activate $ do
@@ -1409,17 +1343,6 @@ getEdgeLayoutPrimitives mt srcType tgtType possibleEdgeTypes currentStyle curren
                                           Just gi -> (t, style gi, color gi)
 
 
-updateNacInfo :: IORef (M.Map Int32 NacInfo) -> IORef Int32 -> IORef (Maybe MergeMapping) -> IORef GraphState -> IO ()
-updateNacInfo nacInfoMap currentGraph mergeMapping currentState = do
-      mergeM <- readIORef mergeMapping >>= return . fromJust
-      st <- readIORef currentState
-      let g = stateGetGraph st
-          gi = stateGetGI st
-          nacInfo = extractNac g gi mergeM
-      index <- readIORef currentGraph
-      modifyIORef nacInfoMap $ M.insert index nacInfo
-
-
 
 
 
@@ -1639,17 +1562,6 @@ storeCurrentES window currentState (graphStates, _, currentGraph, currentGraphTy
   es <- readIORef currentState
   index <- readIORef currentGraph
   modifyIORef graphStates $ M.insert index es
-  gtype <- readIORef currentGraphType
-  -- if the current graph is a NAC, then update the nacInfo
-  if gtype == 4
-    then do
-      nacInfo <- readIORef nacInfoMap >>= return . M.lookup index
-      case nacInfo of
-        Nothing -> showError window (T.pack $ "error: could not retrieve nacInfo of nac" ++ (show index))
-        Just ((ng,_), mergeM) -> do
-          let nacGI = extractNacGI (stateGetGraph es) (stateGetGI es) mergeM
-          modifyIORef nacInfoMap $ M.insert index ((ng,nacGI),mergeM)
-    else return ()
 
 
 afterSave :: Gtk.TreeStore
@@ -1675,3 +1587,9 @@ afterSave store window graphStates (changedProject, changedGraph, lastSavedState
           case filename of
             Nothing -> set window [#title := "Verigraph-GUI"]
             Just fn -> set window [#title := T.pack ("Verigraph-GUI - " ++ fn)]
+
+
+
+updateRuleNacs :: Gtk.TreeStore -> Gtk.TreeIter -> GraphState -> IORef (M.Map Int32 GraphState) -> IORef (M.Map Int32 NacInfo) -> IO ()
+updateRuleNacs store rIter ruleState statesMap nacInfoMap = do
+  return ()
