@@ -104,24 +104,29 @@ mergeElements ((g,gi),(nM,eM)) (nids, eids) = mergeElements' ((g,gi),(nM,eM)) (n
 mergeElements' :: NacInfo -> ([NodeId],[EdgeId]) -> NacInfo
 mergeElements' ((g,gi),(nM,eM)) (nids, eids) = ((g',gi'),(nM',eM'))
   where
-    nM' = mergeElementsInMapping nM nids
-    eM' = mergeElementsInMapping eM eids
+    nodesToKeep = filter (\n -> not . infoLocked . nodeInfo $ n) (nodes g)
+    edgesToKeep = filter (\n -> not . infoLocked . edgeInfo $ n) (edges g)
     mergedNodes = applyNodeMerging (nodes g) nM'
     mergedEdges = applyEdgeMerging (edges g) eM'
-    g' = fromNodesAndEdges mergedNodes mergedEdges
+    nM' = mergeElementsInMapping nM nids
+    eM' = mergeElementsInMapping eM eids
+    newEdges = map (\e -> updateEdgeEndsIds e nM') (mergedEdges ++ edgesToKeep)
+    g' = fromNodesAndEdges (mergedNodes ++ nodesToKeep) newEdges
     ngi' = M.filterWithKey (\k _ -> k `elem` (map fromEnum $ nodeIds g')) (fst gi)
     egi' = M.filterWithKey (\k _ -> k `elem` (map fromEnum $ edgeIds g')) (snd gi)
     gi' = (ngi',egi')
 
 
--- given an map of IDs to IDs and a list of IDs, modify the mapping in a way that all the IDs in the list of IDs point to the
--- maximum element on the list of IDs
+-- given an map of IDs to IDs and a target list, modify the mapping in a way that all the IDs that are mapped to an ID
+-- in the target list become mapped to the maximun ID in the list
 -- example: M.fromList [(1,1),(2,2),(3,3)] [1,3] = M.fromList [(1,3),(2,2),(3,3)]
+--          M.fromList [(1,4),(2,5),(3,6)] [4,6] = M.fromList [(1,6),(2,5),(3,6)]
 mergeElementsInMapping :: (Num n, Eq n, Ord n) => M.Map n n -> [n] -> M.Map n n
 mergeElementsInMapping mapping idsToMerge = mapping'
   where
-    idsToMerge' = filter (\id -> id `elem` M.keys mapping) idsToMerge
     targetId = maximum idsToMerge
+    getKeysMappingTo id = M.keys $ M.filter (\a -> a == id) mapping
+    idsToMerge' = concat $ map getKeysMappingTo $ filter (\id -> id `elem` M.elems mapping) idsToMerge
     mapping' = foldr (\id m -> M.insert id targetId m) mapping idsToMerge'
 
 
