@@ -721,7 +721,7 @@ startEditor window store
     gtype <- readIORef currentGraphType
     mergeM <- readIORef mergeMapping
     stackUndo undoStack redoStack currentGraph es mergeM
-    modifyIORef currentState (\es -> deleteSelected es)
+    modifyIORef currentState (deleteSelected . deselectLocked)
     setChangeFlags window store changedProject changedGraph currentPath currentGraph True
     updateByType
     Gtk.widgetQueueDraw canvas
@@ -787,7 +787,7 @@ startEditor window store
   on cut #activate $ do
     es <- readIORef currentState
     writeIORef clipboard $ copySelected es
-    modifyIORef currentState (\es -> deleteSelected es)
+    modifyIORef currentState (deleteSelected . deselectLocked)
     stackUndo undoStack redoStack currentGraph es Nothing
     setChangeFlags window store changedProject changedGraph currentPath currentGraph  True
     Gtk.widgetQueueDraw canvas
@@ -823,22 +823,6 @@ startEditor window store
                               typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
                               (nodeTypeBox, edgeTypeBox)
 
-        -- merge elements
-        -- merging <- mergeNACElements es nacInfo tg context
-
-        -- case merging of
-        --   Nothing -> return ()
-        --   Just (((ng,ngi),mergeM),es') -> do
-        --     -- modify IORefs and update the UI
-        --     modifyIORef nacInfoMap $ M.insert index ((ng,ngi),mergeM)
-        --     writeIORef mergeMapping $ Just (mergeM)
-        --     writeIORef currentState $ es'
-        --     stackUndo undoStack redoStack currentGraph es (Just $ snd nacInfo)
-        --     Gtk.widgetQueueDraw canvas
-        --     updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
-        --                     currentC currentLC
-        --                     typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
-        --                     (nodeTypeBox, edgeTypeBox)
 
   -- split elements in NACs
   on spt #activate $ do
@@ -853,21 +837,24 @@ startEditor window store
         -- load lhs
         path <- readIORef currentPath
         (lhsg, lhsgi) <- getParentLHSDiaGraph store path graphStates
-
         -- load nac information
         index <- readIORef currentGraph
-        nacInfoM <- readIORef nacInfoMap
-        let ((nacg, nacgi), (nM,eM)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup index nacInfoM
+        maybeMergeM <- readIORef mergeMapping
+        case maybeMergeM of
+          Nothing -> return ()
+          Just mergeM -> do
+            let nacInfo = ((stateGetGraph es, stateGetGI es), mergeM)
+                ((g',gi'),mergeM') = splitElements (lhsg, lhsgi) nacInfo (stateGetSelected es)
 
-        -- split elements
-        ((nacdg',mergeM'),es') <- splitNACElements es ((nacg,nacgi),(nM,eM)) (lhsg, lhsgi) tg context
-
-        -- update IORefs
-        modifyIORef nacInfoMap (M.insert index (nacdg', mergeM'))
-        writeIORef mergeMapping $ Just mergeM'
-        writeIORef currentState es'
-        stackUndo undoStack redoStack currentGraph es (Just (nM,eM))
-        Gtk.widgetQueueDraw canvas
+            stackUndo undoStack redoStack currentGraph es (Just mergeM)
+            modifyIORef nacInfoMap $ M.insert index ((g',gi'),mergeM')
+            writeIORef mergeMapping (Just mergeM')
+            modifyIORef currentState $ stateSetGraph g' . stateSetGI gi'
+            Gtk.widgetQueueDraw canvas
+            updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
+                              currentC currentLC
+                              typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
+                              (nodeTypeBox, edgeTypeBox)
 
   return (mainPane, canvas, treeview, currentState, undoStack, redoStack)
 

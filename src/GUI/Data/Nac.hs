@@ -5,6 +5,7 @@ module GUI.Data.Nac (
 , extractNacGraph
 , extractNacGI
 , mergeElements
+, splitElements
 , updateEdgeEndsIds
 , addToGroup
 )where
@@ -200,7 +201,7 @@ addToGroup mapping getKey element groupMapping =
     Nothing -> groupMapping
     Just k' -> M.insertWith (++) k' [element] groupMapping
 
-
+-- TODO: preserve added edges
 splitElements :: DiaGraph -> NacInfo -> ([NodeId],[EdgeId]) -> NacInfo
 splitElements (l,lgi) ((nac,nacgi),(nM,eM)) (selN,selE) = newNacInfo
   where
@@ -209,26 +210,55 @@ splitElements (l,lgi) ((nac,nacgi),(nM,eM)) (selN,selE) = newNacInfo
     mergedEids = getDuplicatedElems eM
     nidsToRemove = filter (`elem` mergedNids) selN
     eidsToRemove = filter (`elem` mergedEids) selE
-    nacState = deleteSelected (stateSetGraph nac . stateSetGI nacgi . stateSetSelected (nidsToRemove,eidsToRemove) $ emptyState)
-    nac' = stateGetGraph nacState
-    nacgi' = stateGetGI nacState
+    nacState = stateSetGraph nac . stateSetGI nacgi . stateSetSelected (nidsToRemove,eidsToRemove) $ emptyState
+    nacState' = deleteSelected nacState
+    nac' = stateGetGraph nacState'
+    nacgi' = stateGetGI nacState'
     nM' = M.filter (`elem` (nodeIds nac')) nM
     eM' = M.filter (`elem` (edgeIds nac')) eM
     -- identify elements in l that are not present in the mapping
-    removedLNids = filter (`notElem` M.keys nM) (nodeIds l)
-    removedLEids = filter (`notElem` M.keys eM) (edgeIds l)
+    removedLNids = filter (`notElem` M.keys nM') (nodeIds l)
+    removedLEids = filter (`notElem` M.keys eM') (edgeIds l)
     -- add removed elements to nac'
-    nodesToAdd = filter (\n -> nodeId n `elem` removedLNids) (nodes l)
-    edgesToAdd = filter (\e -> edgeId e `elem` removedLEids) (edges l)
+    nodesToAdd = map (\n -> let info = nodeInfo n in n { nodeInfo = infoSetLocked info True } ) $ filter (\n -> nodeId n `elem` removedLNids) (nodes l)
+    edgesToAdd = map (\e -> let info = edgeInfo e in e { edgeInfo = infoSetLocked info True } ) $ filter (\e -> edgeId e `elem` removedLEids) (edges l)
     nodeGIsToAdd = M.filterWithKey (\k _ -> NodeId k `elem` removedLNids) (fst lgi)
     edgeGIsToAdd = M.filterWithKey (\k _ -> EdgeId k `elem` removedLEids) (snd lgi)
     newNacInfo = addToNAC (nac',nacgi') (nM',eM') (nodesToAdd,edgesToAdd) (nodeGIsToAdd,edgeGIsToAdd)
 
 
 
--- TODO: implement this function
 addToNAC :: DiaGraph -> MergeMapping -> ([Node Info], [Edge Info]) -> GraphicalInfo -> NacInfo
-addToNAC (nac,nacgi) (nM,eM) (nodesToAdd,edgesToAdd) (nodeGIsToAdd,edgeGIsToAdd) = ((nac,nacgi),(nM,eM))
+addToNAC (nac,nacgi) (nM,eM) (nodesToAdd,edgesToAdd) (nodeGIsToAdd,edgeGIsToAdd) = ((nac'',nacgi'),(nM',eM'))
+  where
+    nodesAndGIsToAdd = map (\n -> (n, getNodeGI (fromEnum $ nodeId n) nodeGIsToAdd)) nodesToAdd
+    edgesAndGIsToAdd = map (\e -> (e, getEdgeGI (fromEnum $ edgeId e) edgeGIsToAdd)) edgesToAdd
+    (nac',nacNgi', nM') = foldr addNode (nac, fst nacgi, nM) nodesAndGIsToAdd
+    (nac'',nacEgi', eM') = foldr (addEdge nM') (nac', snd nacgi, eM) edgesAndGIsToAdd
+    nacgi' = (nacNgi',nacEgi')
+
+addNode :: (Node Info, NodeGI) -> (Graph Info Info, M.Map Int NodeGI, M.Map NodeId NodeId) -> (Graph Info Info, M.Map Int NodeGI, M.Map NodeId NodeId)
+addNode (n,ngi) (nac, nacNgi, nM) = (nac', nacNgi', nM')
+  where
+    nid' =  if (nodeId n) `elem` (nodeIds nac)
+              then head $ newNodes nac
+              else nodeId n
+    nac' = insertNodeWithPayload nid' (nodeInfo n) nac
+    nacNgi' = M.insert (fromEnum nid') ngi nacNgi
+    nM' = M.insert (nodeId n) nid' nM
+
+
+addEdge :: M.Map NodeId NodeId -> (Edge Info, EdgeGI) -> (Graph Info Info, M.Map Int EdgeGI, M.Map EdgeId EdgeId) -> (Graph Info Info, M.Map Int EdgeGI, M.Map EdgeId EdgeId)
+addEdge nM (e,egi) (nac, nacEgi, eM) = (nac', nacEgi', eM')
+  where
+    eid' = if (edgeId e) `elem` (edgeIds nac)
+              then head $ newEdges nac
+              else edgeId e
+    e' = (updateEdgeEndsIds e nM)
+    nac' = insertEdgeWithPayload eid' (sourceId e') (targetId e') (edgeInfo e) nac
+    nacEgi' = M.insert (fromEnum eid') egi nacEgi
+    eM' = M.insert (edgeId e) eid' eM
+
 
 
 getDuplicatedElems :: (Ord a) => M.Map a a -> [a]

@@ -15,6 +15,7 @@ module GUI.Data.GraphState(
 , createNode
 , createEdge
 , createEdges
+, deselectLocked
 , deleteSelected
 , newEdgePos
 , newLoopPos
@@ -141,20 +142,30 @@ createEdges es tgtNode info autoNaming estyle ecolor = stateSetGraph newGraph . 
                                     negi = EdgeGI {cPosition = newPos, color = ecolor, style = estyle}
                                   in (ng, M.insert (fromEnum eid) negi giM, eid:eids))
 
+
+deselectLocked :: GraphState -> GraphState
+deselectLocked st = stateSetSelected (snids',seids') st
+  where graph = stateGetGraph st
+        (snids,seids) = stateGetSelected st
+        selectedNodes = catMaybes $ foldr (\n l -> (lookupNode n graph):l) [] snids
+        selectedEdges = catMaybes $ foldr (\e l -> (lookupEdge e graph):l) [] seids
+        snids' = map nodeId $ filter (\n -> not . infoLocked $ nodeInfo n) selectedNodes
+        seids' = map edgeId $ filter (\e -> not . infoLocked $ edgeInfo e) selectedEdges
+
 -- | delete the selection
 deleteSelected:: GraphState -> GraphState
 deleteSelected es = stateSetSelected ([],[]) . stateSetGI (newngiM, newegiM) . stateSetGraph newGraph $ es
   where graph = stateGetGraph es
         (nids,eids) = stateGetSelected es
-        foundNodes = map (\nid -> fromMaybe (Node (NodeId 0) I.empty) $ lookupNode nid graph) nids
-        foundEdges = map (\eid -> fromMaybe (Edge (EdgeId 0) (NodeId 0) (NodeId 0) I.empty) $ lookupEdge eid graph) eids
-        nids' = map nodeId $ filter (\n -> not $ infoLocked $ nodeInfo n) foundNodes
-        eids' = map edgeId $ filter (\e -> not $ infoLocked $ edgeInfo e) foundEdges
+        -- foundNodes = map (\nid -> fromMaybe (Node (NodeId 0) I.empty) $ lookupNode nid graph) nids
+        -- foundEdges = map (\eid -> fromMaybe (Edge (EdgeId 0) (NodeId 0) (NodeId 0) I.empty) $ lookupEdge eid graph) eids
+        -- nids' = map nodeId $ filter (\n -> not $ infoLocked $ nodeInfo n) foundNodes
+        -- eids' = map edgeId $ filter (\e -> not $ infoLocked $ edgeInfo e) foundEdges
         (ngiM, egiM) = stateGetGI es
-        newngiM = foldl (\giM n -> M.delete n giM) ngiM (map fromEnum nids')
-        newegiM = foldl (\giM n -> M.delete n giM) egiM (map fromEnum eids')
-        graph' = foldl (\g e -> removeEdge e g) graph eids'
-        newGraph = foldl (\g n -> removeNodeAndIncidentEdges n g) graph' nids'
+        newngiM = foldl (\giM n -> M.delete n giM) ngiM (map fromEnum nids)
+        newegiM = foldl (\giM n -> M.delete n giM) egiM (map fromEnum eids)
+        graph' = foldl (\g e -> removeEdge e g) graph eids
+        newGraph = foldl (\g n -> removeNodeAndIncidentEdges n g) graph' nids
 
 -- auxiliar functions to createEdges
 -- return a list of edges
