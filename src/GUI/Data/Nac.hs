@@ -19,6 +19,7 @@ import Data.Graphs
 import GUI.Data.DiaGraph
 import GUI.Data.GraphicalInfo
 import GUI.Data.Info
+import GUI.Data.GraphState
 import GUI.Helper.List
 
 type MergeMapping = (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
@@ -132,20 +133,10 @@ mergeElementsInMapping mapping idsToMerge = mapping'
 
 -- | Given a list of nodes and a node merge mapping, merge the list of nodes according to the mapping
 -- examples:
--- applyMerging [Node 1 "1", Node 2 "2", Node 3 "3"]
---              [(1,3),(2,3),(3,3)]
--- = [Node 3 "1 2 3"]
---
--- applyMerging [Node 1 "1", Node 2 "2", Node 3 "3"]
---              []
--- = []
---
--- applyMerging [Node 1 "1", Node 2 "2", Node 3 "3"]
---              [(3,3)]
--- = [Node 3 "3"]
--- -- applyMerging [Node 1 "1", Node 2 "2", Node 3 "3"]
---              [(1,1),(2,2),(3,3)]
--- = [Node 1 "1", Node 2 "2", Node 3 "3"]
+-- applyMerging [Node 1 "1", Node 2 "2", Node 3 "3"] [(1,3),(2,3),(3,3)] = [Node 3 "1 2 3"]
+-- applyMerging [Node 1 "1", Node 2 "2", Node 3 "3"] []                  = []
+-- applyMerging [Node 1 "1", Node 2 "2", Node 3 "3"] [(3,3)]             = [Node 3 "3"]
+-- applyMerging [Node 1 "1", Node 2 "2", Node 3 "3"] [(1,1),(2,2),(3,3)] = [Node 1 "1", Node 2 "2", Node 3 "3"]
 applyNodeMerging :: [Node Info] -> M.Map NodeId NodeId -> [Node Info]
 applyNodeMerging nodes mapping = mergedNodes
   where
@@ -210,13 +201,48 @@ addToGroup mapping getKey element groupMapping =
     Just k' -> M.insertWith (++) k' [element] groupMapping
 
 
+splitElements :: DiaGraph -> NacInfo -> ([NodeId],[EdgeId]) -> NacInfo
+splitElements (l,lgi) ((nac,nacgi),(nM,eM)) (selN,selE) = newNacInfo
+  where
+    -- remove selected elements that are merged from nac
+    mergedNids = getDuplicatedElems nM
+    mergedEids = getDuplicatedElems eM
+    nidsToRemove = filter (`elem` mergedNids) selN
+    eidsToRemove = filter (`elem` mergedEids) selE
+    nacState = deleteSelected (stateSetGraph nac . stateSetGI nacgi . stateSetSelected (nidsToRemove,eidsToRemove) $ emptyState)
+    nac' = stateGetGraph nacState
+    nacgi' = stateGetGI nacState
+    nM' = M.filter (`elem` (nodeIds nac')) nM
+    eM' = M.filter (`elem` (edgeIds nac')) eM
+    -- identify elements in l that are not present in the mapping
+    removedLNids = filter (`notElem` M.keys nM) (nodeIds l)
+    removedLEids = filter (`notElem` M.keys eM) (edgeIds l)
+    -- add removed elements to nac'
+    nodesToAdd = filter (\n -> nodeId n `elem` removedLNids) (nodes l)
+    edgesToAdd = filter (\e -> edgeId e `elem` removedLEids) (edges l)
+    nodeGIsToAdd = M.filterWithKey (\k _ -> NodeId k `elem` removedLNids) (fst lgi)
+    edgeGIsToAdd = M.filterWithKey (\k _ -> EdgeId k `elem` removedLEids) (snd lgi)
+    newNacInfo = addToNAC (nac',nacgi') (nM',eM') (nodesToAdd,edgesToAdd) (nodeGIsToAdd,edgeGIsToAdd)
 
 
-updateNodeId :: NodeId -> M.Map NodeId NodeId -> NodeId
-updateNodeId nid m = Maybe.fromMaybe nid $ M.lookup nid m
 
-updateEdgeId :: EdgeId -> M.Map EdgeId EdgeId -> EdgeId
-updateEdgeId eid m = Maybe.fromMaybe eid $ M.lookup eid m
+-- TODO: implement this function
+addToNAC :: DiaGraph -> MergeMapping -> ([Node Info], [Edge Info]) -> GraphicalInfo -> NacInfo
+addToNAC (nac,nacgi) (nM,eM) (nodesToAdd,edgesToAdd) (nodeGIsToAdd,edgeGIsToAdd) = ((nac,nacgi),(nM,eM))
+
+
+getDuplicatedElems :: (Ord a) => M.Map a a -> [a]
+getDuplicatedElems m = duplicated
+  where
+    duplicated = map fst $ filter (\(a,c) -> c > 1) $ M.toList elemCount
+    elemCount = M.foldr (\a m -> M.insertWith (+) a 1 m) M.empty m
+
+
+updatedNodeId :: NodeId -> M.Map NodeId NodeId -> NodeId
+updatedNodeId nid m = Maybe.fromMaybe nid $ M.lookup nid m
+
+updatedEdgeId :: EdgeId -> M.Map EdgeId EdgeId -> EdgeId
+updatedEdgeId eid m = Maybe.fromMaybe eid $ M.lookup eid m
 
 updateEdgeEndsIds :: Edge a -> M.Map NodeId NodeId -> Edge a
-updateEdgeEndsIds e m = Edge (edgeId e) (updateNodeId (sourceId e) m) (updateNodeId (targetId e) m) (edgeInfo e)
+updateEdgeEndsIds e m = Edge (edgeId e) (updatedNodeId (sourceId e) m) (updatedNodeId (targetId e) m) (edgeInfo e)
