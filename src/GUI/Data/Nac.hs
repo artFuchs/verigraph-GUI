@@ -90,13 +90,13 @@ mergeElements :: NacInfo -> ([NodeId],[EdgeId]) -> NacInfo
 mergeElements ((g,gi),(nM,eM)) (nids, eids) = mergeElements' ((g,gi),(nM,eM)) (nidsToMerge, eidsToMerge)
   where
     nidsToMerge = map (\n -> nodeId n) nodesToMerge
-    nodesToMerge = filter (\n -> Just (infoType (nodeInfo n)) == nodeType) selectedNodes
+    nodesToMerge = filter (\n -> infoLocked (nodeInfo n) && Just (infoType (nodeInfo n)) == nodeType) selectedNodes
     selectedNodes = Maybe.catMaybes $ map (\id -> lookupNode id g) nids
     nodeType = case selectedNodes of
                 [] -> Nothing
                 n:_ -> Just (infoType . nodeInfo $ n)
     eidsToMerge = map (\e -> edgeId e) edgesToMerge
-    edgesToMerge = filter (\e -> Just (infoType (edgeInfo e)) == edgeType) selectedEdges
+    edgesToMerge = filter (\e -> infoLocked (edgeInfo e) && Just (infoType (edgeInfo e)) == edgeType) selectedEdges
     selectedEdges = Maybe.catMaybes $ map (\id -> lookupEdge id g) eids
     edgeType = case selectedEdges of
                 [] -> Nothing
@@ -201,30 +201,45 @@ addToGroup mapping getKey element groupMapping =
     Nothing -> groupMapping
     Just k' -> M.insertWith (++) k' [element] groupMapping
 
+
+-- given a diagraph L (left side of the rule), a NAcInfo and the selected elements,
+-- split the merged selected elements
 splitElements :: DiaGraph -> NacInfo -> ([NodeId],[EdgeId]) -> NacInfo
-splitElements (l,lgi) ((nac,nacgi),(nM,eM)) (selN,selE) = newNacInfo
+splitElements (l,lgi) ((nac,nacgi),(nM,eM)) (selN,selE) =
+  if length nidsToSplit + length eidsToSplit > 0
+    then splitElements' (l,lgi) ((nac,nacgi),(nM,eM)) (nidsToSplit,eidsToSplit)
+    else ((nac,nacgi),(nM,eM))
   where
-    -- remove selected elements that are merged from nac
     mergedNids = getDuplicatedElems nM
     mergedEids = getDuplicatedElems eM
-    nidsToRemove = filter (`elem` mergedNids) selN
-    eidsToRemove = filter (`elem` mergedEids) selE
-    nacState = stateSetGraph nac . stateSetGI nacgi . stateSetSelected (nidsToRemove,eidsToRemove) $ emptyState
+    nidsToSplit = filter (`elem` mergedNids) selN
+    eidsToSplit = filter (`elem` mergedEids) selE
+
+
+-- given a diagraph L (left side of the rule), a NAcInfo and the elements to split,
+-- split the merged selected elements using the following steps:
+-- 1. remove the elements that are merged and selected
+-- 2. identify which elements in L are not present anymore in the mapping and add those elements to the NAC
+-- 3. identify removed edges that were in between nodes of L and extra nodes on the NAC and add them
+splitElements' :: DiaGraph -> NacInfo -> ([NodeId],[EdgeId]) -> NacInfo
+splitElements' (l,lgi) ((nac,nacgi),(nM,eM)) (nidsToSplit,eidsToSplit) = newNacInfo
+  where
+    -- remove elements to split
+    nacState = stateSetGraph nac . stateSetGI nacgi . stateSetSelected (nidsToSplit,eidsToSplit) $ emptyState
     nacState' = deleteSelected nacState
     nac' = stateGetGraph nacState'
     nacgi' = stateGetGI nacState'
     nM' = M.filter (`elem` (nodeIds nac')) nM
     eM' = M.filter (`elem` (edgeIds nac')) eM
-    -- identify elements in L that are not present in the mapping
+    -- identify elements in L that are not present in the mapping and add them to nac'
     removedLNids = filter (`notElem` M.keys nM') (nodeIds l)
     removedLEids = filter (`notElem` M.keys eM') (edgeIds l)
-    -- add removed L elements to nac'
     nodesToAdd = map (\n -> let info = nodeInfo n in n { nodeInfo = infoSetLocked info True } ) $ filter (\n -> nodeId n `elem` removedLNids) (nodes l)
     edgesToAdd = map (\e -> let info = edgeInfo e in e { edgeInfo = infoSetLocked info True } ) $ filter (\e -> edgeId e `elem` removedLEids) (edges l)
     nodeGIsToAdd = M.filterWithKey (\k _ -> NodeId k `elem` removedLNids) (fst lgi)
     edgeGIsToAdd = M.filterWithKey (\k _ -> EdgeId k `elem` removedLEids) (snd lgi)
     ((nac'',nacgi''), (nM'',eM'')) = addToNAC (nac',nacgi') (nM',eM') (nodesToAdd,edgesToAdd) (nodeGIsToAdd,edgeGIsToAdd)
-    -- identify edges that got removed from NAC and aren't in L (i.e. edges connecting one extra node to an LHS node)
+    -- re-add edges that got removed from NAC and aren't in L (i.e. edges connecting one extra node to an LHS node)
     nacEdgesInContext = edgesInContext nac
     inBetween src tgt = (infoLocked (nodeInfo src) || infoLocked (nodeInfo tgt)) && not (infoLocked (nodeInfo src) && infoLocked (nodeInfo tgt))
     edgesToKeep = map (\(_,e,_) -> e) $ filter (\((src,_),e,(tgt,_)) -> inBetween src tgt ) nacEdgesInContext
