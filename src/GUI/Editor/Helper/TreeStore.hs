@@ -18,7 +18,6 @@ module GUI.Editor.Helper.TreeStore(
 , setChangeFlags
 , setValidFlags
 , setCurrentValidFlag
-, updateAllNacs
 )where
 
 import qualified GI.Gtk as Gtk
@@ -46,7 +45,6 @@ import GUI.Data.GraphicalInfo
 import GUI.Data.GraphState
 import GUI.Data.SaveInfo
 import GUI.Helper.GrammarMaker
-import GUI.Editor.Helper.Nac
 import GUI.Helper.GraphValidation
 import GUI.Helper.List
 
@@ -201,9 +199,7 @@ getNacList store iter nacInfoMap lhs = do
   index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
   ans <- case M.lookup index nacInfoMap of
     Nothing -> return []
-    Just nInfo -> do
-      (diag,(nM,eM)) <- applyLhsChangesToNac lhs nInfo Nothing
-      return [(fst diag, (nM,eM))]
+    Just ((g,_),m) -> return [(g,m)]
   continue <- Gtk.treeModelIterNext store iter
   if continue
     then do
@@ -417,72 +413,3 @@ setCurrentValidFlag store st typeGraph currentPath = do
       if validIter
         then Gtk.treeStoreSetValue store iter 5 gvValid
         else return ()
-
-
-
-----------------------------------------------------------
--- update Nacs
-----------------------------------------------------------
-
--- updating a list of nacs in the TreeStore, starting from the first nac
-updateNacs :: Gtk.TreeStore
-           -> Gtk.TreeIter
-           -> Graph Info Info
-           -> IORef (M.Map Int32 NacInfo)
-           -> P.Context
-           -> IO ()
-updateNacs store iter lhs nacInfoMapIORef context = do
-  nacInfoMap <- readIORef nacInfoMapIORef
-  index <- Gtk.treeModelGetValue store iter 2 >>= Gtk.fromGValue :: IO Int32
-  case M.lookup index nacInfoMap of
-    Nothing -> return ()
-    Just nacInfo -> do
-      nacInfo' <- applyLhsChangesToNac lhs nacInfo (Just context)
-      modifyIORef nacInfoMapIORef $ M.insert index nacInfo'
-      continue <- Gtk.treeModelIterNext store iter
-      if continue
-        then do updateNacs store iter lhs nacInfoMapIORef context
-        else return ()
-
--- update the nacs of each rule stored in TreeStore.
--- if the GraphStore relative to the rule is not marked as changed, then just pass to the next rule.
-updateRuleNacs :: Gtk.TreeStore
-               -> Gtk.TreeIter
-               -> IORef (M.Map Int32 GraphState)
-               -> IORef (M.Map Int32 NacInfo)
-               -> P.Context
-               -> IO ()
-updateRuleNacs store iter graphStatesIORef nacInfoMapIORef context = do
-  (hasNacs,nacIter) <- Gtk.treeModelIterChildren store (Just iter)
-  if not hasNacs
-    then return ()
-    else do
-      ruleChanged <- Gtk.treeModelGetValue store iter 1 >>= Gtk.fromGValue :: IO Bool
-      if ruleChanged == False
-        then return ()
-        else do
-          ruleIndex <- Gtk.treeModelGetValue store iter 2 >>= Gtk.fromGValue :: IO Int32
-          states <- readIORef graphStatesIORef
-          let (error,rule) = case M.lookup ruleIndex states of
-                  Nothing -> (True,G.empty)
-                  Just es -> (False, stateGetGraph es)
-              (lhs,_,_) = graphToRuleGraphs rule
-          if error
-            then return ()
-            else updateNacs store nacIter lhs nacInfoMapIORef context
-  continue <- Gtk.treeModelIterNext store iter
-  if continue
-    then updateRuleNacs store iter graphStatesIORef nacInfoMapIORef context
-    else return ()
-
--- | apply applyLhsChangesToNac to the nacs of all rules in the given TreeStore
-updateAllNacs :: Gtk.TreeStore
-              -> IORef (M.Map Int32 GraphState)
-              -> IORef (M.Map Int32 NacInfo)
-              -> P.Context
-              -> IO ()
-updateAllNacs store graphStatesIORef nacInfoMapIORef context = do
-  (valid, iter) <- Gtk.treeModelGetIterFromString store "2:0"
-  if not valid
-    then return ()
-    else updateRuleNacs store iter graphStatesIORef nacInfoMapIORef context

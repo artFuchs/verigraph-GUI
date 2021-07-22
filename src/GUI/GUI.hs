@@ -597,7 +597,6 @@ saveProjectBase saveF window editorCanvas fileName editorStore editorState
   do
     Edit.storeCurrentES window editorStore editorState storeIORefs (nacInfoMap,mergeMapping)
     context <- Gtk.widgetGetPangoContext editorCanvas
-    Edit.updateAllNacs editorStore statesMap nacInfoMap context
     structs <- Edit.getStructsToSave editorStore statesMap nacInfoMap
     saved <- saveF structs fileName window
     if saved

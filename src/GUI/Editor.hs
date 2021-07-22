@@ -63,7 +63,6 @@ import           GUI.Render.GraphDraw
 
 -- Editor modules
 import GUI.Editor.Helper.Clipboard
-import GUI.Editor.Helper.Nac
 import GUI.Editor.Helper.SaveLoad
 import GUI.Editor.Helper.TypeInfer
 import GUI.Editor.Helper.TreeStore

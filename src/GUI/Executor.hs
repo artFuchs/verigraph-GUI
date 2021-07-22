@@ -53,9 +53,6 @@ import           GUI.Helper.OverlapAvoider
 import           GUI.Helper.Geometry
 import           GUI.Helper.GraphicalInfo
 
--- shouldn't use functions from editor module. Must refactore later
-import qualified GUI.Editor.Helper.Nac    as Nac
-
 type TGMProduction = DPO.Production (TGM.TypedGraphMorphism Info Info)
 type Match = TGM.TypedGraphMorphism Info Info
 
@@ -301,14 +298,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                             let l = stateGetGraph les
                                 lgi = stateGetGI les
                             nacInfoM <- readIORef nacInfoMap
-                            (nacdg,mergeM) <- case M.lookup nacIndex nacInfoM of
-                                Nothing -> return ((l,lgi),(M.empty,M.empty))
-                                Just nacInfo -> do
-                                    context <- Gtk.widgetGetPangoContext nacCanvas
-                                    tg <- readIORef typeGraph
-                                    (nacdg,mergeM) <- Nac.applyLhsChangesToNac l nacInfo (Just context)
-                                    let nacdg' = Nac.mountNACGraph (l,lgi) tg (nacdg,mergeM)
-                                    return (nacdg',mergeM)
+                            let (nacdg,mergeM) = fromMaybe ((l,lgi),(M.empty,M.empty)) $ M.lookup nacIndex nacInfoM
                             context <- Gtk.widgetGetPangoContext nacCanvas
                             let (nacG,ngi') = adjustDiagrPosition nacdg
                                 rNMapping = M.fromList $ map (\(a,b) -> (b,"[" ++ (show . fromEnum $ a) ++ "]") ) $ M.toList $ M.union (fst mergeM) $ M.fromList (map (\a -> (a,a)) $ G.nodeIds l)
