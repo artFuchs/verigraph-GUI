@@ -520,11 +520,6 @@ startEditor window store
       True -> do
         gType <- Gtk.treeModelGetValue model iter 3 >>= fromGValue  :: IO Int32
         path <- Gtk.treeModelGetPath model iter >>= Gtk.treePathGetIndices >>= return . fromMaybe [0]
-        if gType /= 0 then do
-          -- update the current path
-          writeIORef currentPath path
-        else return ()
-
         cIndex <- readIORef currentGraph
         index <- Gtk.treeModelGetValue model iter 2 >>= fromGValue  :: IO Int32
         -- compare the selected graph with the current one and change the graph according to selection
@@ -534,10 +529,10 @@ startEditor window store
           (False, 0) -> return ()
           -- case the selection is another type of graph, get the graph from the map
           (False, _) -> do
+            -- update the current graph in the tree
+            storeCurrentES window store currentState storeIORefs nacIORefs
             -- update the current path
             writeIORef currentPath path
-            -- update the current graph in the tree
-            storeCurrentES window currentState storeIORefs nacInfoMap
             -- load the selected graph from the tree
             writeIORef currentGraphType gType
             states <- readIORef graphStates
@@ -656,7 +651,7 @@ startEditor window store
         index <- Gtk.treeModelGetValue store iterR 2 >>= fromGValue :: IO Int32
         if gtype == 3 || gtype == 4
           then do
-            storeCurrentES window currentState storeIORefs nacInfoMap
+            storeCurrentES window store currentState storeIORefs nacIORefs
             states <- readIORef graphStates
             let es = fromMaybe emptyState $ M.lookup index states
                 (lhs,_,_) = graphToRuleGraphs (stateGetGraph es)
@@ -1343,7 +1338,6 @@ getEdgeLayoutPrimitives mt srcType tgtType possibleEdgeTypes currentStyle curren
 
 
 
-
 -- auxiliar function to check if the project was changed
 -- it does the checking and if no, ask the user if them want to save.
 -- returns True if there's no changes, if the user don't wanted to save or if he wanted and the save operation was successfull
@@ -1352,11 +1346,11 @@ confirmOperation :: Gtk.Window
                  -> Gtk.TreeStore
                  -> IORef Bool
                  -> IORef GraphState
-                 -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
+                 -> NacIORefs
                  -> IORef (Maybe String)
                  -> StoreIORefs
                  -> IO Bool
-confirmOperation window store changedProject currentState nacInfoMap fileName storeIORefs@(graphStates,_,_,_)= do
+confirmOperation window store changedProject currentState (nacInfoMap,mergeMapping) fileName storeIORefs@(graphStates,_,_,_)= do
   changed <- readIORef changedProject
   response <- if changed
     then createConfirmDialog window "The project was changed, do you want to save?"
@@ -1365,7 +1359,7 @@ confirmOperation window store changedProject currentState nacInfoMap fileName st
     Gtk.ResponseTypeCancel -> return False
     Gtk.ResponseTypeNo -> return True
     Gtk.ResponseTypeYes -> do
-      storeCurrentES window currentState storeIORefs nacInfoMap
+      storeCurrentES window store currentState storeIORefs (nacInfoMap,mergeMapping)
       structs <- getStructsToSave store graphStates nacInfoMap
       saveFile structs fileName window -- returns True if saved the file
     _ -> return False
@@ -1544,11 +1538,84 @@ createNode' currentState info autoNaming pos nshape color lcolor context = do
 
 -- auxiliar function to prepare the treeStore to save
 -- auxiliar function, add the current editor state in the graphStates list
-storeCurrentES :: Gtk.Window -> IORef GraphState -> StoreIORefs -> IORef (M.Map Int32 (DiaGraph, MergeMapping)) -> IO ()
-storeCurrentES window currentState (graphStates, _, currentGraph, currentGraphType) nacInfoMap = do
+storeCurrentES :: Gtk.Window -> Gtk.TreeStore -> IORef GraphState -> StoreIORefs -> NacIORefs -> IO ()
+storeCurrentES window store currentState storeIORefs@(graphStates, currentPath, currentGraph, currentGraphType) (nacInfoMap,mergeMapping) = do
   es <- readIORef currentState
   index <- readIORef currentGraph
   modifyIORef graphStates $ M.insert index es
+  gt <- readIORef currentGraphType
+  case gt of
+    -- if the current graph is a rule, propagate the changes to the nacs
+    3 -> propagateRuleChanges store storeIORefs currentState nacInfoMap
+    -- if the current graph is a NAC, store the graph in the nacInfoMap
+    4 -> do
+      mMergeM <- readIORef mergeMapping
+      let g = stateGetGraph es
+          gi = stateGetGI es
+          mergeM = fromMaybe (M.empty,M.empty) mMergeM
+      modifyIORef nacInfoMap $ M.insert index ((g,gi), mergeM)
+    _ -> return ()
+
+
+
+
+propagateRuleChanges :: Gtk.TreeStore -> StoreIORefs -> IORef GraphState -> IORef (M.Map Int32 NacInfo) -> IO ()
+propagateRuleChanges store (statesMap, currentPath, currentGraph, currentGraphType) currentState nacInfoMap = do
+  gt <- readIORef currentGraphType
+  if gt == 3 then do
+    -- if the rule have nacs then get the nacs and
+    nacs <- getRuleNacs store currentPath statesMap nacInfoMap
+    if null nacs then
+      return ()
+    else do
+      -- extract the l diagraph of the rule
+      ruleSt <- readIORef currentState
+      let ruleG = stateGetGraph ruleSt
+          ruleGI = stateGetGI ruleSt
+          (lhs,_,_) = graphToRuleGraphs ruleG
+          lhsNGI = M.filterWithKey (\k _ -> NodeId k `elem` (nodeIds lhs)) (fst ruleGI)
+          lhsEGI = M.filterWithKey (\k _ -> EdgeId k `elem` (edgeIds lhs)) (snd ruleGI)
+          lhsgi = (lhsNGI,lhsEGI)
+
+      -- change each nac according to the rule and store in the statesMap
+      forM_ nacs $ \(index,(nacInfo)) -> do
+        let newNacInfo = propagateRuleChanges' (lhs,lhsgi) nacInfo
+        statesM <- readIORef statesMap
+        let nacSt = fromMaybe emptyState $ M.lookup index statesM
+            nacSt' = stateSetGraph (fst . fst $ newNacInfo) . stateSetGI (snd . fst $ newNacInfo ) $ nacSt
+        modifyIORef statesMap $ M.insert index nacSt'
+        modifyIORef nacInfoMap $ M.insert index newNacInfo
+      return ()
+  else return ()
+
+
+
+
+
+
+
+
+propagateRuleChanges' :: DiaGraph -> NacInfo -> NacInfo
+propagateRuleChanges' (lhs,lhsgi) ((nac,nacgi),(nm,em)) = ((nac4,nacgi''), (nm'',em''))
+  where
+    -- 1 remove from NAC elements no present on LHS
+    nodesToRemove = filter (`notElem` (nodeIds lhs)) (M.keys nm)
+    edgesToRemove = filter (`notElem` (edgeIds lhs)) (M.keys em)
+    ((nac',nacgi'),(nm',em')) = removeFromNAC ((nac,nacgi),(nm,em)) (nodesToRemove,edgesToRemove)
+    -- 2 add to NAC elements present on LHS but not on NAC
+    nodesToAdd = map (\n -> let info = nodeInfo n in n { nodeInfo = infoSetLocked info True } ) $ filter (\n -> nodeId n `notElem` (M.keys nm)) (nodes lhs)
+    edgesToAdd = map (\e -> let info = edgeInfo e in e { edgeInfo = infoSetLocked info True } ) $ filter (\e -> edgeId e `notElem` (M.keys em)) (edges lhs)
+    nodeGIsToAdd = M.filterWithKey (\k _ -> NodeId k `notElem` (M.keys nm)) (fst lhsgi)
+    edgeGIsToAdd = M.filterWithKey (\k _ -> EdgeId k `notElem` (M.keys em)) (snd lhsgi)
+    ((nac'',nacgi''), (nm'',em'')) = addToNAC (nac',nacgi') (nm',em') (nodesToAdd,edgesToAdd) (nodeGIsToAdd,edgeGIsToAdd)
+    -- 3 ensure the types of the elements of the rule and the nac corresponds
+    nodeTypes = map (\n -> (nodeId n, infoType $ nodeInfo n)) (nodes lhs)
+    edgeTypes = map (\e -> (edgeId e, infoType $ edgeInfo e)) (edges lhs)
+    nodeTypes' = map (\(Just id,t) -> (id,t)) $ filter (\(mid,t) -> isJust mid) $ map (\(id,t) -> (M.lookup id nm'', t) ) nodeTypes
+    edgeTypes' = map (\(Just id,t) -> (id,t)) $ filter (\(mid,t) -> isJust mid) $ map (\(id,t) -> (M.lookup id em'', t) ) edgeTypes
+    nac3 = foldr (\(n,t) g -> updateNodePayload n g (\info -> infoSetType info t)) nac'' nodeTypes'
+    nac4 = foldr (\(e,t) g -> updateEdgePayload e g (\info -> infoSetType info t)) nac3 edgeTypes'
+
 
 
 afterSave :: Gtk.TreeStore
@@ -1574,9 +1641,3 @@ afterSave store window graphStates (changedProject, changedGraph, lastSavedState
           case filename of
             Nothing -> set window [#title := "Verigraph-GUI"]
             Just fn -> set window [#title := T.pack ("Verigraph-GUI - " ++ fn)]
-
-
-
-updateRuleNacs :: Gtk.TreeStore -> Gtk.TreeIter -> GraphState -> IORef (M.Map Int32 GraphState) -> IORef (M.Map Int32 NacInfo) -> IO ()
-updateRuleNacs store rIter ruleState statesMap nacInfoMap = do
-  return ()

@@ -8,6 +8,8 @@ module GUI.Data.Nac (
 , splitElements
 , updateEdgeEndsIds
 , addToGroup
+, addToNAC
+, removeFromNAC
 )where
 
 import qualified Data.Map as M
@@ -283,6 +285,19 @@ addEdge nM (e,egi) (nac, nacEgi, eM) = (nac', nacEgi', eM')
     nac' = insertEdgeWithPayload eid' (sourceId e') (targetId e') (edgeInfo e) nac
     nacEgi' = M.insert (fromEnum eid') egi nacEgi
     eM' = M.insert (edgeId e) eid' eM
+
+-- remove the specified elements from the NAC
+removeFromNAC :: NacInfo -> ([NodeId], [EdgeId]) -> NacInfo
+removeFromNAC ((nac,nacgi),(nM,eM)) (nodesToRemove, edgesToRemove) = ((nac',nacgi),(nM',eM'))
+  where
+    nac' = fromNodesAndEdges nacNodes nacEdges
+    nacgi' = (nacNGIs, nacEGIs)
+    nM' = M.filterWithKey (\k _ -> k `notElem` nodesToRemove) nM
+    eM' = M.filterWithKey (\k _ -> k `notElem` edgesToRemove) eM
+    nacNodes = filter (\n -> (not . infoLocked . nodeInfo $ n) || (nodeId n `elem` (M.elems nM'))) (nodes nac)
+    nacEdges = filter (\e -> (not . infoLocked . edgeInfo $ e) || (edgeId e `elem` (M.elems eM'))) (edges nac)
+    nacNGIs = M.filterWithKey (\k _ -> (NodeId k) `elem` (map nodeId nacNodes)) (fst nacgi)
+    nacEGIs = M.filterWithKey (\k _ -> (EdgeId k) `elem` (map edgeId nacEdges)) (snd nacgi)
 
 
 getDuplicatedElems :: (Ord a) => M.Map a a -> [a]

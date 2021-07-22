@@ -12,6 +12,7 @@ module GUI.Editor.Helper.TreeStore(
 , getStructsToSave
 , getParentLHSDiaGraph
 , getRules
+, getRuleNacs
 , indicateProjChanged
 , indicateGraphChanged
 , setChangeFlags
@@ -60,7 +61,7 @@ import GUI.Helper.List
  * valid (if the current graph is correctly mapped to the typegraph)
 -}
 type GraphStore = (String, Bool, Int32, Int32, Bool, Bool)
-type NAC = (Graph Info Info, (MergeMapping))
+
 
 ----------------------------------------------------------
 -- init and set
@@ -185,6 +186,10 @@ getParentDiaGraph store pathIndices graphStates = do
         Just es -> return (stateGetGraph es, stateGetGI es)
     else return DG.empty
 
+
+
+type NAC = (Graph Info Info, (MergeMapping))
+
 -- Returns a list of NAC from a TreeStore.
 -- The iter must be set to the first GraphStore containing a Nac
 getNacList :: Gtk.TreeStore
@@ -238,7 +243,7 @@ getRuleList store iter gStates nacInfoMapIORef = do
       return $ ans ++ rest
     else return ans
 
--- | Returns the rules stored in a TreeStore.
+-- | Returns the rules stored in a TreeStore
 getRules :: Gtk.TreeStore
          -> IORef (M.Map Int32 GraphState)
          -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
@@ -250,6 +255,54 @@ getRules store gStatesIORef nacInfoMapIORef = do
     else do
       gStates <- readIORef gStatesIORef
       getRuleList store iter gStates nacInfoMapIORef
+
+
+
+
+-- given a nacIter, return a list of nacs
+getNacs :: Gtk.TreeStore
+        -> Gtk.TreeIter
+        -> M.Map Int32 GraphState
+        -> M.Map Int32 (DiaGraph, MergeMapping)
+        -> IO [(Int32,NacInfo)]
+getNacs store iter statesMap nacInfoMap = do
+  index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
+  case M.lookup index statesMap of
+    Just st -> do
+      let g = stateGetGraph st
+          gi = stateGetGI st
+          (_,mergeM) = fromMaybe (DG.empty,(M.empty,M.empty)) $ M.lookup index nacInfoMap
+          nacInfo = ((g,gi),mergeM)
+      continue <- Gtk.treeModelIterNext store iter
+      if continue then do
+        rest <- getNacs store iter statesMap nacInfoMap
+        return $ (index,nacInfo):rest
+      else
+        return [(index,nacInfo)]
+    Nothing -> return []
+
+
+-- given a path to a rule, gets all the NACs of the rule
+getRuleNacs :: Gtk.TreeStore
+        -> IORef [Int32]
+        -> IORef (M.Map Int32 GraphState)
+        -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
+        -> IO [(Int32,NacInfo)]
+getRuleNacs store pathIndicesIORef gStatesIORef nacInfoMapIORef = do
+  rulePathIndices <- readIORef pathIndicesIORef
+  rulePath <- Gtk.treePathNewFromIndices rulePathIndices
+  (valid,iter) <- Gtk.treeModelGetIter store rulePath
+  if valid then do
+    (hasNac,nacIter) <- Gtk.treeModelIterChildren store (Just iter)
+    if hasNac then do
+      statesMap <- readIORef gStatesIORef
+      nacInfoMap <- readIORef nacInfoMapIORef
+      getNacs store nacIter statesMap nacInfoMap
+    else
+      return []
+  else
+    return []
+
 
 ----------------------------------------------------------
 -- flags

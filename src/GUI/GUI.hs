@@ -211,7 +211,7 @@ startGUI = do
 
   on tabs #switchPage $ \page pageNum -> do
     -- update statesMap with the information of editorState
-    Edit.storeCurrentES window editorState storeIORefs nacInfoMap
+    Edit.storeCurrentES window editorStore editorState storeIORefs nacIORefs
     case pageNum of
       0 -> do  -- Editor tab
           gT <- readIORef currentGraphType
@@ -248,9 +248,9 @@ startGUI = do
   -- open project
   on opn #activate $ loadProject window fileName storeIORefs editorStore editorTreeView editorState changesIORefs (undoStack,redoStack) nacIORefs
   -- save project
-  on svn #activate $ saveProject window editorCanvas fileName editorStore editorState storeIORefs changesIORefs nacInfoMap
+  on svn #activate $ saveProject window editorCanvas fileName editorStore editorState storeIORefs changesIORefs nacIORefs
   -- save project as
-  sva `on` #activate $ saveProjectAs window editorCanvas fileName editorStore editorState storeIORefs changesIORefs nacInfoMap
+  sva `on` #activate $ saveProjectAs window editorCanvas fileName editorStore editorState storeIORefs changesIORefs nacIORefs
 
   -- Edit Menu ---------------------------------------------------------------------------------------------------------------
 
@@ -381,7 +381,7 @@ startGUI = do
   -- event bindings for the main window --------------------------------------------------------------------------------------
   -- when click in the close button, the application must close
   on window #deleteEvent $ return $ do
-    continue <- Edit.confirmOperation window editorStore changedProject editorState nacInfoMap fileName storeIORefs
+    continue <- Edit.confirmOperation window editorStore changedProject editorState nacIORefs fileName storeIORefs
     if continue
       then do
         Gtk.mainQuit
@@ -463,7 +463,7 @@ startNewProject window fileName
                 changesIORefs@(changedProject, changedGraph, lastSavedState)
                 changeStacks
                 nacIORefs@(nacInfoMap, mergeMapping) = do
-  continue <- Edit.confirmOperation window editorStore changedProject editorState nacInfoMap fileName storeIORefs
+  continue <- Edit.confirmOperation window editorStore changedProject editorState nacIORefs fileName storeIORefs
   if continue
     then do
       Gtk.treeStoreClear editorStore
@@ -512,7 +512,7 @@ loadProject window fileName
             changesIORefs@(changedProject, changedGraph, lastSavedState)
             changeStacks
             nacIORefs@(nacInfoMap, mergeMapping) = do
-    continue <- confirmOperation window editorStore changedProject editorState nacInfoMap fileName storeIORefs
+    continue <- confirmOperation window editorStore changedProject editorState nacIORefs fileName storeIORefs
     if continue
       then do
         mg <- loadFile window
@@ -573,14 +573,14 @@ putInStore store (Tree.Node (name,c,i,t,a,v) fs) mparent = do
 saveProject :: Gtk.Window -> Gtk.DrawingArea -> IORef (Maybe String) -> Gtk.TreeStore -> IORef GraphState
             -> (IORef (M.Map Int32 GraphState), IORef [Int32], IORef Int32, IORef Int32)
             -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 DiaGraph))
-            -> IORef (M.Map Int32 NacInfo)
+            -> (IORef (M.Map Int32 NacInfo), IORef (Maybe MergeMapping))
             -> IO ()
 saveProject = saveProjectBase saveFile
 
 saveProjectAs :: Gtk.Window -> Gtk.DrawingArea -> IORef (Maybe String) -> Gtk.TreeStore -> IORef GraphState
             -> (IORef (M.Map Int32 GraphState), IORef [Int32], IORef Int32, IORef Int32)
             -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 DiaGraph))
-            -> IORef (M.Map Int32 NacInfo)
+            -> (IORef (M.Map Int32 NacInfo), IORef (Maybe MergeMapping))
             -> IO ()
 saveProjectAs = saveProjectBase saveFileAs
 
@@ -588,14 +588,14 @@ saveProjectBase :: (Tree.Forest SaveInfo -> IORef (Maybe String) -> Gtk.Window -
               -> Gtk.Window -> Gtk.DrawingArea -> IORef (Maybe String) -> Gtk.TreeStore -> IORef GraphState
               -> (IORef (M.Map Int32 GraphState), IORef [Int32], IORef Int32, IORef Int32)
               -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 DiaGraph))
-              -> IORef (M.Map Int32 NacInfo)
+              -> (IORef (M.Map Int32 NacInfo), IORef (Maybe MergeMapping))
               -> IO ()
 saveProjectBase saveF window editorCanvas fileName editorStore editorState
                 storeIORefs@(statesMap,_,_,_)
                 changesIORefs
-                nacInfoMap =
+                (nacInfoMap,mergeMapping) =
   do
-    Edit.storeCurrentES window editorState storeIORefs nacInfoMap
+    Edit.storeCurrentES window editorStore editorState storeIORefs (nacInfoMap,mergeMapping)
     context <- Gtk.widgetGetPangoContext editorCanvas
     Edit.updateAllNacs editorStore statesMap nacInfoMap context
     structs <- Edit.getStructsToSave editorStore statesMap nacInfoMap
