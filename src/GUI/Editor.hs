@@ -806,10 +806,12 @@ startEditor window store
           Nothing -> return ()
           Just mergeM -> do
             let nacInfo = ((stateGetGraph es, stateGetGI es), mergeM)
-            let ((g',gi'),mergeM') = mergeElements nacInfo (stateGetSelected es)
-            modifyIORef nacInfoMap $ M.insert index ((g',gi'),mergeM')
+            let ((g,gi),mergeM') = mergeElements nacInfo (stateGetSelected es)
+            ngiM' <- updateNodesGiDims (fst gi) g context
+            let gi' = (ngiM', snd gi)
+            modifyIORef nacInfoMap $ M.insert index ((g,gi'),mergeM')
             writeIORef mergeMapping (Just mergeM')
-            modifyIORef currentState $ stateSetGraph g' . stateSetGI gi'
+            modifyIORef currentState $ stateSetGraph g . stateSetGI gi'
             stackUndo undoStack redoStack currentGraph es maybeMergeM
             Gtk.widgetQueueDraw canvas
             updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
@@ -1595,7 +1597,7 @@ propagateRuleChanges store (statesMap, currentPath, currentGraph, currentGraphTy
 
 
 propagateRuleChanges' :: DiaGraph -> NacInfo -> NacInfo
-propagateRuleChanges' (lhs,lhsgi) ((nac,nacgi),(nm,em)) = ((nac4,nacgi''), (nm'',em''))
+propagateRuleChanges' (lhs,lhsgi) ((nac,nacgi),(nm,em)) = ((nac6,nacgi3), (nm'',em''))
   where
     -- 1 remove from NAC elements no present on LHS
     nodesToRemove = filter (`notElem` (nodeIds lhs)) (M.keys nm)
@@ -1608,12 +1610,35 @@ propagateRuleChanges' (lhs,lhsgi) ((nac,nacgi),(nm,em)) = ((nac4,nacgi''), (nm''
     edgeGIsToAdd = M.filterWithKey (\k _ -> EdgeId k `notElem` (M.keys em)) (snd lhsgi)
     ((nac'',nacgi''), (nm'',em'')) = addToNAC (nac',nacgi') (nm',em') (nodesToAdd,edgesToAdd) (nodeGIsToAdd,edgeGIsToAdd)
     -- 3 ensure the types of the elements of the rule and the nac corresponds
-    nodeTypes = map (\n -> (nodeId n, infoType $ nodeInfo n)) (nodes lhs)
-    edgeTypes = map (\e -> (edgeId e, infoType $ edgeInfo e)) (edges lhs)
-    nodeTypes' = map (\(Just id,t) -> (id,t)) $ filter (\(mid,t) -> isJust mid) $ map (\(id,t) -> (M.lookup id nm'', t) ) nodeTypes
-    edgeTypes' = map (\(Just id,t) -> (id,t)) $ filter (\(mid,t) -> isJust mid) $ map (\(id,t) -> (M.lookup id em'', t) ) edgeTypes
-    nac3 = foldr (\(n,t) g -> updateNodePayload n g (\info -> infoSetType info t)) nac'' nodeTypes'
-    nac4 = foldr (\(e,t) g -> updateEdgePayload e g (\info -> infoSetType info t)) nac3 edgeTypes'
+    nodeTypesNLabels = map (\n -> let info = nodeInfo n in (nodeId n, infoType info, infoLabel info)) (nodes lhs)
+    edgeTypesNLabels = map (\e -> let info = edgeInfo e in (edgeId e, infoType info, infoLabel info)) (edges lhs)
+    nodeTypesNLabels' = map (\(Just id,t,l) -> (id,t,l)) $ filter (\(mid,t,l) -> isJust mid) $ map (\(id,t,l) -> (M.lookup id nm'', t,l) ) nodeTypesNLabels
+    edgeTypesNLabels' = map (\(Just id,t,l) -> (id,t,l)) $ filter (\(mid,t,l) -> isJust mid) $ map (\(id,t,l) -> (M.lookup id em'', t,l) ) edgeTypesNLabels
+    nac3 = foldr (\(n,t,l) g -> updateNodePayload n g (\info -> infoSetType info t)) nac'' nodeTypesNLabels'
+    nac4 = foldr (\(e,t,l) g -> updateEdgePayload e g (\info -> infoSetType info t)) nac3  edgeTypesNLabels'
+    -- 4 ensure the labels of the elements of the rule and the nac corresponds
+    nac5 = foldr (\(n,t,l) g -> updateNodePayload n g (\info -> case infoLabel info of
+                                                                      Label str -> info {infoLabel = l}
+                                                                      LabelGroup lbls -> info )) nac4 nodeTypesNLabels'
+    nac6 = foldr (\(e,t,l) g -> updateEdgePayload e g (\info -> case infoLabel info of
+                                                                      Label str -> info {infoLabel = l}
+                                                                      LabelGroup lbls -> info )) nac5 edgeTypesNLabels'
+    -- 5 ensure the layouts dimensions of the nodes are kept for simple elements
+    nodeDims = map (\n -> (n, dims $ getNodeGI (fromEnum n) (fst lhsgi) ) ) (nodeIds lhs)
+    nodeDims' = catMaybes $ map (\(n,dims) -> (\nid -> (nid,dims)) <$> (M.lookup n nm'') ) nodeDims
+    nodeDims'' = filter (\(n,dims) -> case (infoLabel . nodeInfo) <$> lookupNode n nac6 of
+                                        Nothing -> False
+                                        Just (Label str) -> True
+                                        Just (LabelGroup lbls) -> False )
+                        nodeDims'
+    nacNgi3 = foldr (\(n,ldims) ngiM -> M.update (\gi -> Just $ gi {dims = ldims}) (fromEnum n) ngiM)  (fst nacgi'') nodeDims
+    nacgi3 = (nacNgi3, snd nacgi'')
+
+
+
+
+
+
 
 
 

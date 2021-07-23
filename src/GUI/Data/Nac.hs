@@ -1,9 +1,6 @@
 module GUI.Data.Nac (
   MergeMapping
 , NacInfo
-, extractNac
-, extractNacGraph
-, extractNacGI
 , mergeElements
 , splitElements
 , updateEdgeEndsIds
@@ -28,62 +25,6 @@ import GUI.Helper.List
 type MergeMapping = (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
 type NacInfo = (DiaGraph, MergeMapping)
 
-
-extractNac :: Graph Info Info -> GraphicalInfo -> MergeMapping -> NacInfo
-extractNac g gi (nM,eM) = ((nacG,nacGI),mergeM)
-  where
-    lhsEdges = filter (\e -> infoLocked (edgeInfo e)) (edges g)
-    lhsNodes = filter (\n -> infoLocked (nodeInfo n)) (nodes g)
-    lhsMergedNodes = applyNodeMerging lhsNodes nM
-    lhsNodesToKeep =
-        filter (\n -> (nodeId n) `elem` (map sourceId addedEdges) ||
-                      (nodeId n) `elem` (map targetId addedEdges) )
-               lhsNodes
-    lhsSelectedNodes = lhsMergedNodes ++ lhsNodesToKeep
-    addedNodes = filter (\n -> not $ infoLocked (nodeInfo n)) (nodes g)
-    nacNodes = lhsSelectedNodes ++ addedNodes
-
-    nM' = foldr (\n m -> if n `elem` M.keys m then
-                            m
-                         else
-                           M.insert n n m)
-                nM $ map nodeId lhsNodesToKeep
-
-    lhsSelectedEdges = applyEdgeMerging lhsEdges eM
-    addedEdges = filter (\e -> not $ infoLocked (edgeInfo e)) (edges g)
-    nacEdges = map (\e -> updateEdgeEndsIds e nM') (lhsSelectedEdges ++ addedEdges)
-
-
-    mergeM = (nM', eM)
-    nacG = fromNodesAndEdges nacNodes nacEdges
-    nacGI = extractNacGI g gi mergeM
-
-
--- | Given a Graph and a MergeMapping, extract the elements that are part of the nac subgraph that contains merged
---   and added elements.
--- this function also merges the elements as defined in the MergeMapping
-extractNacGraph :: Graph Info Info -> MergeMapping -> Graph Info Info
-extractNacGraph g (nM, eM) = fromNodesAndEdges nacNodes nacEdges
-  where
-    lhsNodes = filter (\n -> infoLocked (nodeInfo n)) (nodes g)
-    lhsSelectedNodes = applyNodeMerging lhsNodes nM
-    addedNodes = filter (\n -> not $ infoLocked (nodeInfo n)) (nodes g)
-    nacNodes = lhsSelectedNodes ++ addedNodes
-    lhsEdges = filter (\e -> infoLocked (edgeInfo e)) (edges g)
-    lhsSelectedEdges = applyEdgeMerging lhsEdges eM
-    addedEdges = filter (\e -> not $ infoLocked (edgeInfo e)) (edges g)
-    nacEdges = map (\e -> updateEdgeEndsIds e nM) (lhsSelectedEdges ++ addedEdges)
-
--- | Given a Graph, a GraphicalInfo and a MergeMapping, extract the graphical information that are part of the nac.
-extractNacGI :: Graph Info Info -> GraphicalInfo -> MergeMapping -> GraphicalInfo
-extractNacGI g (ngi,egi) (nM,eM) = (ngi',egi')
-  where
-    addedNids = map (fromEnum . nodeId) $ filter (\n -> not $ infoLocked (nodeInfo n)) (nodes g)
-    addedEids = map (fromEnum . edgeId) $ filter (\e -> not $ infoLocked (edgeInfo e)) (edges g)
-    mergedNids = map fromEnum $ M.elems nM
-    mergedEids = map fromEnum $ M.elems eM
-    ngi' = M.filterWithKey (\k a -> k `elem` addedNids || k `elem` mergedNids) ngi
-    egi' = M.filterWithKey (\k a -> k `elem` addedEids || k `elem` mergedEids) egi
 
 
 
