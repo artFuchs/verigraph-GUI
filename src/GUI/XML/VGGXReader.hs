@@ -26,21 +26,30 @@ import           GUI.Data.GraphicalInfo
 import           GUI.Data.GraphState
 import           GUI.Data.Info hiding (empty)
 import qualified GUI.Data.Info as Info
-import           GUI.Data.Nac (MergeMapping)
+import           GUI.Data.Nac
 
 
 readVGGX :: String -> IO (Maybe (Tree.Forest SaveInfo))
 readVGGX fileName = do
+    version <- readVersion fileName
     -- read grammar
     typeGraph <- readTypeGraph fileName
     case typeGraph of
         Just tg -> do
             hg <- readHostGraph fileName
-            rules <- readRules fileName
+            rules <- readRules fileName version
             return $ Just [tg,hg,rules]
         Nothing -> do
             error "Critical Error: failed to load TypeGraph -> parsing of the grammar failed"
             return Nothing
+
+
+readVersion :: String -> IO String
+readVersion fileName = do
+  versions <- runX $ parseXML fileName >>> atTag "Document" >>> getAttrValue "version"
+  case versions of
+    [] -> return $ "0.2"
+    v:_ -> return $ v
 
 
 readTypeGraph :: String -> IO (Maybe (Tree.Tree SaveInfo))
@@ -61,9 +70,9 @@ readHostGraph fileName = do
             forM_ logs putStrLn
             return (Tree.Node hg [])
 
-readRules :: String -> IO (Tree.Tree SaveInfo)
-readRules fileName = do
-    rulesOrLogs <- runX $ parseXML fileName >>> atTag "Rules" >>> parseRule
+readRules :: String -> String -> IO (Tree.Tree SaveInfo)
+readRules fileName version = do
+    rulesOrLogs <- runX $ parseXML fileName >>> atTag "Rules" >>> parseRule version
     let rules = map snd $ Either.rights rulesOrLogs
         criticalLogs = Either.lefts rulesOrLogs
         lessCriticalLogs = concat $ map fst $ Either.rights rulesOrLogs
@@ -94,8 +103,8 @@ parseHostGraph = atTag "HostGraph" >>>
                         else ("HostGraph " ++ idStr ++ " (" ++ name ++ ")"):diagramLogs
         returnA -< (diagramLogs, HostGraph gId name (emptyState {stateGetGraph = graph, stateGetGI = layouts}))
 
-parseRule :: ArrowXml cat => cat (NTree XNode) (Either String ([String],Tree.Tree SaveInfo))
-parseRule = atTag "Rule" >>>
+parseRule :: ArrowXml cat => String -> cat (NTree XNode) (Either String ([String],Tree.Tree SaveInfo))
+parseRule version = atTag "Rule" >>>
     proc rl -> do
         name <- getAttrValue "name" -< rl
         idStr <- getAttrValue "id" -< rl
@@ -108,7 +117,11 @@ parseRule = atTag "Rule" >>>
             active = parseBool aStr
             nacs = map snd $ Either.rights nacsOrLogs
             nacLogs = filter (not . null) $ Either.lefts nacsOrLogs ++ (concat $ map fst $ Either.rights nacsOrLogs)
-            nacForest = map (\nac -> Tree.Node nac []) nacs
+            nacForest = map (\nac -> case (version,nac) of
+                                      ("0.2",NacGraph id name nacInfo) -> let nacInfo' = mountNAc (graph,layouts) nacInfo
+                                                                          in Tree.Node (NacGraph id name nacInfo') []
+                                      _ -> Tree.Node nac [])
+                            nacs
             struct = case gId of
                         Just i -> let logs = if null diagramLogs && null nacLogs
                                                 then []
@@ -116,6 +129,21 @@ parseRule = atTag "Rule" >>>
                                   in Right (logs ,Tree.Node (RuleGraph i name ruleState active) nacForest)
                         Nothing -> Left $ "Failed to load Rule: Couldn't parse Rule ID. (id = " ++ idStr ++ ", name = " ++ name ++ ")."
         returnA -< struct
+
+-- for VGGX files with versions prior to 0.2.5, join the nac and the lhs of the rule
+mountNAc ::  DiaGraph -> NacInfo -> NacInfo
+mountNAc (lhs,lhsgi) (nacdg,(nM,eM)) = newNacInfo
+  where
+    nodesToAdd = map (\n -> let info = G.nodeInfo n in n {G.nodeInfo = infoSetLocked info True} ) $ filter (\n -> G.nodeId n `notElem` (M.elems nM)) (G.nodes lhs)
+    edgesToAdd = map (\e -> let info = G.edgeInfo e in e {G.edgeInfo = infoSetLocked info True} ) $ filter (\e -> G.edgeId e `notElem` (M.elems eM)) (G.edges lhs)
+    nodesGIsToAdd = M.filterWithKey (\k _ -> G.NodeId k `elem` (map G.nodeId nodesToAdd)) (fst lhsgi)
+    edgesGIsToAdd = M.filterWithKey (\k _ -> G.EdgeId k `elem` (map G.edgeId edgesToAdd)) (snd lhsgi)
+    newNacInfo = addToNAC nacdg (nM,eM) (nodesToAdd,edgesToAdd) (nodesGIsToAdd, edgesGIsToAdd)
+
+
+
+
+
 
 parseNac :: ArrowXml cat => cat (NTree XNode) (Either String ([String], SaveInfo))
 parseNac = atTag "NAC" >>>

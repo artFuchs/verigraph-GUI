@@ -550,7 +550,7 @@ toGSandStates n = case n of
   TypeGraph id name es -> ((name,False,id,1,True,True), (1, (id,es)))
   HostGraph id name es -> ((name,False,id,2,True,True), (2, (id,es)))
   RuleGraph id name es a -> ((name,False,id,3,a,True), (3, (id,es)))
-  NacGraph id name _ -> ((name,False,id,4,True,True), (4,(id,emptyState)))
+  NacGraph id name ((g,gi),_) -> ((name,False,id,4,True,True), (4,(id,stateSetGraph g . stateSetGI gi $ emptyState)))
 
 toNACInfos :: SaveInfo -> (Int32,NacInfo)
 toNACInfos n = case n of

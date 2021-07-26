@@ -22,7 +22,7 @@ writeVGGX saveInfo fileName = do
     return ()
 
 writeRoot :: ArrowXml a => Tree.Forest SaveInfo -> a XmlTree XmlTree
-writeRoot saveInfo = mkelem "Document" [sattr "version" "0.2"] [writeGrammar saveInfo]
+writeRoot saveInfo = mkelem "Document" [sattr "version" "0.2.5"] [writeGrammar saveInfo]
 
 writeGrammar :: ArrowXml a => Tree.Forest SaveInfo -> a XmlTree XmlTree
 writeGrammar saveInfo = mkelem "Grammar" [] $ writeSIForest saveInfo

@@ -147,7 +147,9 @@ getStructsToSave store graphStates nacInfoMapIORef = do
                                      in HostGraph nid name es
                                 3 -> let es = fromJust $ M.lookup nid states
                                      in RuleGraph nid name es active
-                                4 -> let (nacdg,mapping) = fromJust $ M.lookup nid nacInfoMap
+                                4 -> let (_,mapping) = fromJust $ M.lookup nid nacInfoMap
+                                         es = fromJust $ M.lookup nid states
+                                         nacdg = (stateGetGraph es, stateGetGI es)
                                      in NacGraph nid name (nacdg,mapping)
                     )) treeNodeList
       return structs
