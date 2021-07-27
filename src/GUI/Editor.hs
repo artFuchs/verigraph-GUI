@@ -172,7 +172,7 @@ startEditor window store
   currentNodeType     <- newIORef ( Nothing :: Maybe String)
   currentEdgeType     <- newIORef ( Nothing :: Maybe String)
 
-  let selectableTypesIORefs = (possibleNodeTypes, possibleEdgeTypes, currentNodeType, currentEdgeType)
+  let selectableTypesIORefs = (possibleNodeTypes, possibleSelectableEdgeTypes, currentNodeType, currentEdgeType)
 
 
   -- "unpack" IORefs
