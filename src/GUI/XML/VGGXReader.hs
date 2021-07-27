@@ -134,8 +134,8 @@ parseRule version = atTag "Rule" >>>
 mountNAc ::  DiaGraph -> NacInfo -> NacInfo
 mountNAc (lhs,lhsgi) (nacdg,(nM,eM)) = newNacInfo
   where
-    nodesToAdd = map (\n -> let info = G.nodeInfo n in n {G.nodeInfo = infoSetLocked info True} ) $ filter (\n -> G.nodeId n `notElem` (M.elems nM)) (G.nodes lhs)
-    edgesToAdd = map (\e -> let info = G.edgeInfo e in e {G.edgeInfo = infoSetLocked info True} ) $ filter (\e -> G.edgeId e `notElem` (M.elems eM)) (G.edges lhs)
+    nodesToAdd = map (\n -> let info = G.nodeInfo n in n {G.nodeInfo = infoSetLocked info True} ) $ filter (\n -> G.nodeId n `notElem` (M.keys nM)) (G.nodes lhs)
+    edgesToAdd = map (\e -> let info = G.edgeInfo e in e {G.edgeInfo = infoSetLocked info True} ) $ filter (\e -> G.edgeId e `notElem` (M.keys eM)) (G.edges lhs)
     nodesGIsToAdd = M.filterWithKey (\k _ -> G.NodeId k `elem` (map G.nodeId nodesToAdd)) (fst lhsgi)
     edgesGIsToAdd = M.filterWithKey (\k _ -> G.EdgeId k `elem` (map G.edgeId edgesToAdd)) (snd lhsgi)
     newNacInfo = addToNAC nacdg (nM,eM) (nodesToAdd,edgesToAdd) (nodesGIsToAdd, edgesGIsToAdd)
