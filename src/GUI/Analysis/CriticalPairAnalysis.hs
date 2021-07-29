@@ -45,9 +45,9 @@ import qualified System.FilePath as FilePath
 buildCpaBox :: Gtk.Window
             -> Gtk.TreeStore
             -> IORef (M.Map Int32 GraphState)
-            -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
+            -> IORef (M.Map Int32 MergeMapping)
             -> IO (Gtk.Box)
-buildCpaBox window editStore statesMap nacInfoMap = do
+buildCpaBox window editStore statesMap nacsMergeMappings = do
   builder <- new Gtk.Builder []
   resourcesFolder <- getResourcesFolder
   Gtk.builderAddFromFile builder $ T.pack (resourcesFolder ++ "cpa.glade")
@@ -73,7 +73,7 @@ buildCpaBox window editStore statesMap nacInfoMap = do
   executedGG   <- newIORef (Nothing :: Maybe (Grammar (TGM.TypedGraphMorphism Info Info)) )
 
   on execBtn #pressed $ do
-    efstOrderGG <- prepToExport editStore statesMap nacInfoMap
+    efstOrderGG <- prepToExport editStore statesMap nacsMergeMappings
     sts <- readIORef statesMap
     let tes = fromJust $ M.lookup 0 sts
         tg = stateGetGraph tes
@@ -141,15 +141,15 @@ buildCpaBox window editStore statesMap nacInfoMap = do
 
 prepToExport :: Gtk.TreeStore
              -> IORef (M.Map Int32 GraphState)
-             -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
+             -> IORef (M.Map Int32 MergeMapping)
              -> IO (Either String (Grammar (TGM.TypedGraphMorphism Info Info)))
-prepToExport store graphStates nacInfoMap = do
+prepToExport store graphStates nacsMergeMappings = do
   sts <- readIORef graphStates
 
   let tg = stateGetGraph . fromJust $ M.lookup 0 sts
       hg = stateGetGraph . fromJust $ M.lookup 1 sts
 
-  rules <- Edit.getRules store graphStates nacInfoMap
+  rules <- Edit.getRules store graphStates nacsMergeMappings
   let rulesNames = map (\(_,_,name) -> name) rules
       rulesNnacs = map (\(r,ns,_) -> (r,ns)) rules
 

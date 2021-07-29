@@ -59,10 +59,10 @@ type Match = TGM.TypedGraphMorphism Info Info
 buildExecutor :: Gtk.TreeStore
               -> IORef (M.Map Int32 GraphState)
               -> IORef (G.Graph Info Info)
-              -> IORef (M.Map Int32 NacInfo)
+              -> IORef (M.Map Int32 MergeMapping)
               -> IORef (Maybe Gtk.DrawingArea) -> IORef (Maybe (IORef GraphState))
               -> IO (Gtk.Paned, Gtk.DrawingArea, Gtk.ComboBoxText, IORef GraphState, IORef Bool, IORef (M.Map Int32 [(String, Int32)]))
-buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIORef = do
+buildExecutor store statesMap typeGraph nacsMergeMappings focusedCanvas focusedStateIORef = do
     builder <- new Gtk.Builder []
     resourcesFolder <- getResourcesFolder
     Gtk.builderAddFromFile builder $ T.pack (resourcesFolder ++ "executor.glade")
@@ -144,7 +144,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                 else do
                     execT <- forkFinally
                                 (do writeIORef execStarted True
-                                    executeStep treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel  typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches)
+                                    executeStep treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel  typeGraph hostState statesMap nacsMergeMappings nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches)
                                 (\_ -> writeIORef execStarted False)
                     writeIORef execThread $ Just execT
 
@@ -297,13 +297,16 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                             les <- readIORef lStateOrig
                             let l = stateGetGraph les
                                 lgi = stateGetGI les
-                            nacInfoM <- readIORef nacInfoMap
-                            let (nacdg,mergeM) = fromMaybe ((l,lgi),(M.empty,M.empty)) $ M.lookup nacIndex nacInfoM
-                            context <- Gtk.widgetGetPangoContext nacCanvas
-                            let (nacG,ngi') = adjustDiagrPosition nacdg
+                            mergeMappings <- readIORef nacsMergeMappings
+                            statesM <- readIORef statesMap
+                            let mergeM = fromMaybe (M.empty,M.empty) $ M.lookup nacIndex mergeMappings
+                                nacSt = fromMaybe emptyState $ M.lookup nacIndex statesM
+                                nacdg = (stateGetGraph nacSt, stateGetGI nacSt)
+                                (nacG,ngi') = adjustDiagrPosition nacdg
                                 rNMapping = M.fromList $ map (\(a,b) -> (b,"[" ++ (show . fromEnum $ a) ++ "]") ) $ M.toList $ M.union (fst mergeM) $ M.fromList (map (\a -> (a,a)) $ G.nodeIds l)
                                 rEMapping = M.fromList $ map (\(a,b) -> (b,"[" ++ (show . fromEnum $ a) ++ "]") ) $ M.toList $ M.union (snd mergeM) $ M.fromList (map (\a -> (a,a)) $ G.edgeIds l)
                                 nst = stateSetGI ngi' . stateSetGraph nacG $ emptyState
+                            context <- Gtk.widgetGetPangoContext nacCanvas
                             nst' <- setInfoExtra nst (rNMapping, rEMapping) context
                             writeIORef mergeMap (Just mergeM)
                             writeIORef nacState nst'
@@ -402,7 +405,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         writeIORef hostState $ fromMaybe emptyState ( M.lookup 1 statesM )
         removeMatchesFromTreeStore store
         -- load the productions of the treeStore
-        loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap
+        loadProductions store typeGraph statesMap nacsMergeMappings nacIDListMap productionMap
         -- process matches
         execT <- forkFinally (do
                                 Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
@@ -410,7 +413,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
                                     Gtk.labelSetText statusLabel "processing matches"
                                     return False
                                 writeIORef processingMatches True
-                                findMatches store hostState typeGraph nacInfoMap nacIDListMap matchesMap productionMap
+                                findMatches store hostState typeGraph nacsMergeMappings nacIDListMap matchesMap productionMap
                                 )
                             (\_ -> do
                                 Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
@@ -444,10 +447,10 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         if started || processing
             then return ()
             else do
-                loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap
+                loadProductions store typeGraph statesMap nacsMergeMappings nacIDListMap productionMap
                 execT <- forkFinally
                             (do writeIORef execStarted True
-                                executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel  typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches)
+                                executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel  typeGraph hostState statesMap nacsMergeMappings nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches)
                             (\_ -> do
                                 Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
                                             Gtk.spinnerStop statusSpinner
@@ -476,9 +479,9 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     return (executorPane, mainCanvas, nacCBox, hostState, execStarted, nacIDListMap)
 
 
-executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches = do
+executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel typeGraph hostState statesMap nacsMergeMappings nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches = do
 
-    executeStep treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel  typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches
+    executeStep treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel  typeGraph hostState statesMap nacsMergeMappings nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches
 
     Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
         Gtk.spinnerStart statusSpinner
@@ -494,16 +497,16 @@ executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas status
     let allMatches = concat $ M.elems $ M.map M.elems matchesM
     if length allMatches > 0
         then do
-            executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches
+            executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel typeGraph hostState statesMap nacsMergeMappings nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches
         else return ()
 
 executeStep :: Gtk.TreeView -> Gtk.TreeStore -> Gtk.CheckButton -> Gtk.DrawingArea -> Gtk.Spinner -> Gtk.Label
             -> IORef (G.Graph Info Info) -> IORef GraphState -> IORef (M.Map Int32 GraphState)
-            -> IORef (M.Map Int32 NacInfo) -> IORef (M.Map Int32 [(String, Int32)])
+            -> IORef (M.Map Int32 MergeMapping) -> IORef (M.Map Int32 [(String, Int32)])
             -> IORef (M.Map Int32 (M.Map Int32 Match)) -> IORef (M.Map Int32 TGMProduction) -> IORef Int32 -> IORef Int32
             -> IORef Bool
             -> IO ()
-executeStep treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches = do
+executeStep treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel typeGraph hostState statesMap nacsMergeMappings nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches = do
     Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
         Gtk.spinnerStart statusSpinner
         Gtk.labelSetText statusLabel "applying match"
@@ -544,7 +547,7 @@ executeStep treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel
 
     -- find next matches
     writeIORef processingMatches True
-    findMatches store hostState typeGraph nacInfoMap nacIDListMap matchesMap productionMap
+    findMatches store hostState typeGraph nacsMergeMappings nacIDListMap matchesMap productionMap
     writeIORef processingMatches False
 
     Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
@@ -599,19 +602,19 @@ setCanvasCallBacks canvas state refGraph drawMethod focusedCanvas focusedStateIO
         return False
     return (oldPoint,squareSelection)
 
-loadProductions :: Gtk.TreeStore -> IORef (G.Graph Info Info) -> IORef (M.Map Int32 GraphState) -> IORef (M.Map Int32 NacInfo) -> IORef (M.Map Int32 [(String,Int32)]) -> IORef (M.Map Int32 TGMProduction) -> IO ()
-loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap = do
+loadProductions :: Gtk.TreeStore -> IORef (G.Graph Info Info) -> IORef (M.Map Int32 GraphState) -> IORef (M.Map Int32 MergeMapping) -> IORef (M.Map Int32 [(String,Int32)]) -> IORef (M.Map Int32 TGMProduction) -> IO ()
+loadProductions store typeGraph statesMap nacsMergeMappings nacIDListMap productionMap = do
     typeG <- readIORef typeGraph
     nacListM <- readIORef nacIDListMap
     rulesStates <- treeStoreGetRules store statesMap
-    nacInfoM <- readIORef nacInfoMap
+    gStates <- readIORef statesMap
+    megeMappings <- readIORef nacsMergeMappings
     let tg = GMker.makeTypeGraph typeG
-    productions <- forM rulesStates $ \(id,st) -> do
+    productions <- forM rulesStates $ \(id,rst) -> do
                         let nacList = fromMaybe [] $ M.lookup id nacListM
-                        let getNac index = Just (\(dg,mm) -> (fst dg, mm)) <*> (M.lookup index nacInfoM)
-                            mnacs = filter (not . null) $ map (\(_,index) -> getNac index) nacList
-                            nacs = map fromJust mnacs
-                        let rg = stateGetGraph st
+                        let getNac index = (\st m -> (stateGetGraph st, m)) <$> (M.lookup index gStates) <*> (M.lookup index megeMappings)
+                            nacs = catMaybes $ map (\(_,index) -> getNac index) nacList
+                        let rg = stateGetGraph rst
                         return $ (id,GMker.graphToRule rg nacs tg)
     writeIORef productionMap (M.fromList productions)
 
@@ -620,12 +623,12 @@ loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap 
 findMatches :: Gtk.TreeStore
             -> IORef GraphState
             -> IORef (G.Graph Info Info)
-            -> IORef (M.Map Int32 NacInfo)
+            -> IORef (M.Map Int32 MergeMapping)
             -> IORef (M.Map Int32 [(String,Int32)])
             -> IORef (M.Map Int32 (M.Map Int32 Match))
             -> IORef (M.Map Int32 TGMProduction)
             -> IO ()
-findMatches store hostState typeGraph nacInfoMap nacIDListMap matchesMap productionMap = do
+findMatches store hostState typeGraph nacsMergeMappings nacIDListMap matchesMap productionMap = do
     -- prepare initial graph
     g <- readIORef hostState >>= return . stateGetGraph
     typeG <- readIORef typeGraph

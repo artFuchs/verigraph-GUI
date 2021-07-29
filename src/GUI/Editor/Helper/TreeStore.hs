@@ -128,16 +128,16 @@ getTreeStoreValues store iter = do
 -- | gets a tree of SaveInfo out of a TreeStore
 getStructsToSave :: Gtk.TreeStore
                  -> IORef (M.Map Int32 GraphState)
-                 -> IORef (M.Map Int32 (DiaGraph,MergeMapping))
+                 -> IORef (M.Map Int32 MergeMapping)
                  -> IO (Tree.Forest SaveInfo)
-getStructsToSave store graphStates nacInfoMapIORef = do
+getStructsToSave store graphStates nacsMergeMappingsIORef = do
   (valid, fstIter) <- Gtk.treeModelGetIterFirst store
   if not valid
     then return []
     else do
       treeNodeList <- getTreeStoreValues store fstIter
       states <- readIORef graphStates
-      nacInfoMap <- readIORef nacInfoMapIORef
+      nacsMergeMappings <- readIORef nacsMergeMappingsIORef
       let structs = map
                     (fmap (\(name, nid, t, active) -> case t of
                                 0 -> Topic name
@@ -147,7 +147,7 @@ getStructsToSave store graphStates nacInfoMapIORef = do
                                      in HostGraph nid name es
                                 3 -> let es = fromJust $ M.lookup nid states
                                      in RuleGraph nid name es active
-                                4 -> let (_,mapping) = fromJust $ M.lookup nid nacInfoMap
+                                4 -> let mapping = fromJust $ M.lookup nid nacsMergeMappings
                                          es = fromJust $ M.lookup nid states
                                          nacdg = (stateGetGraph es, stateGetGI es)
                                      in NacGraph nid name (nacdg,mapping)
@@ -194,18 +194,19 @@ type NAC = (Graph Info Info, (MergeMapping))
 -- The iter must be set to the first GraphStore containing a Nac
 getNacList :: Gtk.TreeStore
            -> Gtk.TreeIter
-           -> M.Map Int32 (DiaGraph, MergeMapping)
+           -> M.Map Int32 GraphState
+           -> M.Map Int32 MergeMapping
            -> Graph Info Info
            -> IO [NAC]
-getNacList store iter nacInfoMap lhs = do
+getNacList store iter gStates nacsMergeMappings lhs = do
   index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
-  ans <- case M.lookup index nacInfoMap of
-    Nothing -> return []
-    Just ((g,_),m) -> return [(g,m)]
+  ans <- case (M.lookup index gStates, M.lookup index nacsMergeMappings) of
+    (Just st, Just m) -> return [(stateGetGraph st,m)]
+    _ -> return []
   continue <- Gtk.treeModelIterNext store iter
   if continue
     then do
-      rest <- getNacList store iter nacInfoMap lhs
+      rest <- getNacList store iter gStates nacsMergeMappings lhs
       return $ ans ++ rest
     else return ans
 
@@ -215,9 +216,9 @@ getNacList store iter nacInfoMap lhs = do
 getRuleList :: Gtk.TreeStore
             -> Gtk.TreeIter
             -> M.Map Int32 GraphState
-            -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
+            -> IORef (M.Map Int32 MergeMapping)
             -> IO [(Graph Info Info, [NAC], String)]
-getRuleList store iter gStates nacInfoMapIORef = do
+getRuleList store iter gStates nacsMergeMappingsIORef = do
   name <- Gtk.treeModelGetValue store iter 0 >>= fromGValue >>= return . fromJust :: IO String
   index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
   active <- Gtk.treeModelGetValue store iter 4 >>= fromGValue :: IO Bool
@@ -230,29 +231,29 @@ getRuleList store iter gStates nacInfoMapIORef = do
       nacs <- case hasNac of
         True -> do
           let (lhs,_,_) = graphToRuleGraphs rule
-          nacInfoMap <- readIORef nacInfoMapIORef
-          getNacList store nacIter nacInfoMap lhs
+          nacsMergeMappings <- readIORef nacsMergeMappingsIORef
+          getNacList store nacIter gStates nacsMergeMappings lhs
         False -> return []
       return $ [(rule, nacs, name)]
   continue <- Gtk.treeModelIterNext store iter
   if continue
     then do
-      rest <- getRuleList store iter gStates nacInfoMapIORef
+      rest <- getRuleList store iter gStates nacsMergeMappingsIORef
       return $ ans ++ rest
     else return ans
 
 -- | Returns the rules stored in a TreeStore
 getRules :: Gtk.TreeStore
          -> IORef (M.Map Int32 GraphState)
-         -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
+         -> IORef (M.Map Int32 MergeMapping)
          -> IO [(Graph Info Info, [NAC], String)]
-getRules store gStatesIORef nacInfoMapIORef = do
+getRules store gStatesIORef nacMergeMappingsIORef = do
   (valid, iter) <- Gtk.treeModelGetIterFromString store "2:0"
   if not valid
     then return []
     else do
       gStates <- readIORef gStatesIORef
-      getRuleList store iter gStates nacInfoMapIORef
+      getRuleList store iter gStates nacMergeMappingsIORef
 
 
 
@@ -261,19 +262,19 @@ getRules store gStatesIORef nacInfoMapIORef = do
 getNacs :: Gtk.TreeStore
         -> Gtk.TreeIter
         -> M.Map Int32 GraphState
-        -> M.Map Int32 (DiaGraph, MergeMapping)
+        -> M.Map Int32 MergeMapping
         -> IO [(Int32,NacInfo)]
-getNacs store iter statesMap nacInfoMap = do
+getNacs store iter statesMap mergeMappings = do
   index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
   case M.lookup index statesMap of
     Just st -> do
       let g = stateGetGraph st
           gi = stateGetGI st
-          (_,mergeM) = fromMaybe (DG.empty,(M.empty,M.empty)) $ M.lookup index nacInfoMap
+          mergeM = fromMaybe (M.empty,M.empty) $ M.lookup index mergeMappings
           nacInfo = ((g,gi),mergeM)
       continue <- Gtk.treeModelIterNext store iter
       if continue then do
-        rest <- getNacs store iter statesMap nacInfoMap
+        rest <- getNacs store iter statesMap mergeMappings
         return $ (index,nacInfo):rest
       else
         return [(index,nacInfo)]
@@ -284,9 +285,9 @@ getNacs store iter statesMap nacInfoMap = do
 getRuleNacs :: Gtk.TreeStore
         -> IORef [Int32]
         -> IORef (M.Map Int32 GraphState)
-        -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
+        -> IORef (M.Map Int32 MergeMapping)
         -> IO [(Int32,NacInfo)]
-getRuleNacs store pathIndicesIORef gStatesIORef nacInfoMapIORef = do
+getRuleNacs store pathIndicesIORef gStatesIORef nacsMergeMappings = do
   rulePathIndices <- readIORef pathIndicesIORef
   rulePath <- Gtk.treePathNewFromIndices rulePathIndices
   (valid,iter) <- Gtk.treeModelGetIter store rulePath
@@ -294,8 +295,8 @@ getRuleNacs store pathIndicesIORef gStatesIORef nacInfoMapIORef = do
     (hasNac,nacIter) <- Gtk.treeModelIterChildren store (Just iter)
     if hasNac then do
       statesMap <- readIORef gStatesIORef
-      nacInfoMap <- readIORef nacInfoMapIORef
-      getNacs store nacIter statesMap nacInfoMap
+      mergeMappings <- readIORef nacsMergeMappings
+      getNacs store nacIter statesMap mergeMappings
     else
       return []
   else
