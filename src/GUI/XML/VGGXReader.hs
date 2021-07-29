@@ -132,13 +132,15 @@ parseRule version = atTag "Rule" >>>
 
 -- for VGGX files with versions prior to 0.2.5, join the nac and the lhs of the rule
 mountNAc ::  DiaGraph -> NacInfo -> NacInfo
-mountNAc (lhs,lhsgi) (nacdg,(nM,eM)) = newNacInfo
+mountNAc (rule,rulegi) (nacdg,(nM,eM)) = newNacInfo
   where
-    nodesToAdd = map (\n -> let info = G.nodeInfo n in n {G.nodeInfo = infoSetLocked info True} ) $ filter (\n -> G.nodeId n `notElem` (M.keys nM)) (G.nodes lhs)
-    edgesToAdd = map (\e -> let info = G.edgeInfo e in e {G.edgeInfo = infoSetLocked info True} ) $ filter (\e -> G.edgeId e `notElem` (M.keys eM)) (G.edges lhs)
-    nodesGIsToAdd = M.filterWithKey (\k _ -> G.NodeId k `elem` (map G.nodeId nodesToAdd)) (fst lhsgi)
-    edgesGIsToAdd = M.filterWithKey (\k _ -> G.EdgeId k `elem` (map G.edgeId edgesToAdd)) (snd lhsgi)
-    newNacInfo = addToNAC nacdg (nM,eM) (nodesToAdd,edgesToAdd) (nodesGIsToAdd, edgesGIsToAdd)
+    nodesToAdd  = filter (\n -> (G.nodeId n `notElem` (M.keys nM)) && (infoOperation (G.nodeInfo n) /= Create)) (G.nodes rule)
+    edgesToAdd  = filter (\e -> (G.edgeId e `notElem` (M.keys eM)) && (infoOperation (G.edgeInfo e) /= Create)) (G.edges rule)
+    nodesToAdd' = map (\n -> let info = G.nodeInfo n in n {G.nodeInfo = infoSetLocked info True} ) nodesToAdd
+    edgesToAdd' = map (\e -> let info = G.edgeInfo e in e {G.edgeInfo = infoSetLocked info True} ) edgesToAdd
+    nodesGIsToAdd = M.filterWithKey (\k _ -> G.NodeId k `elem` (map G.nodeId nodesToAdd')) (fst rulegi)
+    edgesGIsToAdd = M.filterWithKey (\k _ -> G.EdgeId k `elem` (map G.edgeId edgesToAdd')) (snd rulegi)
+    newNacInfo = addToNAC nacdg (nM,eM) (nodesToAdd',edgesToAdd') (nodesGIsToAdd, edgesGIsToAdd)
 
 
 
