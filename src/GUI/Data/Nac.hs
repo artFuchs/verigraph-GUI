@@ -2,6 +2,8 @@ module GUI.Data.Nac (
   MergeMapping
 , NacInfo
 , mergeElements
+, applyNodeMerging
+, applyEdgeMerging
 , splitElements
 , updateEdgeEndsIds
 , addToGroup
@@ -84,32 +86,22 @@ mergeElementsInMapping mapping idsToMerge = mapping'
 applyNodeMerging :: [Node Info] -> M.Map NodeId NodeId -> [Node Info]
 applyNodeMerging nodes mapping = mergedNodes
   where
-    nodesGroups = M.elems $ foldr (addToGroup mapping nodeId) M.empty nodes
-    mergeGroup ns = Node
-                    (maximum $ map nodeId ns)
-                    (mergeInfos $ map (\n -> (fromEnum $ nodeId n, nodeInfo n)) ns)
-    splitNode n = Node
-                    (nodeId n)
-                    (infoSetLabel (nodeInfo n) $ infoOriginalLabel $ nodeInfo n)
-    mergeOrSplit ns = case ns of
-                        n:[] -> case length (M.filter (== (nodeId n)) mapping) > 1 of
-                          True -> n
-                          False -> splitNode n
-                        _ -> mergeGroup ns
-    mergedNodes = map mergeOrSplit nodesGroups
+    nodesGroups = foldr (addToGroup mapping nodeId) M.empty nodes
+    mergeGroup k ns = Node k (mergeInfos $ map (\n -> (fromEnum $ nodeId n, nodeInfo n)) ns)
+    mergedNodes = M.elems $ M.mapWithKey mergeGroup nodesGroups
 
 
 -- | Given a list of edges and a edge merge mapping, merge the list of edges according to the mapping
 applyEdgeMerging :: [Edge Info] -> M.Map EdgeId EdgeId -> [Edge Info]
 applyEdgeMerging edges mapping = mergedEdges
   where
-    edgesGroups = M.elems $ foldr (addToGroup mapping edgeId) M.empty edges
-    mergeGroup es = Edge
-                    (maximum $ map edgeId es)
+    edgesGroups = foldr (addToGroup mapping edgeId) M.empty edges
+    mergeGroup k es = Edge
+                    k
                     (sourceId $ head es)
                     (targetId $ head es)
                     (mergeInfos $ map (\e -> (fromEnum $ edgeId e, edgeInfo e)) es)
-    mergedEdges = map mergeGroup edgesGroups
+    mergedEdges = M.elems $ M.mapWithKey mergeGroup edgesGroups
 
 
 
@@ -137,6 +129,9 @@ mergeInfos infos = newInfo
 -- | Given a mapping of element keys to group keys , a function to extract a key from an element,
 -- the element and a mapping of keys to lists of elements (aka. groups),
 -- add the element to the group indicated by the mapping
+-- examples (syntax simplified for readability - using syntax of lists for Maps and using numbers for NodeIds):
+--    addToGroup [(1, 2), (2, 2)] nodeId (Node 1) []             = [(2,[Node 1])]
+--    addToGroup [(1, 2), (2, 2)] nodeId (Node 2) [(2,[Node 1])] = [(2,[Node 1, Node 2])]
 addToGroup:: Ord k => Eq k => M.Map k k -> (a->k) -> a -> M.Map k [a] -> M.Map k [a]
 addToGroup mapping getKey element groupMapping =
   let key = getKey element

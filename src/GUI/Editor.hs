@@ -1577,10 +1577,14 @@ propagateRuleChanges store (statesMap, currentPath, currentGraph, currentGraphTy
           lhsNGI = M.filterWithKey (\k _ -> NodeId k `elem` (nodeIds lhs)) (fst ruleGI)
           lhsEGI = M.filterWithKey (\k _ -> EdgeId k `elem` (edgeIds lhs)) (snd ruleGI)
           lhsgi = (lhsNGI,lhsEGI)
-
       -- change each nac according to the rule and store in the statesMap
       forM_ nacs $ \(index,(nacInfo)) -> do
-        let ((nac,nacgi), mergeM) = propagateRuleChanges' (lhs,lhsgi) nacInfo
+        putStrLn "nacInfo: "
+        print nacInfo
+        ((nac,nacgi), mergeM) <- propagateRuleChanges' (lhs,lhsgi) nacInfo
+        putStrLn "\npropagateRuleChanges' (lhs,lhsgi) nacInfo: "
+        print ((nac,nacgi), mergeM)
+        putStrLn ""
         statesM <- readIORef statesMap
         let nacSt = fromMaybe emptyState $ M.lookup index statesM
             nacSt' = stateSetGraph nac . stateSetGI nacgi $ nacSt
@@ -1596,8 +1600,11 @@ propagateRuleChanges store (statesMap, currentPath, currentGraph, currentGraphTy
 
 
 
-propagateRuleChanges' :: DiaGraph -> NacInfo -> NacInfo
-propagateRuleChanges' (lhs,lhsgi) ((nac,nacgi),(nm,em)) = ((nac6,nacgi3), (nm'',em''))
+propagateRuleChanges' :: DiaGraph -> NacInfo -> IO NacInfo
+propagateRuleChanges' (lhs,lhsgi) ((nac,nacgi),(nm,em)) = do
+  putStrLn "\nlhsNodesMerged"
+  print lhsNodesMerged
+  return ((nac6,nacgi3), (nm'',em''))
   where
     -- 1 remove from NAC elements no present on LHS
     nodesToRemove = filter (`notElem` (nodeIds lhs)) (M.keys nm)
@@ -1610,19 +1617,11 @@ propagateRuleChanges' (lhs,lhsgi) ((nac,nacgi),(nm,em)) = ((nac6,nacgi3), (nm'',
     edgeGIsToAdd = M.filterWithKey (\k _ -> EdgeId k `notElem` (M.keys em)) (snd lhsgi)
     ((nac'',nacgi''), (nm'',em'')) = addToNAC (nac',nacgi') (nm',em') (nodesToAdd,edgesToAdd) (nodeGIsToAdd,edgeGIsToAdd)
     -- 3 ensure the types of the elements of the rule and the nac corresponds
-    nodeTypesNLabels = map (\n -> let info = nodeInfo n in (nodeId n, infoType info, infoLabel info)) (nodes lhs)
-    edgeTypesNLabels = map (\e -> let info = edgeInfo e in (edgeId e, infoType info, infoLabel info)) (edges lhs)
-    nodeTypesNLabels' = map (\(Just id,t,l) -> (id,t,l)) $ filter (\(mid,t,l) -> isJust mid) $ map (\(id,t,l) -> (M.lookup id nm'', t,l) ) nodeTypesNLabels
-    edgeTypesNLabels' = map (\(Just id,t,l) -> (id,t,l)) $ filter (\(mid,t,l) -> isJust mid) $ map (\(id,t,l) -> (M.lookup id em'', t,l) ) edgeTypesNLabels
-    nac3 = foldr (\(n,t,l) g -> updateNodePayload n g (\info -> infoSetType info t)) nac'' nodeTypesNLabels'
-    nac4 = foldr (\(e,t,l) g -> updateEdgePayload e g (\info -> infoSetType info t)) nac3  edgeTypesNLabels'
     -- 4 ensure the labels of the elements of the rule and the nac corresponds
-    nac5 = foldr (\(n,t,l) g -> updateNodePayload n g (\info -> case infoLabel info of
-                                                                      Label str -> info {infoLabel = l}
-                                                                      LabelGroup lbls -> info )) nac4 nodeTypesNLabels'
-    nac6 = foldr (\(e,t,l) g -> updateEdgePayload e g (\info -> case infoLabel info of
-                                                                      Label str -> info {infoLabel = l}
-                                                                      LabelGroup lbls -> info )) nac5 edgeTypesNLabels'
+    lhsNodesMerged = map (\n -> let info = nodeInfo n in n { nodeInfo = infoSetLocked info True } ) $  applyNodeMerging (nodes lhs) nm''
+    lhsEdgesMerged = map (\e -> let info = edgeInfo e in e { edgeInfo = infoSetLocked info True } ) $  applyEdgeMerging (edges lhs) em''
+    nac5 = foldr (\n g -> updateNodePayload (nodeId n) g (\_ -> nodeInfo n)) nac'' lhsNodesMerged
+    nac6 = foldr (\e g -> updateEdgePayload (edgeId e) g (\_ -> edgeInfo e)) nac5 lhsEdgesMerged
     -- 5 ensure the layouts dimensions of the nodes are kept for simple elements
     nodeDims = map (\n -> (n, dims $ getNodeGI (fromEnum n) (fst lhsgi) ) ) (nodeIds lhs)
     nodeDims' = catMaybes $ map (\(n,dims) -> (\nid -> (nid,dims)) <$> (M.lookup n nm'') ) nodeDims
@@ -1633,6 +1632,15 @@ propagateRuleChanges' (lhs,lhsgi) ((nac,nacgi),(nm,em)) = ((nac6,nacgi3), (nm'',
                         nodeDims'
     nacNgi3 = foldr (\(n,ldims) ngiM -> M.update (\gi -> Just $ gi {dims = ldims}) (fromEnum n) ngiM)  (fst nacgi'') nodeDims
     nacgi3 = (nacNgi3, snd nacgi'')
+
+propagateRuleInfos ::  Graph Info Info -> Graph Info Info -> MergeMapping -> Graph Info Info
+propagateRuleInfos lhs nac (nm,em) = nac''
+  where
+    lhsNodesMerged = map (\n -> let info = nodeInfo n in n { nodeInfo = infoSetLocked info True } ) $  applyNodeMerging (nodes lhs) nm
+    lhsEdgesMerged = map (\e -> let info = edgeInfo e in e { edgeInfo = infoSetLocked info True } ) $  applyEdgeMerging (edges lhs) em
+    nac' = foldr (\n g -> updateNodePayload (nodeId n) g (\_ -> nodeInfo n)) nac lhsNodesMerged
+    nac'' = foldr (\e g -> updateEdgePayload (edgeId e) g (\_ -> edgeInfo e)) nac' lhsEdgesMerged
+
 
 
 
