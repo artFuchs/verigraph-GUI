@@ -1579,12 +1579,7 @@ propagateRuleChanges store (statesMap, currentPath, currentGraph, currentGraphTy
           lhsgi = (lhsNGI,lhsEGI)
       -- change each nac according to the rule and store in the statesMap
       forM_ nacs $ \(index,(nacInfo)) -> do
-        putStrLn "nacInfo: "
-        print nacInfo
-        ((nac,nacgi), mergeM) <- propagateRuleChanges' (lhs,lhsgi) nacInfo
-        putStrLn "\npropagateRuleChanges' (lhs,lhsgi) nacInfo: "
-        print ((nac,nacgi), mergeM)
-        putStrLn ""
+        let ((nac,nacgi), mergeM) = propagateRuleChanges' (lhs,lhsgi) nacInfo
         statesM <- readIORef statesMap
         let nacSt = fromMaybe emptyState $ M.lookup index statesM
             nacSt' = stateSetGraph nac . stateSetGI nacgi $ nacSt
@@ -1600,11 +1595,8 @@ propagateRuleChanges store (statesMap, currentPath, currentGraph, currentGraphTy
 
 
 
-propagateRuleChanges' :: DiaGraph -> NacInfo -> IO NacInfo
-propagateRuleChanges' (lhs,lhsgi) ((nac,nacgi),(nm,em)) = do
-  putStrLn "\nlhsNodesMerged"
-  print lhsNodesMerged
-  return ((nac6,nacgi3), (nm'',em''))
+propagateRuleChanges' :: DiaGraph -> NacInfo -> NacInfo
+propagateRuleChanges' (lhs,lhsgi) ((nac,nacgi),(nm,em)) = ((nac6,nacgi3), (nm'',em''))
   where
     -- 1 remove from NAC elements no present on LHS
     nodesToRemove = filter (`notElem` (nodeIds lhs)) (M.keys nm)
@@ -1630,7 +1622,7 @@ propagateRuleChanges' (lhs,lhsgi) ((nac,nacgi),(nm,em)) = do
                                         Just (Label str) -> True
                                         Just (LabelGroup lbls) -> False )
                         nodeDims'
-    nacNgi3 = foldr (\(n,ldims) ngiM -> M.update (\gi -> Just $ gi {dims = ldims}) (fromEnum n) ngiM)  (fst nacgi'') nodeDims
+    nacNgi3 = foldr (\(n,ldims) ngiM -> M.update (\gi -> Just $ gi {dims = ldims}) (fromEnum n) ngiM)  (fst nacgi'') nodeDims''
     nacgi3 = (nacNgi3, snd nacgi'')
 
 propagateRuleInfos ::  Graph Info Info -> Graph Info Info -> MergeMapping -> Graph Info Info

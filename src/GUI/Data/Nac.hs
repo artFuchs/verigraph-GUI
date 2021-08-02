@@ -53,11 +53,21 @@ mergeElements' ((g,gi),(nM,eM)) (nids, eids) = ((g',gi'),(nM',eM'))
   where
     nodesToKeep = filter (\n -> not . infoLocked . nodeInfo $ n) (nodes g)
     edgesToKeep = filter (\n -> not . infoLocked . edgeInfo $ n) (edges g)
-    mergedNodes = applyNodeMerging (nodes g) nM'
-    mergedEdges = applyEdgeMerging (edges g) eM'
+
+    -- "restore" elements ids to the lhs for merging
+    inverseNM = M.fromList $ map (\(a,b) -> (b,a)) $ M.toList nM
+    inverseEM = M.fromList $ map (\(a,b) -> (b,a)) $ M.toList eM
+    lhsNodes = Maybe.catMaybes $ map (\n -> (\nid -> n {nodeId = nid}) <$> M.lookup (nodeId n) inverseNM) (nodes g)
+    lhsEdges = Maybe.catMaybes $ map (\e -> (\eid -> e {edgeId = eid}) <$> M.lookup (edgeId e) inverseEM) (edges g)
+
     nM' = mergeElementsInMapping nM nids
     eM' = mergeElementsInMapping eM eids
-    newEdges = map (\e -> updateEdgeEndsIds e nM') (mergedEdges ++ edgesToKeep)
+    mergedNodes = applyNodeMerging lhsNodes nM'
+    mergedEdges = applyEdgeMerging lhsEdges eM'
+
+    nMAux = M.fromList . Maybe.catMaybes $ map (\(a,b) -> (\c -> (b,c)) <$> M.lookup a nM') (M.toList nM)
+    newEdges = map (\e -> updateEdgeEndsIds e nMAux) (mergedEdges ++ edgesToKeep)
+
     g' = fromNodesAndEdges (mergedNodes ++ nodesToKeep) newEdges
     ngi' = M.filterWithKey (\k _ -> k `elem` (map fromEnum $ nodeIds g')) (fst gi)
     egi' = M.filterWithKey (\k _ -> k `elem` (map fromEnum $ edgeIds g')) (snd gi)
@@ -83,6 +93,7 @@ mergeElementsInMapping mapping idsToMerge = mapping'
 -- applyMerging [Node 1 "1", Node 2 "2", Node 3 "3"] []                  = []
 -- applyMerging [Node 1 "1", Node 2 "2", Node 3 "3"] [(3,3)]             = [Node 3 "3"]
 -- applyMerging [Node 1 "1", Node 2 "2", Node 3 "3"] [(1,1),(2,2),(3,3)] = [Node 1 "1", Node 2 "2", Node 3 "3"]
+-- applyMerging [Node 3 "1 2 3"] [(1,3),(2,3),(3,3)] = [Node 3, " 1 2 3"]
 applyNodeMerging :: [Node Info] -> M.Map NodeId NodeId -> [Node Info]
 applyNodeMerging nodes mapping = mergedNodes
   where
@@ -181,10 +192,8 @@ splitElements' (l,lgi) ((nac,nacgi),(nM,eM)) (nidsToSplit,eidsToSplit) = newNacI
     nacEdgesInContext = edgesInContext nac
     inBetween src tgt = (infoLocked (nodeInfo src) || infoLocked (nodeInfo tgt)) && not (infoLocked (nodeInfo src) && infoLocked (nodeInfo tgt))
     edgesToKeep = map (\(_,e,_) -> e) $ filter (\((src,_),e,(tgt,_)) -> inBetween src tgt ) nacEdgesInContext
-    inverseNM = M.fromList . map (\(a,b) -> (b,a)) $ M.toList nM
-    edgesToKeep' = map (\e -> updateEdgeEndsIds e inverseNM) edgesToKeep
     edgesGIsToKeep = M.filterWithKey (\k _ -> k `elem` (map (fromEnum . edgeId) edgesToKeep)) (snd nacgi)
-    ((newNac,newNacgi),_) = addToNAC (nac'',nacgi'') (nM'',eM'') ([],edgesToKeep') (M.empty,edgesGIsToKeep)
+    ((newNac,newNacgi),_) = addToNAC (nac'',nacgi'') (M.empty,M.empty) ([],edgesToKeep) (M.empty,edgesGIsToKeep)
     newNacInfo = ((newNac,newNacgi), (nM'',eM''))
 
 
