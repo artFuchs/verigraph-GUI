@@ -529,7 +529,8 @@ startEditor window store
           -- case the selection is another type of graph, get the graph from the map
           (False, _) -> do
             -- update the current graph in the tree
-            storeCurrentES window store currentState storeIORefs nacIORefs
+            context <- Gtk.widgetGetPangoContext canvas
+            storeCurrentES window store currentState storeIORefs nacIORefs (Just context)
             -- update the current path
             writeIORef currentPath path
             -- load the selected graph from the tree
@@ -650,7 +651,8 @@ startEditor window store
         index <- Gtk.treeModelGetValue store iterR 2 >>= fromGValue :: IO Int32
         if gtype == 3 || gtype == 4
           then do
-            storeCurrentES window store currentState storeIORefs nacIORefs
+            context <- Gtk.widgetGetPangoContext canvas
+            storeCurrentES window store currentState storeIORefs nacIORefs (Just context)
             states <- readIORef graphStates
             let es = fromMaybe emptyState $ M.lookup index states
                 (lhs,_,_) = graphToRuleGraphs (stateGetGraph es)
@@ -1360,7 +1362,7 @@ confirmOperation window store changedProject currentState (nacsMergeMappings,cur
     Gtk.ResponseTypeCancel -> return False
     Gtk.ResponseTypeNo -> return True
     Gtk.ResponseTypeYes -> do
-      storeCurrentES window store currentState storeIORefs (nacsMergeMappings,currMergeMapping)
+      storeCurrentES window store currentState storeIORefs (nacsMergeMappings,currMergeMapping) Nothing
       structs <- getStructsToSave store graphStates nacsMergeMappings
       saveFile structs fileName window -- returns True if saved the file
     _ -> return False
@@ -1539,15 +1541,15 @@ createNode' currentState info autoNaming pos nshape color lcolor context = do
 
 -- auxiliar function to prepare the treeStore to save
 -- auxiliar function, add the current editor state in the graphStates list
-storeCurrentES :: Gtk.Window -> Gtk.TreeStore -> IORef GraphState -> StoreIORefs -> NacIORefs -> IO ()
-storeCurrentES window store currentState storeIORefs@(graphStates, currentPath, currentGraph, currentGraphType) (nacsMergeMappings,currMergeMapping) = do
+storeCurrentES :: Gtk.Window -> Gtk.TreeStore -> IORef GraphState -> StoreIORefs -> NacIORefs -> Maybe P.Context ->  IO ()
+storeCurrentES window store currentState storeIORefs@(graphStates, currentPath, currentGraph, currentGraphType) (nacsMergeMappings,currMergeMapping) mContext = do
   es <- readIORef currentState
   index <- readIORef currentGraph
   modifyIORef graphStates $ M.insert index es
   gt <- readIORef currentGraphType
   case gt of
     -- if the current graph is a rule, propagate the changes to the nacs
-    3 -> propagateRuleChanges store storeIORefs currentState nacsMergeMappings
+    3 -> propagateRuleChanges' store storeIORefs currentState nacsMergeMappings mContext
     -- if the current graph is a NAC, store the graph in the nacsMergeMappings
     4 -> do
       mMergeM <- readIORef currMergeMapping
@@ -1560,8 +1562,8 @@ storeCurrentES window store currentState storeIORefs@(graphStates, currentPath, 
 
 
 
-propagateRuleChanges :: Gtk.TreeStore -> StoreIORefs -> IORef GraphState -> IORef (M.Map Int32 MergeMapping) -> IO ()
-propagateRuleChanges store (statesMap, currentPath, currentGraph, currentGraphType) currentState nacsMergeMappings = do
+propagateRuleChanges' :: Gtk.TreeStore -> StoreIORefs -> IORef GraphState -> IORef (M.Map Int32 MergeMapping) -> Maybe P.Context -> IO ()
+propagateRuleChanges' store (statesMap, currentPath, currentGraph, currentGraphType) currentState nacsMergeMappings mContext = do
   gt <- readIORef currentGraphType
   if gt == 3 then do
     -- if the rule have nacs then get the nacs and
@@ -1579,67 +1581,21 @@ propagateRuleChanges store (statesMap, currentPath, currentGraph, currentGraphTy
           lhsgi = (lhsNGI,lhsEGI)
       -- change each nac according to the rule and store in the statesMap
       forM_ nacs $ \(index,(nacInfo)) -> do
-        let ((nac,nacgi), mergeM) = propagateRuleChanges' (lhs,lhsgi) nacInfo
+        let ((nac,nacgi), mergeM) = propagateRuleChanges (lhs,lhsgi) nacInfo
+
+        nacgi' <- case mContext of
+          Nothing -> return nacgi
+          Just c -> do
+            ngi' <- updateNodesGiDims (fst nacgi) nac c
+            return (ngi',snd nacgi)
+
         statesM <- readIORef statesMap
         let nacSt = fromMaybe emptyState $ M.lookup index statesM
-            nacSt' = stateSetGraph nac . stateSetGI nacgi $ nacSt
+            nacSt' = stateSetGraph nac . stateSetGI nacgi' $ nacSt
         modifyIORef statesMap $ M.insert index nacSt'
         modifyIORef nacsMergeMappings $ M.insert index mergeM
       return ()
   else return ()
-
-
-
-
-
-
-
-
-propagateRuleChanges' :: DiaGraph -> NacInfo -> NacInfo
-propagateRuleChanges' (lhs,lhsgi) ((nac,nacgi),(nm,em)) = ((nac6,nacgi3), (nm'',em''))
-  where
-    -- 1 remove from NAC elements no present on LHS
-    nodesToRemove = filter (`notElem` (nodeIds lhs)) (M.keys nm)
-    edgesToRemove = filter (`notElem` (edgeIds lhs)) (M.keys em)
-    ((nac',nacgi'),(nm',em')) = removeFromNAC ((nac,nacgi),(nm,em)) (nodesToRemove,edgesToRemove)
-    -- 2 add to NAC elements present on LHS but not on NAC
-    nodesToAdd = map (\n -> let info = nodeInfo n in n { nodeInfo = infoSetLocked info True } ) $ filter (\n -> nodeId n `notElem` (M.keys nm)) (nodes lhs)
-    edgesToAdd = map (\e -> let info = edgeInfo e in e { edgeInfo = infoSetLocked info True } ) $ filter (\e -> edgeId e `notElem` (M.keys em)) (edges lhs)
-    nodeGIsToAdd = M.filterWithKey (\k _ -> NodeId k `notElem` (M.keys nm)) (fst lhsgi)
-    edgeGIsToAdd = M.filterWithKey (\k _ -> EdgeId k `notElem` (M.keys em)) (snd lhsgi)
-    ((nac'',nacgi''), (nm'',em'')) = addToNAC (nac',nacgi') (nm',em') (nodesToAdd,edgesToAdd) (nodeGIsToAdd,edgeGIsToAdd)
-    -- 3 ensure the types of the elements of the rule and the nac corresponds
-    -- 4 ensure the labels of the elements of the rule and the nac corresponds
-    lhsNodesMerged = map (\n -> let info = nodeInfo n in n { nodeInfo = infoSetLocked info True } ) $  applyNodeMerging (nodes lhs) nm''
-    lhsEdgesMerged = map (\e -> let info = edgeInfo e in e { edgeInfo = infoSetLocked info True } ) $  applyEdgeMerging (edges lhs) em''
-    nac5 = foldr (\n g -> updateNodePayload (nodeId n) g (\_ -> nodeInfo n)) nac'' lhsNodesMerged
-    nac6 = foldr (\e g -> updateEdgePayload (edgeId e) g (\_ -> edgeInfo e)) nac5 lhsEdgesMerged
-    -- 5 ensure the layouts dimensions of the nodes are kept for simple elements
-    nodeDims = map (\n -> (n, dims $ getNodeGI (fromEnum n) (fst lhsgi) ) ) (nodeIds lhs)
-    nodeDims' = catMaybes $ map (\(n,dims) -> (\nid -> (nid,dims)) <$> (M.lookup n nm'') ) nodeDims
-    nodeDims'' = filter (\(n,dims) -> case (infoLabel . nodeInfo) <$> lookupNode n nac6 of
-                                        Nothing -> False
-                                        Just (Label str) -> True
-                                        Just (LabelGroup lbls) -> False )
-                        nodeDims'
-    nacNgi3 = foldr (\(n,ldims) ngiM -> M.update (\gi -> Just $ gi {dims = ldims}) (fromEnum n) ngiM)  (fst nacgi'') nodeDims''
-    nacgi3 = (nacNgi3, snd nacgi'')
-
-propagateRuleInfos ::  Graph Info Info -> Graph Info Info -> MergeMapping -> Graph Info Info
-propagateRuleInfos lhs nac (nm,em) = nac''
-  where
-    lhsNodesMerged = map (\n -> let info = nodeInfo n in n { nodeInfo = infoSetLocked info True } ) $  applyNodeMerging (nodes lhs) nm
-    lhsEdgesMerged = map (\e -> let info = edgeInfo e in e { edgeInfo = infoSetLocked info True } ) $  applyEdgeMerging (edges lhs) em
-    nac' = foldr (\n g -> updateNodePayload (nodeId n) g (\_ -> nodeInfo n)) nac lhsNodesMerged
-    nac'' = foldr (\e g -> updateEdgePayload (edgeId e) g (\_ -> edgeInfo e)) nac' lhsEdgesMerged
-
-
-
-
-
-
-
-
 
 
 afterSave :: Gtk.TreeStore

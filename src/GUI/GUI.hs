@@ -211,7 +211,7 @@ startGUI = do
 
   on tabs #switchPage $ \page pageNum -> do
     -- update statesMap with the information of editorState
-    Edit.storeCurrentES window editorStore editorState storeIORefs nacIORefs
+    Edit.storeCurrentES window editorStore editorState storeIORefs nacIORefs Nothing
     case pageNum of
       0 -> do  -- Editor tab
           gT <- readIORef currentGraphType
@@ -595,7 +595,7 @@ saveProjectBase saveF window editorCanvas fileName editorStore editorState
                 changesIORefs
                 (nacsMergeMappings,currMergeMapping) =
   do
-    Edit.storeCurrentES window editorStore editorState storeIORefs (nacsMergeMappings,currMergeMapping)
+    Edit.storeCurrentES window editorStore editorState storeIORefs (nacsMergeMappings,currMergeMapping) Nothing
     context <- Gtk.widgetGetPangoContext editorCanvas
     structs <- Edit.getStructsToSave editorStore statesMap nacsMergeMappings
     saved <- saveF structs fileName window

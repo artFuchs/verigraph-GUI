@@ -9,6 +9,7 @@ module GUI.Data.Nac (
 , addToGroup
 , addToNAC
 , removeFromNAC
+, propagateRuleChanges
 )where
 
 import qualified Data.Map as M
@@ -260,3 +261,33 @@ updatedEdgeId eid m = Maybe.fromMaybe eid $ M.lookup eid m
 
 updateEdgeEndsIds :: Edge a -> M.Map NodeId NodeId -> Edge a
 updateEdgeEndsIds e m = Edge (edgeId e) (updatedNodeId (sourceId e) m) (updatedNodeId (targetId e) m) (edgeInfo e)
+
+
+propagateRuleChanges :: DiaGraph -> NacInfo -> NacInfo
+propagateRuleChanges (lhs,lhsgi) ((nac,nacgi),(nm,em)) = ((nac6,nacgi''), (nm'',em''))
+  where
+    -- 1 remove from NAC elements no present on LHS
+    nodesToRemove = filter (`notElem` (nodeIds lhs)) (M.keys nm)
+    edgesToRemove = filter (`notElem` (edgeIds lhs)) (M.keys em)
+    ((nac',nacgi'),(nm',em')) = removeFromNAC ((nac,nacgi),(nm,em)) (nodesToRemove,edgesToRemove)
+    -- 2 add to NAC elements present on LHS but not on NAC
+    nodesToAdd = map (\n -> let info = nodeInfo n in n { nodeInfo = infoSetLocked info True } ) $ filter (\n -> nodeId n `notElem` (M.keys nm)) (nodes lhs)
+    edgesToAdd = map (\e -> let info = edgeInfo e in e { edgeInfo = infoSetLocked info True } ) $ filter (\e -> edgeId e `notElem` (M.keys em)) (edges lhs)
+    nodeGIsToAdd = M.filterWithKey (\k _ -> NodeId k `notElem` (M.keys nm)) (fst lhsgi)
+    edgeGIsToAdd = M.filterWithKey (\k _ -> EdgeId k `notElem` (M.keys em)) (snd lhsgi)
+    ((nac'',nacgi''), (nm'',em'')) = addToNAC (nac',nacgi') (nm',em') (nodesToAdd,edgesToAdd) (nodeGIsToAdd,edgeGIsToAdd)
+    -- 3 ensure the types of the elements of the rule and the nac corresponds
+    -- 4 ensure the labels of the elements of the rule and the nac corresponds
+    lhsNodesMerged = map (\n -> let info = nodeInfo n in n { nodeInfo = infoSetLocked info True } ) $  applyNodeMerging (nodes lhs) nm''
+    lhsEdgesMerged = map (\e -> let info = edgeInfo e in e { edgeInfo = infoSetLocked info True } ) $  applyEdgeMerging (edges lhs) em''
+    nac5 = foldr (\n g -> updateNodePayload (nodeId n) g (\_ -> nodeInfo n)) nac'' lhsNodesMerged
+    nac6 = foldr (\e g -> updateEdgePayload (edgeId e) g (\_ -> edgeInfo e)) nac5 lhsEdgesMerged
+
+
+propagateRuleInfos ::  Graph Info Info -> Graph Info Info -> MergeMapping -> Graph Info Info
+propagateRuleInfos lhs nac (nm,em) = nac''
+  where
+    lhsNodesMerged = map (\n -> let info = nodeInfo n in n { nodeInfo = infoSetLocked info True } ) $  applyNodeMerging (nodes lhs) nm
+    lhsEdgesMerged = map (\e -> let info = edgeInfo e in e { edgeInfo = infoSetLocked info True } ) $  applyEdgeMerging (edges lhs) em
+    nac' = foldr (\n g -> updateNodePayload (nodeId n) g (\_ -> nodeInfo n)) nac lhsNodesMerged
+    nac'' = foldr (\e g -> updateEdgePayload (edgeId e) g (\_ -> edgeInfo e)) nac' lhsEdgesMerged
