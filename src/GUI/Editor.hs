@@ -810,7 +810,7 @@ startEditor window store
             let nacInfo = ((stateGetGraph es, stateGetGI es), mergeM)
             let ((g,gi),mergeM') = mergeElements nacInfo (stateGetSelected es)
             ngiM' <- updateNodesGiDims (fst gi) g context
-            let gi' = (ngiM', snd gi)
+            gi' <- updateLoopPositions (ngiM', snd gi) g
             modifyIORef nacsMergeMappings $ M.insert index mergeM'
             writeIORef currMergeMapping (Just mergeM')
             modifyIORef currentState $ stateSetGraph g . stateSetGI gi'
@@ -1587,7 +1587,8 @@ propagateRuleChanges' store (statesMap, currentPath, currentGraph, currentGraphT
           Nothing -> return nacgi
           Just c -> do
             ngi' <- updateNodesGiDims (fst nacgi) nac c
-            return (ngi',snd nacgi)
+            updateLoopPositions (ngi',snd nacgi) nac
+
 
         statesM <- readIORef statesMap
         let nacSt = fromMaybe emptyState $ M.lookup index statesM

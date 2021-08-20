@@ -9,6 +9,7 @@ module GUI.Helper.GraphicalInfo(
 , updateNodesGiDims
 , renameSelected
 , setInfoExtra
+, updateLoopPositions
 )where
 
 import Data.GI.Base
@@ -116,3 +117,27 @@ setInfoExtra st (nm,em) context =
     nls' <- updateNodesGiDims nls g' context
     let layouts = (nls', els)
     return (stateSetGraph g' . stateSetGI layouts $ st)
+
+
+-- given
+updateLoopPositions :: GraphicalInfo -> Graph Info Info -> IO GraphicalInfo
+updateLoopPositions gi g =
+  do
+    let loops = filter (\e -> sourceId e == targetId e ) (edges g)
+        loopsByNodes = foldr (\e m -> M.insertWith (++) (sourceId e) [e] m ) (M.empty) loops
+    loopsgis <- forM (M.toList loopsByNodes) $ \(nid,es) ->
+      do
+        let ngi = getNodeGI (fromEnum nid) (fst gi)
+            h = case (shape ngi,dims ngi) of
+                  (NCircle,(w,h)) -> max w h
+                  (NSquare,(w,h)) -> max w h
+                  (NRect,(w,h)) -> h
+            es' = zip (map (fromEnum . edgeId) es) [1..]
+            egis = map (\(eid,k) ->
+                          let egi = getEdgeGI eid (snd gi)
+                              egi' = egi {cPosition = (-pi/2,h/2+30*k)}
+                          in (eid,egi')) es'
+        return egis
+    let loopsgis' = concat loopsgis
+        edgesgis = foldr (\(eid,egi) m -> M.insert eid egi m) (snd gi) loopsgis'
+    return (fst gi, edgesgis)
