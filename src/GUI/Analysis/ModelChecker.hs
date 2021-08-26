@@ -93,41 +93,53 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
   -- IORefs
   ssGraphState <- newIORef emptyState
   modelIORef <- newIORef Nothing
-  execThread <- newIORef Nothing
+  execThread <- newIORef Nothing -- thread to generate state space
+  constructThread <- newIORef Nothing -- thread to show state space
   goodStatesIORef <- newIORef Nothing
+
+  -- MVars
+  constructEndedMVar <- newEmptyMVar
+  timeMVar <- newEmptyMVar
 
   -- bindings ------------------------------------------------------------------------
   -- controls
-  constructEndedMVar <- newEmptyMVar
-  on genStateSpaceItem #activate $ do
-    eGG <- Edit.prepToExport store graphStatesIORef nacsInfoIORef
-    case eGG of
-      Left msg -> showError window (T.pack msg)
-      Right grammar -> do
-        timeMVar <- newEmptyMVar
-        ssIORef <- newIORef Nothing
-        initialIORef <- newIORef 0
-        constructThreadIORef <- newIORef Nothing
-        statesNum <- Gtk.spinButtonGetValueAsInt depthSpinBtn >>= return . fromIntegral
-        context <- Gtk.widgetGetPangoContext canvas
-        execT <- forkFinally
-                    (generateSSThread statusSpinner statusLabel canvas context timeMVar grammar statesNum ssIORef initialIORef ssGraphState modelIORef constructThreadIORef constructEndedMVar)
-                    (generateSSThreadEnd statusSpinner statusLabel execThread timeMVar constructThreadIORef constructEndedMVar)
-        writeIORef execThread (Just execT)
-
   on generateBtn #pressed $ Gtk.menuItemActivate genStateSpaceItem
+  on genStateSpaceItem #activate $ do
+    maybeT <- readIORef execThread
+    case maybeT of
+      Just t -> return ()
+      Nothing -> do
+        eGG <- Edit.prepToExport store graphStatesIORef nacsInfoIORef
+        case eGG of
+          Left msg -> showError window (T.pack msg)
+          Right grammar -> do
+            ssIORef <- newIORef Nothing
+            initialIORef <- newIORef 0
+            maxStates <- Gtk.spinButtonGetValueAsInt depthSpinBtn >>= return . fromIntegral
+            context <- Gtk.widgetGetPangoContext canvas
+            writeIORef ssGraphState emptyState
+            execT <- forkFinally
+                        (generateSSThread statusSpinner statusLabel canvas context timeMVar grammar maxStates ssIORef initialIORef ssGraphState modelIORef constructThread constructEndedMVar)
+                        (generateSSThreadEnd statusSpinner statusLabel execThread timeMVar constructThread constructEndedMVar)
+            writeIORef execThread (Just execT)
 
   on stopBtn #pressed $ do
     execT <- readIORef execThread
     case execT of
       Nothing -> return ()
-      Just t -> do
-        tryPutMVar constructEndedMVar False
-        swapMVar constructEndedMVar False
-        killThread t
+      Just et -> do
+        constructT <- readIORef constructThread
+        case constructT of
+          Nothing -> return ()
+          Just ct -> killThread ct
+        _ <- tryTakeMVar constructEndedMVar
+        putMVar constructEndedMVar False
+        killThread et
+        writeIORef constructThread Nothing
         writeIORef execThread Nothing
 
-  -- chekc formula
+
+  -- check formula
   let checkFormula = do
         text <- Gtk.entryGetText formulaEntry
         exprStr <- return $ T.unpack text
@@ -196,7 +208,7 @@ generateSSThread :: Gtk.Spinner -> Gtk.Label -> Gtk.DrawingArea -> P.Context
                  -> IORef GraphState -> IORef (Maybe (Logic.KripkeStructure String))
                  -> IORef (Maybe ThreadId) -> MVar Bool
                  -> IO ()
-generateSSThread statusSpinner statusLabel canvas context timeMVar grammar statesNum ssIORef initialIORef ssGraphState modelIORef constructThreadIORef constructEndedMVar = do
+generateSSThread statusSpinner statusLabel canvas context timeMVar grammar statesNum ssIORef initialIORef ssGraphState modelIORef constructThread constructEndedMVar = do
   -- get current time to compare and indicate the duration of the generation
   startTime <- Time.getCurrentTime
   putMVar timeMVar startTime
@@ -213,60 +225,12 @@ generateSSThread statusSpinner statusLabel canvas context timeMVar grammar state
 
   -- start thread to indicate the current status of the generation
   ssMVar <- newEmptyMVar
-  indicateThread <- forkIO $ constructStateSpace statusLabel ssMVar initialGraph canvas context ssGraphState modelIORef constructEndedMVar
-  writeIORef constructThreadIORef (Just indicateThread)
+  indicateThread <- forkIO $ showStateSpace statusLabel ssMVar initialGraph canvas context ssGraphState modelIORef constructEndedMVar
+  writeIORef constructThread (Just indicateThread)
 
   -- generate state
   exploreStateSpace mconf statesNum grammar initialGraph ssMVar
   return ()
-
-
--- indicate how many states were created
-constructStateSpace :: Gtk.Label -> MVar (Space Info Info) -> TG.TypedGraph Info Info
-               -> Gtk.DrawingArea -> P.Context
-               -> IORef GraphState -> IORef (Maybe (Logic.KripkeStructure String))
-               -> MVar Bool
-               -> IO ()
-constructStateSpace statusLabel ssMVar initialGraph canvas context ssGraphState modelIORef constructEndedMVar = do
-  -- wait till there is something
-  stateSpace <- takeMVar ssMVar
-  _ <- tryTakeMVar constructEndedMVar
-
-  let getInitialId = do
-          (idx,_) <- SS.putState initialGraph
-          return idx
-  let (idx,_) = SS.runStateSpaceBuilder getInitialId stateSpace
-
-  -- indicate the number of states in the current space
-  let s = IntMap.size $ SS.states stateSpace
-  Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
-    Gtk.labelSetText statusLabel (T.pack ("generating state space ( " ++ (show s) ++ " states)"))
-    return False
-
-  -- build the model to make logical verifications and
-  let model = SS.toKripkeStructure stateSpace
-  writeIORef modelIORef (Just model)
-
-  -- generate the graphState to show the space state
-  let st = generateGraphState [idx] stateSpace
-      (ngi,egi) = stateGetGI st
-      g = stateGetGraph st
-  ngi' <- updateNodesGiDims ngi g context
-  st' <- return $ stateSetGI (ngi',egi) st
-
-  -- update canvas
-  Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
-    writeIORef ssGraphState st'
-    Gtk.widgetQueueDraw canvas
-    return False
-
-  tryPutMVar constructEndedMVar True
-  constructStateSpace statusLabel ssMVar initialGraph canvas context ssGraphState modelIORef constructEndedMVar
-
-
-
-
-
 
 
 
@@ -276,25 +240,21 @@ generateSSThreadEnd :: Gtk.Spinner -> Gtk.Label
                     -> IORef (Maybe ThreadId)
                     -> MVar Bool
                     -> Either SomeException () -> IO ()
-generateSSThreadEnd statusSpinner statusLabel execThread timeMVar constructThreadIORef constructEndedMVar e = do
+generateSSThreadEnd statusSpinner statusLabel execThread timeMVar constructThread constructEndedMVar e = do
   ended <- takeMVar constructEndedMVar
 
   -- stop the thread that generates the graphState and model for the state space
-  constructThread <- readIORef constructThreadIORef
+  constructThread <- readIORef constructThread
   case constructThread of
     Nothing -> return ()
     Just t -> killThread t
 
-
   -- get current time to compare and indicate the duration of the generation
   endTime <- Time.getCurrentTime
-  emptyTime <- isEmptyMVar timeMVar
-  diff <- if emptyTime then
-            return (-1)
-          else do
-            startTime <- takeMVar timeMVar
-            return $ Time.diffUTCTime endTime startTime
-
+  startTime <- tryTakeMVar timeMVar
+  diff <- case startTime of
+            Nothing -> return (-1)
+            Just time -> return $ Time.diffUTCTime endTime time
 
   -- indicate that the generation ended
   Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
@@ -309,10 +269,52 @@ generateSSThreadEnd statusSpinner statusLabel execThread timeMVar constructThrea
   writeIORef execThread Nothing
 
 
+-- get the model indicate how many states were created
+showStateSpace :: Gtk.Label -> MVar (Space Info Info, Bool) -> TG.TypedGraph Info Info
+                     -> Gtk.DrawingArea -> P.Context
+                     -> IORef GraphState -> IORef (Maybe (Logic.KripkeStructure String))
+                     -> MVar Bool
+                     -> IO ()
+showStateSpace statusLabel ssMVar initialGraph canvas context ssGraphState modelIORef constructEndedMVar = do
+  -- wait till there is something
+  (stateSpace, lastIteration) <- takeMVar ssMVar
+
+  -- indicate the number of states in the current space
+  let s = IntMap.size $ SS.states stateSpace
+  Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
+    Gtk.labelSetText statusLabel (T.pack ("generating state space ( " ++ (show s) ++ " states)"))
+    return False
+
+  -- build the model to make logical verifications and
+  let model = SS.toKripkeStructure stateSpace
+  writeIORef modelIORef (Just model)
+
+  -- generate the graphState to show the space state
+  oldST <- readIORef ssGraphState
+  let st = generateStateSpaceVisualization stateSpace oldST
+      (ngi,egi) = stateGetGI st
+      g = stateGetGraph st
+  ngi' <- updateNodesGiDims ngi g context
+  st' <- return $ stateSetGI (ngi',egi) st
+
+  -- update canvas
+  Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
+    writeIORef ssGraphState st'
+    Gtk.widgetQueueDraw canvas
+    return False
+
+  if lastIteration then
+    putMVar constructEndedMVar True
+  else
+    showStateSpace statusLabel ssMVar initialGraph canvas context ssGraphState modelIORef constructEndedMVar
+
+
+
+
 
 -- create diagram
-generateGraphState :: [Int] -> Space Info Info -> GraphState
-generateGraphState initialStates stateSpace = st'
+generateStateSpaceVisualization :: Space Info Info -> GraphState -> GraphState
+generateStateSpaceVisualization stateSpace st = st''
   where
     addLevel levels (a,b) = case M.lookup a levels of
                               Nothing -> M.insert b 1 $ M.insert a 0 levels
@@ -339,8 +341,8 @@ generateGraphState initialStates stateSpace = st'
     nds = M.foldrWithKey addNodeInLevel [] levels
     ndsGIs = M.fromList $ map (\(n,pos) -> (fromEnum $ G.nodeId n, newNodeGI {position = pos, shape = NRect})) nds
     g = G.fromNodesAndEdges (map fst nds) []
-    st = stateSetGI (ndsGIs,M.empty) $ stateSetGraph g $ emptyState
-    st' = M.foldrWithKey (\(a,b) names st -> createEdge st Nothing (G.NodeId a) (G.NodeId b) (infoSetLabel Info.empty (init $ unlines names)) False ENormal (0,0,0)) st (SS.transitions stateSpace)
+    st' = stateSetGI (ndsGIs,M.empty) $ stateSetGraph g $ st
+    st'' = M.foldrWithKey (\(a,b) names st -> createEdge st Nothing (G.NodeId a) (G.NodeId b) (infoSetLabel Info.empty (init $ unlines names)) False ENormal (0,0,0)) st' (SS.transitions stateSpace)
 
 
 
@@ -349,7 +351,7 @@ generateGraphState initialStates stateSpace = st'
 
 
 -- state space generation -------------------------------------------------------------------------------------------------------------------------------------------------------
-exploreStateSpace :: DPO.MorphismsConfig (TGM.TypedGraphMorphism a b) -> Int -> DPO.Grammar (TGM.TypedGraphMorphism a b) -> TG.TypedGraph a b -> MVar (Space a b) -> IO (Int,Space a b)
+exploreStateSpace :: DPO.MorphismsConfig (TGM.TypedGraphMorphism a b) -> Int -> DPO.Grammar (TGM.TypedGraphMorphism a b) -> TG.TypedGraph a b -> MVar (Space a b, Bool) -> IO (Int,Space a b)
 exploreStateSpace conf maxDepth grammar graph ssMVar =
   let
     (productions, predicates) =
@@ -368,28 +370,20 @@ exploreStateSpace conf maxDepth grammar graph ssMVar =
     return (idx,spacex)
 
 
-
-breadthFirstSearchIO :: Int -> [(TG.TypedGraph a b)] -> Space a b -> MVar (Space a b) -> IO (Space a b)
+{-| Runs a breadth-first search, starting with a initial state space.
+    The number of states explored are limited by the given number.
+    At each iteration of the search, updates the MVar ssMVar with the current result so that the user can stop at any moment.
+-}
+breadthFirstSearchIO :: Int -> [(TG.TypedGraph a b)] -> Space a b -> MVar (Space a b, Bool) -> IO (Space a b)
 breadthFirstSearchIO 0 _ initialSpace ssMVar = return initialSpace
 breadthFirstSearchIO _ [] initialSpace ssMVar = return initialSpace
 breadthFirstSearchIO maxNum objs initialSpace ssMVar = do
   let ((newNum, newObjs), state) = SS.runStateSpaceBuilder (bfsStep maxNum objs) initialSpace
-  putMVar ssMVar state
+  putMVar ssMVar (state, null newObjs || newNum == 0)
   breadthFirstSearchIO newNum newObjs state ssMVar
 
 
-
-
--- | Runs a bread-first search on the state space, starting on the given object and limiting
--- the number of states to the given number.
-breadthFirstSearch :: forall morph. DPO.DPO morph => Int -> [Cat.Obj morph] -> SS.StateSpaceBuilder morph ()
-breadthFirstSearch maxNum [] = return ()
-breadthFirstSearch 0 _ = return ()
-breadthFirstSearch maxNum objs = do
-  (newNum,newObjs) <- bfsStep maxNum objs
-  breadthFirstSearch newNum newObjs
-
-
+-- | Step of a breadth-first search.
 bfsStep :: forall morph. DPO.DPO morph => Int -> [Cat.Obj morph] -> SS.StateSpaceBuilder morph (Int,[Cat.Obj morph])
 bfsStep maxNum (obj:node_list) = do
   (objIndex, _) <- SS.putState obj
@@ -408,11 +402,11 @@ expandSuccessors' maxNum (index, object) =
     prods <- SS.getProductions
     conf <- SS.getDpoConfig
     matches <- return . concat . map (\(name,prod) -> map (\match -> (name,prod,match)) (DPO.findApplicableMatches conf prod object)) $ prods
-    (_,states) <- foldM f (maxNum, []) matches
+    (_,states) <- foldM expand (maxNum, []) matches
     return states
   where
-    f :: (Int, [(Int, Cat.Obj morph, Bool)]) -> (String, Production morph, morph) -> SS.StateSpaceBuilder morph  (Int, [(Int, Cat.Obj morph, Bool)])
-    f (n,l) (name,prod,match) =
+    expand :: (Int, [(Int, Cat.Obj morph, Bool)]) -> (String, Production morph, morph) -> SS.StateSpaceBuilder morph  (Int, [(Int, Cat.Obj morph, Bool)])
+    expand (n,l) (name,prod,match) =
       if (n > 0) then
         do
           let object' = DPO.rewrite match prod
