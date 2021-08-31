@@ -113,6 +113,7 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
         case eGG of
           Left msg -> showError window (T.pack msg)
           Right grammar -> do
+            writeIORef goodStatesIORef Nothing
             ssIORef <- newIORef Nothing
             initialIORef <- newIORef 0
             maxStates <- Gtk.spinButtonGetValueAsInt depthSpinBtn >>= return . fromIntegral
@@ -123,6 +124,7 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
                         (generateSSThreadEnd statusSpinner statusLabel execThread timeMVar constructThread constructEndedMVar)
             writeIORef execThread (Just execT)
 
+  -- stop generation of state space
   on stopBtn #pressed $ do
     execT <- readIORef execThread
     case execT of
@@ -141,8 +143,8 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
 
   -- check formula
   let checkFormula = do
-        text <- Gtk.entryGetText formulaEntry
-        exprStr <- return $ T.unpack text
+        exprTxt <- Gtk.entryGetText formulaEntry
+        exprStr <- return $ T.unpack exprTxt
         case Logic.parseExpr "" exprStr of
           Left err -> do
             showError window $ T.pack ("Invalid CTL formula:\n" ++ (show err))
@@ -152,6 +154,11 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
               Nothing -> showError window $ "Must Generate State Space before checking a formula"
               Just model -> do
                 modelCheck model expr goodStatesIORef
+                gstates <- readIORef goodStatesIORef
+                let text = if (G.NodeId 0) `elem` fromMaybe [] gstates then
+                            T.pack ("The formula " ++ exprStr ++ " holds for the state space generated.")
+                           else
+                            T.pack ("The formula " ++ exprStr ++ " doesn't hold for the state space generated.")
                 Gtk.labelSetText statusLabel text
 
   on formulaCheckBtn #pressed $ checkFormula
