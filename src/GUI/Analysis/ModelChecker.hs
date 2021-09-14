@@ -153,12 +153,15 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
             case maybeModel of
               Nothing -> showError window $ "Must Generate State Space before checking a formula"
               Just model -> do
+                startTime <- Time.getCurrentTime
                 modelCheck model expr goodStatesIORef
+                endTime <- Time.getCurrentTime
                 gstates <- readIORef goodStatesIORef
+                let diff = Time.diffUTCTime endTime startTime
                 let text = if (G.NodeId 0) `elem` fromMaybe [] gstates then
-                            T.pack ("The formula " ++ exprStr ++ " holds for the state space generated.")
+                            T.pack ("The formula \"" ++ exprStr ++ "\" holds for the initial state. Formula checked in " ++ (show diff) ++ "seconds" )
                            else
-                            T.pack ("The formula " ++ exprStr ++ " doesn't hold for the state space generated.")
+                            T.pack ("The formula \"" ++ exprStr ++ "\" doesn't hold for the inital state. Formula checked in " ++ (show diff) ++ "seconds" )
                 Gtk.labelSetText statusLabel text
 
   on formulaCheckBtn #pressed $ checkFormula
