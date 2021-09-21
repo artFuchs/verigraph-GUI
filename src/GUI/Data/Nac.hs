@@ -32,26 +32,37 @@ type NacInfo = (DiaGraph, MergeMapping)
 
 
 -- | Given the current nacInfo and the selected elements of the graph, merge the selected elements.
---   First step is to ensure the slected elements all have the same type and have their info locked flag on (this means they have a mappin from the LHS)
---   Second step is to merge the elements, following the algorithm:
+--   First step is to ensure the selected elements are in the right conditions for merging and to group them according by their types.
+--   Second step is to merge the nodes, and third step is to merge the edges.
+--   The merging follows the algorithm:
 --    1. get the elements of the LHS
 --    2. merge the elements of LHS
 --    3. add the elements that are not in the lhs-nac morphism
 mergeElements :: NacInfo -> ([NodeId],[EdgeId]) -> NacInfo
-mergeElements ((g,gi),(nM,eM)) (nids, eids) = mergeElements' ((g,gi),(nM,eM)) (nidsToMerge, eidsToMerge)
+mergeElements ((g,gi),(nM,eM)) (nids, eids) = nacInfoFinal -- mergeElements' ((g,gi),(nM,eM)) (nidsToMerge, eidsToMerge)
   where
-    nidsToMerge = map (\n -> nodeId n) nodesToMerge
-    nodesToMerge = filter (\n -> infoLocked (nodeInfo n) && Just (infoType (nodeInfo n)) == nodeType) selectedNodes
+    nacInfoFinal = foldr (\eidsToMerge nacInfo -> mergeElements' nacInfo ([],eidsToMerge)) ((g',gi'),(nM',eM')) eidsGroups
+    ((g',gi'),(nM',eM')) = foldr (\nidsToMerge nacInfo -> mergeElements' nacInfo (nidsToMerge,[])) ((g,gi),(nM,eM)) nidsGroups
+
     selectedNodes = Maybe.catMaybes $ map (\id -> lookupNode id g) nids
-    nodeType = case selectedNodes of
-                [] -> Nothing
-                n:_ -> Just (infoType . nodeInfo $ n)
-    eidsToMerge = map (\e -> edgeId e) edgesToMerge
-    edgesToMerge = filter (\e -> infoLocked (edgeInfo e) && Just (infoType (edgeInfo e)) == edgeType) selectedEdges
-    selectedEdges = Maybe.catMaybes $ map (\id -> lookupEdge id g) eids
-    edgeType = case selectedEdges of
-                [] -> Nothing
-                e:_ -> Just (infoType . edgeInfo $ e)
+    nodeGroups = foldr (\n grps -> let t = infoType (nodeInfo n)
+                                   in M.insertWith (++) t [n] grps) M.empty selectedNodes
+    nodeGroups' = M.map (filter (infoLocked . nodeInfo)) nodeGroups
+    nodeGroups'' = M.filter (\grp -> length grp > 1) nodeGroups'
+    nidsGroups = M.elems $ M.map (map nodeId) nodeGroups''
+
+    selectedEdges = Maybe.catMaybes $ map (\id -> lookupEdgeInContext id g') eids
+    edgeGroups = foldr (\((src,_),e,(tgt,_)) grps ->
+                            let t = infoType (edgeInfo e)
+                                srcid = nodeId src
+                                tgtid = nodeId tgt
+                            in M.insertWith (++) (t,srcid,tgtid) [e] grps) M.empty selectedEdges
+    edgeGroups' = M.map (filter (infoLocked . edgeInfo)) edgeGroups
+    edgeGroups'' = M.filter (\grp -> length grp > 1) edgeGroups'
+    eidsGroups = M.elems $ M.map (map edgeId) edgeGroups''
+
+
+
 
 
 -- merge the elements
