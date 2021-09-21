@@ -31,7 +31,12 @@ type NacInfo = (DiaGraph, MergeMapping)
 
 
 
-
+-- | Given the current nacInfo and the selected elements of the graph, merge the selected elements.
+--   First step is to ensure the slected elements all have the same type and have their info locked flag on (this means they have a mappin from the LHS)
+--   Second step is to merge the elements, following the algorithm:
+--    1. get the elements of the LHS
+--    2. merge the elements of LHS
+--    3. add the elements that are not in the lhs-nac morphism
 mergeElements :: NacInfo -> ([NodeId],[EdgeId]) -> NacInfo
 mergeElements ((g,gi),(nM,eM)) (nids, eids) = mergeElements' ((g,gi),(nM,eM)) (nidsToMerge, eidsToMerge)
   where
@@ -49,9 +54,11 @@ mergeElements ((g,gi),(nM,eM)) (nids, eids) = mergeElements' ((g,gi),(nM,eM)) (n
                 e:_ -> Just (infoType . edgeInfo $ e)
 
 
+-- merge the elements
 mergeElements' :: NacInfo -> ([NodeId],[EdgeId]) -> NacInfo
 mergeElements' ((g,gi),(nM,eM)) (nids, eids) = ((g',gi'),(nM',eM'))
   where
+    -- identify elements exclusive in the NAC
     nodesToKeep = filter (\n -> not . infoLocked . nodeInfo $ n) (nodes g)
     edgesToKeep = filter (\n -> not . infoLocked . edgeInfo $ n) (edges g)
 
@@ -61,24 +68,28 @@ mergeElements' ((g,gi),(nM,eM)) (nids, eids) = ((g',gi'),(nM',eM'))
     lhsNodes = Maybe.catMaybes $ map (\n -> (\nid -> n {nodeId = nid}) <$> M.lookup (nodeId n) inverseNM) (nodes g)
     lhsEdges = Maybe.catMaybes $ map (\e -> (\eid -> e {edgeId = eid}) <$> M.lookup (edgeId e) inverseEM) (edges g)
 
+    -- merge the elements of LHS
     nM' = mergeElementsInMapping nM nids
     eM' = mergeElementsInMapping eM eids
     mergedNodes = applyNodeMerging lhsNodes nM'
     mergedEdges = applyEdgeMerging lhsEdges eM'
 
+    -- add the elements that are not in the lhs-nac morphism
     nMAux = M.fromList . Maybe.catMaybes $ map (\(a,b) -> (\c -> (b,c)) <$> M.lookup a nM') (M.toList nM)
     newEdges = map (\e -> updateEdgeEndsIds e nMAux) (mergedEdges ++ edgesToKeep)
-
     g' = fromNodesAndEdges (mergedNodes ++ nodesToKeep) newEdges
+
+    -- remove the graphical info of elements that are not in the new graph
     ngi' = M.filterWithKey (\k _ -> k `elem` (map fromEnum $ nodeIds g')) (fst gi)
     egi' = M.filterWithKey (\k _ -> k `elem` (map fromEnum $ edgeIds g')) (snd gi)
     gi' = (ngi',egi')
 
 
--- given an map of IDs to IDs and a target list, modify the mapping in a way that all the IDs that are mapped to an ID
--- in the target list become mapped to the maximun ID in the list
--- example: M.fromList [(1,1),(2,2),(3,3)] [1,3] = M.fromList [(1,3),(2,2),(3,3)]
---          M.fromList [(1,4),(2,5),(3,6)] [4,6] = M.fromList [(1,6),(2,5),(3,6)]
+-- | Given an map of IDs to IDs and a target list, modify the mapping in a way that all the IDs that are mapped to an ID
+--   in the target list become mapped to the maximun ID in the list
+--
+--   example: M.fromList [(1,1),(2,2),(3,3)] [1,3] = M.fromList [(1,3),(2,2),(3,3)]
+--            M.fromList [(1,4),(2,5),(3,6)] [4,6] = M.fromList [(1,6),(2,5),(3,6)]
 mergeElementsInMapping :: (Num n, Eq n, Ord n) => M.Map n n -> [n] -> M.Map n n
 mergeElementsInMapping mapping idsToMerge = mapping'
   where
@@ -104,6 +115,7 @@ applyNodeMerging nodes mapping = mergedNodes
 
 
 -- | Given a list of edges and a edge merge mapping, merge the list of edges according to the mapping
+-- similart to applyNodeMerging
 applyEdgeMerging :: [Edge Info] -> M.Map EdgeId EdgeId -> [Edge Info]
 applyEdgeMerging edges mapping = mergedEdges
   where
@@ -119,7 +131,7 @@ applyEdgeMerging edges mapping = mergedEdges
 
 -- | Merge a list of Info in one Info, with their labels separated by "\n ".
 --   The rest of the data of first Info (type, operation, locked) in the list is used for the result.
--- examples: mergeInfos ["1{1}","2{1}","3{1}"] = "1\n2\n3{1}"
+--   examples: mergeInfos ["1{1}","2{1}","3{1}"] = "1\n2\n3{1}"
 --           mergeInfos ["1{1}","2{2}","3{3}"] = "1\n2\n3{1}"
 mergeInfos :: [(Int,Info)] -> Info
 mergeInfos infos = newInfo
@@ -152,8 +164,12 @@ addToGroup mapping getKey element groupMapping =
     Just k' -> M.insertWith (++) k' [element] groupMapping
 
 
--- given a diagraph L (left side of the rule), a NAcInfo and the selected elements,
--- split the merged selected elements
+-- | given a diagraph L (left side of the rule), a NAcInfo and the selected elements, split the merged selected elements
+--   First step is to ensure the selected elements are merged
+--   Second step is to split the elements, following the algorithm:
+--    1. remove the elements that are merged and selected
+--    2. identify which elements in L are not present anymore in the mapping and add those elements to the NAC
+--    3. identify removed edges that were in between nodes of L and extra nodes on the NAC and add them
 splitElements :: DiaGraph -> NacInfo -> ([NodeId],[EdgeId]) -> NacInfo
 splitElements (l,lgi) ((nac,nacgi),(nM,eM)) (selN,selE) =
   if length nidsToSplit + length eidsToSplit > 0
@@ -165,12 +181,6 @@ splitElements (l,lgi) ((nac,nacgi),(nM,eM)) (selN,selE) =
     nidsToSplit = filter (`elem` mergedNids) selN
     eidsToSplit = filter (`elem` mergedEids) selE
 
-
--- given a diagraph L (left side of the rule), a NAcInfo and the elements to split,
--- split the merged selected elements using the following steps:
--- 1. remove the elements that are merged and selected
--- 2. identify which elements in L are not present anymore in the mapping and add those elements to the NAC
--- 3. identify removed edges that were in between nodes of L and extra nodes on the NAC and add them
 splitElements' :: DiaGraph -> NacInfo -> ([NodeId],[EdgeId]) -> NacInfo
 splitElements' (l,lgi) ((nac,nacgi),(nM,eM)) (nidsToSplit,eidsToSplit) = newNacInfo
   where
@@ -181,7 +191,7 @@ splitElements' (l,lgi) ((nac,nacgi),(nM,eM)) (nidsToSplit,eidsToSplit) = newNacI
     nacgi' = stateGetGI nacState'
     nM' = M.filter (`elem` (nodeIds nac')) nM
     eM' = M.filter (`elem` (edgeIds nac')) eM
-    -- identify elements in L that are not present in the mapping and add them to nac'
+    -- identify the elements in L that where removed and re-add them to the nac'
     removedLNids = filter (`notElem` M.keys nM') (nodeIds l)
     removedLEids = filter (`notElem` M.keys eM') (edgeIds l)
     nodesToAdd = map (\n -> let info = nodeInfo n in n { nodeInfo = infoSetLocked info True } ) $ filter (\n -> nodeId n `elem` removedLNids) (nodes l)
@@ -189,10 +199,8 @@ splitElements' (l,lgi) ((nac,nacgi),(nM,eM)) (nidsToSplit,eidsToSplit) = newNacI
     nodeGIsToAdd = M.filterWithKey (\k _ -> NodeId k `elem` removedLNids) (fst lgi)
     edgeGIsToAdd = M.filterWithKey (\k _ -> EdgeId k `elem` removedLEids) (snd lgi)
     ((nac'',nacgi''), (nM'',eM'')) = addToNAC (nac',nacgi') (nM',eM') (nodesToAdd,edgesToAdd) (nodeGIsToAdd,edgeGIsToAdd)
-    -- re-add edges that got removed from NAC and aren't in L (i.e. edges connecting one extra node to an LHS node)
-    nacEdgesInContext = edgesInContext nac
-    inBetween src tgt = (infoLocked (nodeInfo src) || infoLocked (nodeInfo tgt)) && not (infoLocked (nodeInfo src) && infoLocked (nodeInfo tgt))
-    edgesToKeep = map (\(_,e,_) -> e) $ filter (\((src,_),e,(tgt,_)) -> inBetween src tgt ) nacEdgesInContext
+    -- re-add the edges removed from NAC that aren't in L
+    edgesToKeep = filter (not . infoLocked . edgeInfo) (edges nac)
     edgesGIsToKeep = M.filterWithKey (\k _ -> k `elem` (map (fromEnum . edgeId) edgesToKeep)) (snd nacgi)
     ((newNac,newNacgi),_) = addToNAC (nac'',nacgi'') (M.empty,M.empty) ([],edgesToKeep) (M.empty,edgesGIsToKeep)
     newNacInfo = ((newNac,newNacgi), (nM'',eM''))
@@ -263,31 +271,23 @@ updateEdgeEndsIds :: Edge a -> M.Map NodeId NodeId -> Edge a
 updateEdgeEndsIds e m = Edge (edgeId e) (updatedNodeId (sourceId e) m) (updatedNodeId (targetId e) m) (edgeInfo e)
 
 
+
+-- | Given a LHS and a NAC, modify the NAC in a way o reflect changes that may have occurred in the LHS
 propagateRuleChanges :: DiaGraph -> NacInfo -> NacInfo
-propagateRuleChanges (lhs,lhsgi) ((nac,nacgi),(nm,em)) = ((nac6,nacgi''), (nm'',em''))
+propagateRuleChanges (lhs,lhsgi) ((nac,nacgi),(nm,em)) = ((nacFinal,nacgi2), (nm'',em''))
   where
-    -- 1 remove from NAC elements no present on LHS
+    -- 1 remove from NAC elements not present on LHS
     nodesToRemove = filter (`notElem` (nodeIds lhs)) (M.keys nm)
     edgesToRemove = filter (`notElem` (edgeIds lhs)) (M.keys em)
-    ((nac',nacgi'),(nm',em')) = removeFromNAC ((nac,nacgi),(nm,em)) (nodesToRemove,edgesToRemove)
-    -- 2 add to NAC elements present on LHS but not on NAC
+    ((nac1,nacgi1),(nm',em')) = removeFromNAC ((nac,nacgi),(nm,em)) (nodesToRemove,edgesToRemove)
+    -- 2 add to the NAC the elements present on LHS but not on the NAC
     nodesToAdd = map (\n -> let info = nodeInfo n in n { nodeInfo = infoSetLocked info True } ) $ filter (\n -> nodeId n `notElem` (M.keys nm)) (nodes lhs)
     edgesToAdd = map (\e -> let info = edgeInfo e in e { edgeInfo = infoSetLocked info True } ) $ filter (\e -> edgeId e `notElem` (M.keys em)) (edges lhs)
     nodeGIsToAdd = M.filterWithKey (\k _ -> NodeId k `notElem` (M.keys nm)) (fst lhsgi)
     edgeGIsToAdd = M.filterWithKey (\k _ -> EdgeId k `notElem` (M.keys em)) (snd lhsgi)
-    ((nac'',nacgi''), (nm'',em'')) = addToNAC (nac',nacgi') (nm',em') (nodesToAdd,edgesToAdd) (nodeGIsToAdd,edgeGIsToAdd)
-    -- 3 ensure the types of the elements of the rule and the nac corresponds
-    -- 4 ensure the labels of the elements of the rule and the nac corresponds
+    ((nac2,nacgi2), (nm'',em'')) = addToNAC (nac1,nacgi1) (nm',em') (nodesToAdd,edgesToAdd) (nodeGIsToAdd,edgeGIsToAdd)
+    -- 3 ensure the types and labels of the elements of the rule and the nac corresponds
     lhsNodesMerged = map (\n -> let info = nodeInfo n in n { nodeInfo = infoSetLocked info True } ) $  applyNodeMerging (nodes lhs) nm''
     lhsEdgesMerged = map (\e -> let info = edgeInfo e in e { edgeInfo = infoSetLocked info True } ) $  applyEdgeMerging (edges lhs) em''
-    nac5 = foldr (\n g -> updateNodePayload (nodeId n) g (\_ -> nodeInfo n)) nac'' lhsNodesMerged
-    nac6 = foldr (\e g -> updateEdgePayload (edgeId e) g (\_ -> edgeInfo e)) nac5 lhsEdgesMerged
-
-
-propagateRuleInfos ::  Graph Info Info -> Graph Info Info -> MergeMapping -> Graph Info Info
-propagateRuleInfos lhs nac (nm,em) = nac''
-  where
-    lhsNodesMerged = map (\n -> let info = nodeInfo n in n { nodeInfo = infoSetLocked info True } ) $  applyNodeMerging (nodes lhs) nm
-    lhsEdgesMerged = map (\e -> let info = edgeInfo e in e { edgeInfo = infoSetLocked info True } ) $  applyEdgeMerging (edges lhs) em
-    nac' = foldr (\n g -> updateNodePayload (nodeId n) g (\_ -> nodeInfo n)) nac lhsNodesMerged
-    nac'' = foldr (\e g -> updateEdgePayload (edgeId e) g (\_ -> edgeInfo e)) nac' lhsEdgesMerged
+    nac3 = foldr (\n g -> updateNodePayload (nodeId n) g (\_ -> nodeInfo n)) nac2 lhsNodesMerged
+    nacFinal = foldr (\e g -> updateEdgePayload (edgeId e) g (\_ -> edgeInfo e)) nac3 lhsEdgesMerged

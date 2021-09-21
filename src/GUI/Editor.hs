@@ -1548,7 +1548,7 @@ storeCurrentES window store currentState storeIORefs@(graphStates, currentPath, 
   modifyIORef graphStates $ M.insert index es
   gt <- readIORef currentGraphType
   case gt of
-    -- if the current graph is a rule, propagate the changes to the nacs
+    -- if the current graph is a rule, propagate the changes to it's NACs
     3 -> propagateRuleChanges' store storeIORefs currentState nacsMergeMappings mContext
     -- if the current graph is a NAC, store the graph in the nacsMergeMappings
     4 -> do
@@ -1561,7 +1561,7 @@ storeCurrentES window store currentState storeIORefs@(graphStates, currentPath, 
 
 
 
-
+-- | propagate the chanes made on a rule to it's NACs
 propagateRuleChanges' :: Gtk.TreeStore -> StoreIORefs -> IORef GraphState -> IORef (M.Map Int32 MergeMapping) -> Maybe P.Context -> IO ()
 propagateRuleChanges' store (statesMap, currentPath, currentGraph, currentGraphType) currentState nacsMergeMappings mContext = do
   gt <- readIORef currentGraphType
