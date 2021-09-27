@@ -285,20 +285,52 @@ updateEdgeEndsIds e m = Edge (edgeId e) (updatedNodeId (sourceId e) m) (updatedN
 
 -- | Given a LHS and a NAC, modify the NAC in a way o reflect changes that may have occurred in the LHS
 propagateRuleChanges :: DiaGraph -> NacInfo -> NacInfo
-propagateRuleChanges (lhs,lhsgi) ((nac,nacgi),(nm,em)) = ((nacFinal,nacgi2), (nm'',em''))
+propagateRuleChanges (lhs,lhsgi) ((nac,nacgi),(nm,em)) = ((nacFinal,nacgi3), (nm'',em''))
   where
     -- 1 remove from NAC elements not present on LHS
+    -- this may sound strange, but this way the morphism is kept
     nodesToRemove = filter (`notElem` (nodeIds lhs)) (M.keys nm)
     edgesToRemove = filter (`notElem` (edgeIds lhs)) (M.keys em)
     ((nac1,nacgi1),(nm',em')) = removeFromNAC ((nac,nacgi),(nm,em)) (nodesToRemove,edgesToRemove)
-    -- 2 add to the NAC the elements present on LHS but not on the NAC
+    -- 2 ensure the edges have the correct source and target
+    nEdgs = Maybe.catMaybes $ map (ensureCorrectEndings (nm',em') lhs) (edges nac1)
+    nac2 = fromNodesAndEdges (nodes nac1) nEdgs
+    -- 3 add to the NAC the elements present on LHS but not on the NAC
     nodesToAdd = map (\n -> let info = nodeInfo n in n { nodeInfo = infoSetLocked info True } ) $ filter (\n -> nodeId n `notElem` (M.keys nm)) (nodes lhs)
     edgesToAdd = map (\e -> let info = edgeInfo e in e { edgeInfo = infoSetLocked info True } ) $ filter (\e -> edgeId e `notElem` (M.keys em)) (edges lhs)
     nodeGIsToAdd = M.filterWithKey (\k _ -> NodeId k `notElem` (M.keys nm)) (fst lhsgi)
     edgeGIsToAdd = M.filterWithKey (\k _ -> EdgeId k `notElem` (M.keys em)) (snd lhsgi)
-    ((nac2,nacgi2), (nm'',em'')) = addToNAC (nac1,nacgi1) (nm',em') (nodesToAdd,edgesToAdd) (nodeGIsToAdd,edgeGIsToAdd)
-    -- 3 ensure the types and labels of the elements of the rule and the nac corresponds
+    ((nac3,nacgi3), (nm'',em'')) = addToNAC (nac2,nacgi1) (nm',em') (nodesToAdd,edgesToAdd) (nodeGIsToAdd,edgeGIsToAdd)
+    -- 4 ensure the types and labels of the elements of the rule and the nac corresponds
     lhsNodesMerged = map (\n -> let info = nodeInfo n in n { nodeInfo = infoSetLocked info True } ) $  applyNodeMerging (nodes lhs) nm''
     lhsEdgesMerged = map (\e -> let info = edgeInfo e in e { edgeInfo = infoSetLocked info True } ) $  applyEdgeMerging (edges lhs) em''
-    nac3 = foldr (\n g -> updateNodePayload (nodeId n) g (\_ -> nodeInfo n)) nac2 lhsNodesMerged
-    nacFinal = foldr (\e g -> updateEdgePayload (edgeId e) g (\_ -> edgeInfo e)) nac3 lhsEdgesMerged
+    nac4 = foldr (\n g -> updateNodePayload (nodeId n) g (\_ -> nodeInfo n)) nac3 lhsNodesMerged
+    nacFinal = foldr (\e g -> updateEdgePayload (edgeId e) g (\_ -> edgeInfo e)) nac4 lhsEdgesMerged
+
+
+ensureCorrectEndings :: MergeMapping -> Graph a b -> Edge b -> Maybe (Edge b)
+ensureCorrectEndings (nm,em) lhs e = e'
+  where
+    e' = case (eIdInL, srcIdInL, tgtIdInL) of
+      (Just eId, Just srcId, Just tgtId) ->
+            let elhs = Maybe.fromJust $ lookupEdge eId lhs
+            in if sourceId elhs == srcId && targetId elhs == tgtId
+                then Just e
+                else setIds (sourceId elhs) (targetId elhs)
+      (Just eId, _, _) ->
+            let elhs = Maybe.fromJust $ lookupEdge eId lhs
+            in setIds (sourceId elhs) (targetId elhs)
+      _ -> Nothing
+
+    reverseNM = M.fromList $ map (\(a,b) -> (b,a)) $ M.toList nm
+    reverseEM = M.fromList $ map (\(a,b) -> (b,a)) $ M.toList em
+    eIdInL = M.lookup (edgeId e) reverseEM
+    srcIdInL = M.lookup (sourceId e) reverseNM
+    tgtIdInL = M.lookup (targetId e) reverseNM
+
+    setIds orgSrcId orgTgtId =
+      let mSrcId = M.lookup orgSrcId nm
+          mTgtId = M.lookup orgTgtId nm
+      in case (mSrcId, mTgtId) of
+          (Just srcId, Just tgtId) -> Just (e {sourceId = srcId, targetId = tgtId})
+          _ -> Nothing
