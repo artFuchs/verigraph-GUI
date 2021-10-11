@@ -363,6 +363,7 @@ generateStateSpaceVisualization stateSpace st = st''
 -- state space generation -------------------------------------------------------------------------------------------------------------------------------------------------------
 exploreStateSpace :: DPO.MorphismsConfig (TGM.TypedGraphMorphism a b) -> Int -> DPO.Grammar (TGM.TypedGraphMorphism a b) -> TG.TypedGraph a b -> MVar (Space a b, Bool) -> IO (Int,Space a b)
 exploreStateSpace conf maxDepth grammar graph ssMVar =
+  {-# SCC "exploreStateSpace" #-}
   let
     (productions, predicates) =
       splitPredicates (DPO.productions grammar)

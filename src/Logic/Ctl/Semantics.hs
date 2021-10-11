@@ -12,6 +12,7 @@ import           Logic.Model
 -- | Obtain all states that satisfy the given CTL expression.
 satisfyExpr :: KripkeStructure String -> Expr -> [State String]
 satisfyExpr model expr =
+  {-# SCC "satisfyExpr" #-}
   statesByIds model (satisfyExpr' model expr)
 
 

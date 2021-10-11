@@ -60,13 +60,10 @@ executables:
     dependencies:
     - verigraph-GUI
 
-#tests:
-#  graph-editor-gi-gtk-test:
-#    main:                Spec.hs
-#    source-dirs:         test
-#    ghc-options:
-#    - -threaded
-#    - -rtsopts
-#    - -with-rtsopts=-N
-#    dependencies:
-#    - graph-editor-gi-gtk
+benchmarks:
+  modelchecker-benchmark:
+    main:             ModelChecker.hs
+    source-dirs:      benchmark
+    dependencies:
+    - verigraph-GUI
+    - tasty-bench

@@ -78,7 +78,7 @@
       </Graph>
     </HostGraph>
     <Rules>
-      <Rule id="2" name="Rule0" active="True">
+      <Rule id="2" name="segment" active="True">
         <Graph>
           <Nodes>
             <Node id="6">
