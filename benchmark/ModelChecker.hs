@@ -10,31 +10,71 @@ import qualified  Logic.Model                       as Logic
 
 main :: IO ()
 main = do
-  expr <- return ( Logic.Temporal (Logic.A (Logic.F (Logic.Atom "a"))))
-  [m1,m2,m3,m4,m5,m6] <- mapM notRandomModel [1,10,100,1000,10000,100000]
+  [e1,e2,e3,e4,e5,e6] <- return $ map nAF_a [1,10,100,1000,10000,100000]
+  [m1,m2,m3,m4,m5,m6] <- mapM binaryTree [1,10,100,1000,10000,100000]
+  [r1,r2,r3,r4,r5,r6] <- mapM randomTree [1,10,100,1000,10000,100000]
+  [d1,d2,d3,d4,d5,d6] <- mapM completeDigraph [1,10,100,1000,10000,100000]
   defaultMain
-    [ bgroup "SAT (AF a)"
-      [ bench "1 state" $ whnf (Logic.satisfyExpr m1) expr
-      , bench "10 states" $ whnf (Logic.satisfyExpr m2) expr
-      , bench "100 states" $ whnf (Logic.satisfyExpr m3) expr
-      , bench "1000 states" $ whnf (Logic.satisfyExpr m4) expr
-      , bench "10000 states" $ whnf (Logic.satisfyExpr m5) expr
-      --, bench "100000 states" $ whnf (Logic.satisfyExpr m6) expr
+    [ bgroup "SAT (AF a) - binary tree"
+      [ bench "1 state" $ whnf (Logic.satisfyExpr m1) e1
+      , bench "10 states" $ whnf (Logic.satisfyExpr m2) e1
+      , bench "100 states" $ whnf (Logic.satisfyExpr m3) e1
+      , bench "1000 states" $ whnf (Logic.satisfyExpr m4) e1
+      , bench "10000 states" $ whnf (Logic.satisfyExpr m5) e1
+      ]
+    , bgroup "SAT (AF a) - random tree"
+      [ bench "1 state" $ whnf (Logic.satisfyExpr r1) e1
+      , bench "10 states" $ whnf (Logic.satisfyExpr r2) e1
+      , bench "100 states" $ whnf (Logic.satisfyExpr r3) e1
+      , bench "1000 states" $ whnf (Logic.satisfyExpr r4) e1
+      , bench "10000 states" $ whnf (Logic.satisfyExpr r5) e1
+      ]
+    , bgroup "SAT (AF a) - complete digraph"
+      [ bench "1 state" $ whnf (Logic.satisfyExpr d1) e1
+      , bench "10 states" $ whnf (Logic.satisfyExpr d2) e1
+      , bench "100 states" $ whnf (Logic.satisfyExpr d3) e1
+      , bench "1000 states" $ whnf (Logic.satisfyExpr d4) e1
+      --, bench "10000 states" $ whnf (Logic.satisfyExpr d5) e1
+      ]
+    , bgroup "SAT (AFxN a) - 100 states - binary tree"
+      [ bench "AFx1" $ whnf (Logic.satisfyExpr m3) e1
+      , bench "AFx10" $ whnf (Logic.satisfyExpr m3) e2
+      , bench "AFx100" $ whnf (Logic.satisfyExpr m3) e3
+      , bench "AFx1000" $ whnf (Logic.satisfyExpr m3) e4
+      , bench "AFx10000" $ whnf (Logic.satisfyExpr m3) e5
+      , bench "AFx100000" $ whnf (Logic.satisfyExpr m3) e6
+      ]
+    , bgroup "SAT (AFxN a) - 100 states - random tree"
+      [ bench "AFx1" $ whnf (Logic.satisfyExpr r3) e1
+      , bench "AFx10" $ whnf (Logic.satisfyExpr r3) e2
+      , bench "AFx100" $ whnf (Logic.satisfyExpr r3) e3
+      , bench "AFx1000" $ whnf (Logic.satisfyExpr r3) e4
+      , bench "AFx10000" $ whnf (Logic.satisfyExpr r3) e5
+      , bench "AFx100000" $ whnf (Logic.satisfyExpr r3) e6
+      ]
+    , bgroup "SAT (AFxN a) - 100 states - complete digraph"
+      [ bench "AFx1" $ whnf (Logic.satisfyExpr d3) e1
+      , bench "AFx10" $ whnf (Logic.satisfyExpr d3) e2
+      , bench "AFx100" $ whnf (Logic.satisfyExpr d3) e3
+      , bench "AFx1000" $ whnf (Logic.satisfyExpr d3) e4
+      , bench "AFx10000" $ whnf (Logic.satisfyExpr d3) e5
+      --, bench "AFx100000" $ whnf (Logic.satisfyExpr d3) e6
       ]
     ]
   return ()
 
 
-
-
-
+nAF_a :: Int -> Logic.Expr
+nAF_a n = if n > 0
+            then Logic.Temporal (Logic.A (Logic.F (nAF_a (n-1))))
+            else Logic.Atom "a"
 
 
 -- create a model with a given number of states.
 -- The model will have a tree like structure.
 -- Random states will have the proposition "a"
-randomModel :: Int -> IO (Logic.KripkeStructure String)
-randomModel statesNum = do
+randomTree :: Int -> IO (Logic.KripkeStructure String)
+randomTree statesNum = do
   states <- forM [1..statesNum] $ \i -> do
     value <- randomRIO (1,100 :: Int)
     hasProposition <- return $ if i == 0 then False else value > 95 -- 5% of chances of having the proposition "a"
@@ -69,8 +109,8 @@ setLevelsR n ls = do
 -- each level will have MIN(rest of states, 2 * #states of previous level)
 -- the leaf states will have the preposition "a"
 -- this is probably best
-notRandomModel :: Int -> IO (Logic.KripkeStructure String)
-notRandomModel statesNum = do
+binaryTree :: Int -> IO (Logic.KripkeStructure String)
+binaryTree statesNum = do
   let levels = setLevels statesNum 0
   let fstWithProp = head (last levels)
   let states = map (\i -> Logic.State i (if i >= fstWithProp then ["a"] else [])) [1..statesNum]
@@ -87,3 +127,23 @@ setLevels n lv = l:(setLevels n'' (lv+1))
     n' = n - leng
     n'' = if n' < 0 then 0 else n'
     l = take (min n leng) [leng..]
+
+
+-- create a complete digraph with a given number of states
+-- one random state will have the preposition "a"
+completeDigraph :: Int -> IO (Logic.KripkeStructure String)
+completeDigraph statesNum = do
+  luckNum <- randomRIO (1,statesNum)
+  let states = map (\i -> Logic.State i (if i==luckNum then ["a"] else [])) [1..statesNum]
+  let pairs = concat $ map (\src -> map (\tgt -> (src,tgt)) $ deleteAt src [1..statesNum]) [1..statesNum]
+  let transitions = zipWith (\i (src,tgt) -> Logic.Transition i src tgt []) [1..] pairs
+  return $ Logic.KripkeStructure states transitions
+
+
+deleteAt :: Int -> [a] -> [a]
+deleteAt n l = l'
+  where
+    (a,b) = splitAt n l
+    l' = case b of
+          (c:cs) -> a ++ cs
+          []     -> a
