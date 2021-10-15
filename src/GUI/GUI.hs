@@ -132,10 +132,10 @@ startGUI = do
   execTabLabel <- new Gtk.Label [#label := "Execute"]
   Gtk.notebookAppendPage tabs execPane (Just execTabLabel)
 
-  analysisTabLabel <- new Gtk.Label [#label := "Analysis"]
+  analysisTabLabel <- new Gtk.Label [#label := "Critical Pair Analysis"]
   Gtk.notebookAppendPage tabs cpaBox (Just analysisTabLabel)
 
-  stateSpaceTabLabel <- new Gtk.Label [#label := "State Space"]
+  stateSpaceTabLabel <- new Gtk.Label [#label := "Model Checker"]
   Gtk.notebookAppendPage tabs ssBox (Just stateSpaceTabLabel)
 
 
