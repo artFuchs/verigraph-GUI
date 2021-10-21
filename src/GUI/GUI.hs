@@ -123,7 +123,7 @@ startGUI = do
 
   -- start analysis module
   cpaBox <- buildCpaBox window editStore statesMap nacInfoMap
-  ssBox <- buildStateSpaceBox window editStore genss focusedCanvas focusedStateIORef statesMap nacInfoMap
+  (ssBox, ssCanvas, ssGraphState) <- buildStateSpaceBox window editStore genss focusedCanvas focusedStateIORef statesMap nacInfoMap
 
   -- set the tabs
   editorTabLabel <- new Gtk.Label [#label := "Editor"]
@@ -209,9 +209,6 @@ startGUI = do
 
 
 
-
-
-
   on tabs #switchPage $ \page pageNum -> do
     -- update statesMap with the information of editorState
     Edit.storeCurrentES window editorState storeIORefs nacInfoMap
@@ -236,12 +233,17 @@ startGUI = do
             else do
               initState <- readIORef statesMap >>= return . fromMaybe emptyState . M.lookup 1
               writeIORef execState initState
-
       2 -> do  -- Analysis tab
           mapM_ (\m -> Gtk.widgetSetSensitive m False) editItems
           mapM_ (\m -> Gtk.widgetSetSensitive m False) viewItems
           writeIORef focusedCanvas $ Nothing
           writeIORef focusedStateIORef $ Nothing
+      3 -> do -- model checker
+          writeIORef focusedCanvas $ Just ssCanvas
+          writeIORef focusedStateIORef $ Just ssGraphState
+          mapM_ (\m -> Gtk.widgetSetSensitive m True) [sla,sln,sle]
+          mapM_ (\m -> Gtk.widgetSetSensitive m False) [del,udo,rdo,cpy,pst,cut,mrg,spt]
+          mapM_ (\m -> Gtk.widgetSetSensitive m True) viewItems
       _ -> return ()
 
   ----------------------------------------------------------------------------------------------------------------------------

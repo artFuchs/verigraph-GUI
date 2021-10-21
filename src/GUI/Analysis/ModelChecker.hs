@@ -69,7 +69,7 @@ buildStateSpaceBox :: Gtk.Window
                    -> IORef (Maybe (IORef GraphState))
                    -> IORef (M.Map Int32 GraphState)
                    -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
-                   -> IO (Gtk.Box)
+                   -> IO (Gtk.Box, Gtk.DrawingArea, IORef GraphState)
 buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORef graphStatesIORef nacsInfoIORef = do
   -- build -- box
   builder <- new Gtk.Builder []
@@ -201,7 +201,7 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
       writeIORef focusedStateIORef $ Just ssGraphState
       return False
 
-  return mainBox
+  return (mainBox, canvas, ssGraphState)
 
 
 
