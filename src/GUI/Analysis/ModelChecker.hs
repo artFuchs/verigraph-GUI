@@ -56,10 +56,10 @@ import            GUI.Helper.BasicCanvasCallbacks
 import            GUI.Helper.GraphicalInfo
 import            GUI.Helper.GrammarMaker
 import            GUI.Helper.FilePath
+import            GUI.Helper.Util
 import            GUI.Render.Render
 import            GUI.Render.GraphDraw
 
-import qualified  GUI.Editor as Edit
 
 -- User Interface -----------------------------------------------------------------------------------------
 buildStateSpaceBox :: Gtk.Window
@@ -111,7 +111,7 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
     case maybeT of
       Just t -> return ()
       Nothing -> do
-        eGG <- Edit.prepToExport store graphStatesIORef nacsInfoIORef
+        eGG <- convertGrammar store graphStatesIORef nacsInfoIORef
         case eGG of
           Left msg -> showError window (T.pack msg)
           Right grammar -> do

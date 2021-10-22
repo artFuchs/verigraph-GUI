@@ -5,14 +5,15 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 module GUI.Editor(
   startEditor
-, prepToExport
 , confirmOperation
 , storeCurrentES
+, afterSave
 )where
 
 import qualified GI.Gtk as Gtk
 import qualified GI.Gdk as Gdk
 import qualified GI.Pango as P
+import qualified GI.Cairo.Structs as Cairo
 import Data.GI.Base
 import Data.GI.Base.GValue
 import Data.GI.Base.GType
@@ -91,7 +92,7 @@ startEditor :: Gtk.Window -> Gtk.TreeStore
                -> StoreIORefs -> ChangesIORefs -> NacIORefs
                -> [Gtk.MenuItem] -> [Gtk.MenuItem] -> [Gtk.MenuItem]
                -> IORef (Maybe Gtk.DrawingArea) -> IORef (Maybe (IORef GraphState))
-               -> IO (Gtk.Paned, Gtk.DrawingArea, IORef GraphState)
+               -> IO (Gtk.Paned, Gtk.DrawingArea, Gtk.TreeView, IORef GraphState, IORef (M.Map Int32 ChangeStack), IORef (M.Map Int32 ChangeStack))
 startEditor window store
             fileName typeGraph
             storeIORefs changesIORefs nacIORefs
@@ -106,57 +107,18 @@ startEditor window store
       [circleRadioBtn, rectRadioBtn, squareRadioBtn] = radioShapes
       [normalRadioBtn, slashedRadioBtn, pointedRadioBtn] = radioStyles
   let
-    typeInspWidgets = (nameEntry, fillColorBtn, lineColorBtn, radioShapes, radioStyles)
+    typeInspWidgets = (nameEntry, fillColorBox, fillColorBtn, lineColorBtn, nodeShapeFrame, radioShapes, edgeStyleFrame, radioStyles)
     hostInspWidgets = (nameEntry, nodeTypeCBox, edgeTypeCBox)
     ruleInspWidgets = (nameEntry, nodeTypeCBox, edgeTypeCBox, operationCBox)
     nacInspWidgets  = (nameEntry, nodeTypeCBox, edgeTypeCBox, mergeBtn, splitBtn)
 
   -- create the treePanel and append it to the treeFrame
-  (treeBox, treeview, changesRenderer, nameRenderer, activeRenderer, createRBtn, removeBtn, createNBtn) <- buildTreePanel
+  (treeBox, treeview, nameRenderer, activeRenderer, createRBtn, removeBtn, createNBtn) <- buildTreePanel
   Gtk.containerAdd treeFrame treeBox
   Gtk.treeViewSetModel treeview (Just store)
   initTreeView treeview
 
-  changesCol <- Gtk.treeViewGetColumn treeview 0
-  namesCol <- Gtk.treeViewGetColumn treeview 1
-  activeCol <- Gtk.treeViewGetColumn treeview 2
 
-  -- set the information renderered by each column of the treeView
-  case changesCol of
-    Nothing -> return ()
-    Just col -> Gtk.treeViewColumnSetCellDataFunc col changesRenderer $ Just (\column renderer model iter -> do
-      changed <- Gtk.treeModelGetValue model iter 1 >>= fromGValue:: IO Bool
-      valid <- Gtk.treeModelGetValue model iter 5 >>= fromGValue :: IO Bool
-      renderer' <- castTo Gtk.CellRendererText renderer
-      case (renderer', changed, valid) of
-        (Just r, False, True)  -> set r [#text := ""  ]
-        (Just r, True, True)  -> set r [#text := "*" ]
-        (Just r, False, False) -> set r [#text := "!" ]
-        (Just r, True, False) -> set r [#text := "!*"]
-        _ -> return ()
-
-      )
-
-  case namesCol of
-    Nothing -> return ()
-    Just col -> do
-      #addAttribute col nameRenderer "text" 0
-      path <- Gtk.treePathNewFromIndices [0,0]
-      Gtk.treeViewExpandToPath treeview path
-      Gtk.treeViewSetCursor treeview path (Nothing :: Maybe Gtk.TreeViewColumn) False
-
-  case activeCol of
-    Nothing -> return ()
-    Just col -> Gtk.treeViewColumnSetCellDataFunc col activeRenderer $ Just (\column renderer model iter -> do
-      gType <- Gtk.treeModelGetValue model iter 3 >>= \gv -> (fromGValue gv :: IO Int32)
-      active <- Gtk.treeModelGetValue model iter 4 >>= \gv -> (fromGValue gv :: IO Bool)
-      renderer' <- castTo Gtk.CellRendererToggle renderer
-      case (renderer', gType) of
-        (Just r, 3) -> set r [#visible := True, #radio := False, #active := active, #activatable:=True]
-        (Just r, 4) -> set r [#visible := True, #radio := False, #active := active, #activatable:=True]
-        (Just r, _) -> set r [#visible := False]
-        _ -> return ()
-      )
 
   -- "unpack" menuItems
   let [newm,opn,svn,sva] = fileItems
@@ -211,6 +173,8 @@ startEditor window store
   currentNodeType     <- newIORef ( Nothing :: Maybe String)
   currentEdgeType     <- newIORef ( Nothing :: Maybe String)
 
+  let selectableTypesIORefs = (possibleNodeTypes, possibleEdgeTypes, currentNodeType, currentEdgeType)
+
 
   -- "unpack" IORefs
   let (graphStates,currentPath,currentGraph,currentGraphType) = storeIORefs
@@ -230,11 +194,15 @@ startEditor window store
   let updateByType = do
         gt <- readIORef currentGraphType
         case gt of
+          0 -> return ()
           1 -> updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
-          2 -> setCurrentValidFlag store currentState typeGraph currentPath
-          3 -> setCurrentValidFlag store currentState typeGraph currentPath
-          4 -> setCurrentValidFlag store currentState typeGraph currentPath
-          _ -> return ()
+          _ -> do
+            if gt == 4
+              then updateNacInfo nacInfoMap currentGraph mergeMapping currentState
+              else return ()
+            setCurrentValidFlag store currentState typeGraph currentPath
+
+
 
 
 
@@ -243,235 +211,70 @@ startEditor window store
   ----------------------------------------------------------------------------------------------------------------------------
 
   -- drawing event
-  on canvas #draw $ \context -> do
-    es <- readIORef currentState
-    sq <- readIORef squareSelection
-    t <- readIORef currentGraphType
-    case t of
-      0 -> return ()
-      1 -> renderWithContext context $ drawTypeGraph es sq
-      2 -> do
-        tg <- readIORef typeGraph
-        renderWithContext context $ drawHostGraph es sq tg
-      3 -> do
-        tg <- readIORef typeGraph
-        renderWithContext context $ drawRuleGraph es sq tg
-      4 -> do
-        tg <- readIORef typeGraph
-        mm <- readIORef mergeMapping >>= return . fromMaybe (M.empty, M.empty)
-        renderWithContext context $ drawNACGraph es sq tg mm
-      _ -> return ()
-    return False
+  on canvas #draw $ drawGraphByType currentState typeGraph squareSelection currentGraphType mergeMapping
 
   -- mouse button pressed on canvas
   -- set callback to select elements on canvas
   on canvas #buttonPressEvent $ basicCanvasButtonPressedCallback currentState oldPoint squareSelection canvas
-  -- additional callback to edit label on double-click and create new elements when right click
+  -- set callback to create nodes or edges
   on canvas #buttonPressEvent $ \eventButton -> do
     b <- get eventButton #button
-    x <- get eventButton #x
-    y <- get eventButton #y
-    ms <- get eventButton #state
     click <- get eventButton #type
-    es <- readIORef currentState
+    ms <- get eventButton #state
+
+    st <- readIORef currentState
+    mergeM <- readIORef mergeMapping
+
+    let doubleLeftClick = (b == 1) && (click == Gdk.EventType2buttonPress)
+    let rightButton = (b == 3) && not (Gdk.ModifierTypeControlMask `elem` ms)
+
+    created <- case (doubleLeftClick, rightButton) of
+        -- left button with double click -> rename element
+        (True,False) -> do
+          case stateGetSelected st of
+            ([],[]) -> return ()
+            _ -> Gtk.widgetGrabFocus nameEntry
+          return False
+        -- right button -> create a node or edge
+        (False,True) -> createNodesOrEdgesCallback canvas nameEntry autoLabelNCheckBtn autoLabelECheckBtn
+                               currentState currentGraph currentGraphType typeGraph mergeMapping
+                               currentNodeType possibleNodeTypes currentEdgeType possibleEdgeTypes
+                               currentShape currentStyle currentC currentLC
+                               eventButton
+        _ -> return False
+    -- if a node or edges were created then update the UI to indicate changes and possibly invalid flags
+    if created then
+      do
+        updateByType
+        indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM st
+    else
+      return ()
+
+    -- changed the edge type box displayed options based on which edges are selected
     gType <- readIORef currentGraphType
     tg <- readIORef typeGraph
-
     if gType > 1
-      then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es tg []
+      then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox currentState tg
       else return ()
 
-    let z = stateGetZoom es
-        (px,py) = stateGetPan es
-        (x',y') = (x/z - px, y/z - py)
-
-    case (b, click == Gdk.EventType2buttonPress) of
-      --double click with left button : rename selection
-      (1, True) -> do
-        let (n,e) = stateGetSelected es
-        if null n && null e
-          then return ()
-          else Gtk.widgetGrabFocus nameEntry
-      -- right button click: create nodes and insert edges
-      (3, False) -> do
-        let g = stateGetGraph es
-            gi = stateGetGI es
-            dstNode = selectNodeInPosition gi (x',y')
-        context <- Gtk.widgetGetPangoContext canvas
-        -- if current graph is a nac, then add mergeM to the undoStack
-        case gType of
-          4 -> do mergeM <- readIORef mergeMapping
-                  stackUndo undoStack redoStack currentGraph es mergeM
-          _ -> stackUndo undoStack redoStack currentGraph es Nothing
-        cShape <- readIORef currentShape
-        cColor <- readIORef currentC
-        cLColor <- readIORef currentLC
-        case (dstNode) of
-          -- no selected node: create node
-          Nothing -> case gType of
-              0 -> return ()
-              1 -> do
-                createNode' currentState I.empty True (x',y') cShape cColor cLColor context
-                setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-                updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
-              _ -> do
-                auto <- Gtk.toggleButtonGetActive autoLabelNCheckBtn
-                mntype <- readIORef currentNodeType
-                (t, shape, c, lc) <- case mntype of
-                  Nothing -> return ("", cShape, cColor, cLColor)
-                  Just t -> do
-                    possibleNT <- readIORef possibleNodeTypes
-                    let possibleNT' = M.map (\(gi,i) -> gi) possibleNT
-                        mngi = M.lookup t possibleNT'
-                    case mngi of
-                      Nothing -> return ("", cShape, cColor, cLColor)
-                      Just gi -> return (t, shape gi, fillColor gi, lineColor gi)
-                createNode' currentState (infoSetType I.empty t) auto (x',y') shape c lc context
-                setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-                setCurrentValidFlag store currentState typeGraph currentPath
-
-                -- if the current graph is a nac, then add the node to nacg
-                if gType == 4
-                  then do
-                    -- get the node and it's gi
-                    es <- readIORef currentState
-                    let g = stateGetGraph es
-                        gi = stateGetGI es
-                        addedNodeId = maximum (nodeIds g)
-                        addedNode = fromJust $ lookupNode addedNodeId g
-                        addedNodeGI = getNodeGI (fromEnum addedNodeId) (fst gi)
-                    -- get the nacg and add the node
-                    nacInfoM <- readIORef nacInfoMap
-                    index <- readIORef currentGraph
-                    let ((nacg,nacgi), mapping) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup index nacInfoM
-                        nacg' = insertNodeWithPayload addedNodeId (nodeInfo addedNode) nacg
-                        nacNgi' = M.insert (fromEnum addedNodeId) addedNodeGI (fst nacgi)
-                    modifyIORef nacInfoMap $ M.insert index ((nacg',(nacNgi', snd nacgi)), mapping)
-                  else return ()
-
-
-          -- one node selected: create edges targeting this node
-          Just nid -> case gType of
-            0 -> return ()
-            1 -> do
-              estyle <- readIORef currentStyle
-              color <- readIORef currentLC
-              modifyIORef currentState (\es -> createEdges es nid I.empty True estyle color)
-              setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-              updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
-            _ -> do
-              metype <- readIORef currentEdgeType
-              cEstyle <- readIORef currentStyle
-              cColor <- readIORef currentLC
-              auto <- Gtk.toggleButtonGetActive autoLabelECheckBtn
-              es <- readIORef currentState
-              tg <- readIORef typeGraph
-              pet <- readIORef possibleEdgeTypes
-              pet' <- return $ M.map fst pet
-
-              -- create edges infering their types
-              let sNids = fst $ stateGetSelected es
-                  g = stateGetGraph es
-                  srcNodes = catMaybes $ map (\nid -> G.lookupNode nid g) sNids
-                  tgtNode = fromJust $ G.lookupNode nid g
-                  tgtType = infoType $ nodeInfo tgtNode
-                  edgesTs = map (\src -> (src, infereEdgeType tg src tgtNode metype)) srcNodes
-                  -- auxiliar function that checks if the type mt, exist in possibleEdgeTypes.
-                    -- returns the correspondent triple (type, style, color)
-                  checkType mt srcType = case mt of
-                                        Nothing -> ("", cEstyle, cColor)
-                                        Just t -> let megi = M.lookup t pet'
-                                                  in case megi of
-                                                        Nothing -> ("", cEstyle, cColor)
-                                                        Just sm -> case M.lookup (srcType,tgtType) sm of
-                                                                      Nothing -> ("", cEstyle, cColor)
-                                                                      Just gi -> (t, style gi, color gi)
-                  (es', createdEdges) =
-                            foldr (\(src, mt) (es,eids) ->
-                                      let srcId = nodeId src
-                                          (t,estyle,color) = checkType mt (infoType $ nodeInfo src)
-                                          es' = createEdge es Nothing srcId nid (infoSetType I.empty t) auto estyle color
-                                          eids' = (snd $ stateGetSelected es') ++ eids
-                                      in (es',eids'))
-                              (es,[]) edgesTs
-
-              writeIORef currentState $ stateSetSelected ([],createdEdges) es'
-
-              if gType > 1
-                then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es' tg createdEdges
-                else return ()
-
-              setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-              setCurrentValidFlag store currentState typeGraph currentPath
-
-              -- if the current graph is a nac, then add the created edges in the nacg
-              if gType /= 4
-                then return ()
-                else do
-                  -- get the difference between the new graph and the old one
-                  newEs <- readIORef currentState
-                  let g = stateGetGraph newEs
-                      gi = stateGetGI newEs
-                      oldg = stateGetGraph es
-                      oldgi = stateGetGI es
-                      (g',gi') = diagrSubtract (g,gi) (oldg,oldgi)
-                  -- get nac information
-                  nacInfoM <- readIORef nacInfoMap
-                  index <- readIORef currentGraph
-                  let ((nacg,nacgi), (nM, eM)) = fromMaybe (DG.empty, (M.empty,M.empty)) $ M.lookup index nacInfoM
-                  -- insert nodes in nacg if they aren't already present
-                  let nacgWithNodes = foldr (\n g -> if nodeId n `elem` (nodeIds g)
-                                                  then g
-                                                  else insertNodeWithPayload (nodeId n) (nodeInfo n) g)
-                                        nacg (nodes g')
-                  -- insert created edges in nacg
-                  let nacg' = foldr (\e g -> insertEdgeWithPayload (edgeId e) (sourceId e) (targetId e) (edgeInfo e) g)
-                                nacgWithNodes (edges g')
-                  let nacEgi' = foldr (\(eid, egi) giM -> M.insert eid egi giM) (snd nacgi) (M.toList $ snd gi')
-                  -- modify mapping if g' have any node from lhs
-                  let nodesFromLHS = filter (\n -> infoLocked $ nodeInfo n) (nodes g')
-                      nM' = foldr (\n m -> if n `elem` (M.elems m) then m else M.insert n n m) nM (map nodeId nodesFromLHS)
-                  modifyIORef nacInfoMap $ M.insert index ((nacg', (fst nacgi, nacEgi')), (nM',eM))
-
-        Gtk.widgetQueueDraw canvas
-      _           -> return ()
-
-    updateInspector currentGraphType currentState currentC currentLC typeInspWidgets (fillColorBox, nodeShapeFrame, edgeStyleFrame)
-                    possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMapping
-                    hostInspWidgets ruleInspWidgets nacInspWidgets (nodeTypeBox, edgeTypeBox)
+    -- update inspector UI
+    updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
+                    currentC currentLC
+                    typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
+                    (nodeTypeBox, edgeTypeBox)
 
     return True
 
   -- mouse motion on canvas
   -- set callback to move elements or expand the square selection area
   on canvas #motionNotifyEvent $ basicCanvasMotionCallBack currentState oldPoint squareSelection canvas
-  -- add colateral actions such as modiffing the undo stack and setting the 'changeFlags'
-  on canvas #motionNotifyEvent $ \eventMotion -> do
-    ms <- get eventMotion #state
-    es <- readIORef currentState
-    gtype <- readIORef currentGraphType
-    let leftButton = Gdk.ModifierTypeButton1Mask `elem` ms
-        middleButton = Gdk.ModifierTypeButton2Mask `elem` ms || Gdk.ModifierTypeButton3Mask `elem` ms && Gdk.ModifierTypeControlMask `elem` ms
-        (sNodes, sEdges) = stateGetSelected es
-    case (leftButton, middleButton, sNodes, sEdges) of
-      (True, False, n, e) -> do
-        mv <- readIORef movingGI
-        if not mv
-          then do
-            writeIORef movingGI True
-            setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-            mergeM <- case gtype of
-                        4 -> readIORef mergeMapping
-                        _ -> return Nothing
-            stackUndo undoStack redoStack currentGraph es mergeM
-          else return ()
-      _ -> return ()
-    return True
+  -- if the left button is hold while moving, indicate changes and add the previous diagram to the undo stack
+  on canvas #motionNotifyEvent $ indicateChangesWhenMovingElements window store movingGI currentState mergeMapping undoStack redoStack storeIORefs changesIORefs
 
   -- mouse button release on canvas
   -- set callback to select elements that are inside squareSelection
   on canvas #buttonReleaseEvent $ basicCanvasButtonReleasedCallback currentState squareSelection canvas
-  -- colateral effects to selected elements
+  -- if there are elements selected by the squareSelection, then update the inspector and the edge type selection comboBox
   on canvas #buttonReleaseEvent $ \eventButton -> do
     b <- get eventButton #button
     gType <- readIORef currentGraphType
@@ -484,11 +287,13 @@ startEditor window store
         case (length sNodes > 0 || length sEdges > 0) of
           True -> do
             if gType > 1
-              then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es tg sEdges
+              then do
+                changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox currentState tg
               else return ()
-            updateInspector currentGraphType currentState currentC currentLC typeInspWidgets (fillColorBox, nodeShapeFrame, edgeStyleFrame)
-                            possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMapping
-                            hostInspWidgets ruleInspWidgets nacInspWidgets (nodeTypeBox, edgeTypeBox)
+            updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
+                            currentC currentLC
+                            typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
+                            (nodeTypeBox, edgeTypeBox)
           False -> return ()
       _ -> return ()
     return True
@@ -505,48 +310,10 @@ startEditor window store
       (False,False,'\65471') -> Gtk.widgetGrabFocus nameEntry
       -- 'delete' while the focus is on canvas - delete elements
       (False,False,'\65535') -> Gtk.menuItemActivate del
-      (_,_,'1') -> do
-        gType <- readIORef currentGraphType
-        if gType == 2
-          then do
-            cShape <- readIORef currentShape
-            cColor <- readIORef currentC
-            cLColor <- readIORef currentLC
-            auto <- Gtk.toggleButtonGetActive autoLabelNCheckBtn
-            context <- Gtk.widgetGetPangoContext canvas
-            mntype <- readIORef currentNodeType
-            (t, shape, c, lc) <- case mntype of
-              Nothing -> return ("", cShape, cColor, cLColor)
-              Just t -> do
-                possibleNT <- readIORef possibleNodeTypes
-                let possibleNT' = M.map (\(gi,i) -> gi) possibleNT
-                    mngi = M.lookup t possibleNT'
-                case mngi of
-                  Nothing -> return ("", cShape, cColor, cLColor)
-                  Just gi -> return (t, shape gi, fillColor gi, lineColor gi)
-
-            st <- readIORef currentState
-            let desiredNum = 1024
-                columsNum = 32
-                g = stateGetGraph st
-                firstId = fromEnum $ head $ newNodes g
-            forM_ [firstId..(firstId + desiredNum - 1)] $ \i -> do
-              let x = 50 * (((i - firstId) `mod` columsNum) + 1)
-                  y = 50 * (((i - firstId) `quot` columsNum) + 1)
-              nid <- createNode' currentState (infoSetType I.empty t) auto (fromIntegral x, fromIntegral y) shape c lc context
-              return ()
-
-            Gtk.widgetQueueDraw canvas
-
-            setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-            setCurrentValidFlag store currentState typeGraph currentPath
-
-
-          else return ()
-
       _ -> return ()
     return True
 
+  -- if the canvas is focused, then set this canvas to respond to the events of the view menu, like zoom in and zoom out
   on canvas #focusInEvent $ \event -> do
     writeIORef focusedCanvas $ Just canvas
     writeIORef focusedStateIORef $ Just currentState
@@ -556,193 +323,103 @@ startEditor window store
   -- Event Bindings for the Inspector Panel  ---------------------------------------------------------------------------------
   ----------------------------------------------------------------------------------------------------------------------------
 
+  -- if the user press enter, then change focus to the canvas so that the selected elements are renamed
   on nameEntry #keyPressEvent $ \eventKey -> do
     k <- get eventKey #keyval >>= return . chr . fromIntegral
-    --if it's Return or Enter (Numpad), then change the name of the selected elements
+    --if it's Return or Enter (Numpad), change focus to the canvas
     case k of
        '\65293' -> Gtk.widgetGrabFocus canvas
        '\65421' -> Gtk.widgetGrabFocus canvas
        _       -> return ()
     return False
 
-  -- when the entry lose focus
+  -- when the nameEntry lose focus, rename selected element(s)
   on nameEntry #focusOutEvent $ \event -> do
-    -- rename selected element(s)
     es <- readIORef currentState
-    stackUndo undoStack redoStack currentGraph es Nothing
-    setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-    name <- Gtk.entryGetText nameEntry >>= return . T.unpack
-    context <- Gtk.widgetGetPangoContext canvas
-    es <- readIORef currentState
-    es' <- renameSelected es name context
-
-    -- infere the types of edge(s) connected to the renamed node(s)
-    typesE <- readIORef possibleEdgeTypes
-    tg <- readIORef typeGraph
-    let
-      typesE' = M.map fst typesE
-      es'' = infereEdgesTypesAfterNodeChange es' tg typesE'
-
-    writeIORef currentState es''
-    Gtk.widgetQueueDraw canvas
-    updateInspector currentGraphType currentState currentC currentLC typeInspWidgets (fillColorBox, nodeShapeFrame, edgeStyleFrame)
-                    possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMapping
-                    hostInspWidgets ruleInspWidgets nacInspWidgets (nodeTypeBox, edgeTypeBox)
+    mergeM <- readIORef mergeMapping
+    renameSelectedCallback nameEntry canvas currentState possibleEdgeTypes typeGraph
+    indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
+    updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
+                    currentC currentLC
+                    typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
+                    (nodeTypeBox, edgeTypeBox)
     updateByType
-
-    gt <- readIORef currentGraphType
-    if gt == 4
-      then do
-        index <- readIORef currentGraph
-        nacInfoM <- readIORef nacInfoMap
-        es <- readIORef currentState
-        let (_,mapping) = fromMaybe (DG.empty,(M.empty,M.empty)) $ M.lookup index nacInfoM
-            g = stateGetGraph es
-            nacg = extractNacGraph g mapping
-            nacgi = extractNacGI g (stateGetGI es) mapping
-        modifyIORef nacInfoMap $ M.insert index ((nacg,nacgi),mapping)
-      else return ()
     return False
+
 
   -- select a fill color
   -- change the selection fill color and
   -- set the current fill color as the selected color
   on fillColorBtn #colorSet $ do
-    gtkcolor <- Gtk.colorChooserGetRgba fillColorBtn
-    es <- readIORef currentState
-    r <- get gtkcolor #red
-    g <- get gtkcolor #green
-    b <- get gtkcolor #blue
-    let color = (r,g,b)
-        (nds,edgs) = stateGetSelected es
-    writeIORef currentC color
-    if null nds
-      then return ()
-      else do
-        let (ngiM, egiM) = stateGetGI es
-            newngiM = M.mapWithKey (\k ngi -> if NodeId k `elem` nds then ngi {fillColor = color} else ngi) ngiM
-        stackUndo undoStack redoStack currentGraph es Nothing
-        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-        modifyIORef currentState (\es -> stateSetGI (newngiM, egiM) es)
-        Gtk.widgetQueueDraw canvas
-        updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    st <- readIORef currentState
+    setNewColor canvas fillColorBtn currentC False currentState
+    updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
 
   -- select a line color
   -- same as above, except it's for the line color
   on lineColorBtn #colorSet $ do
-    gtkcolor <- Gtk.colorChooserGetRgba lineColorBtn
-    es <- readIORef currentState
-    r <- get gtkcolor #red
-    g <- get gtkcolor #green
-    b <- get gtkcolor #blue
-    let color = (r,g,b)
-        (nds,edgs) = stateGetSelected es
-    writeIORef currentLC color
-    if null nds && null edgs
-      then return ()
-      else do
-        let (ngiM, egiM) = stateGetGI es
-            newngiM = M.mapWithKey (\k ngi -> if NodeId k `elem` nds then ngi {lineColor = color} else ngi) ngiM
-            newegiM = M.mapWithKey (\k egi -> if EdgeId k `elem` edgs then egi {color = color} else egi) egiM
-        stackUndo undoStack redoStack currentGraph es Nothing
-        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-        modifyIORef currentState (\es -> stateSetGI (newngiM, newegiM) es)
-        Gtk.widgetQueueDraw canvas
-        updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    st <- readIORef currentState
+    setNewColor canvas lineColorBtn currentLC True currentState
+    updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
+
 
   -- toogle the radio buttons for node shapes
   -- change the shape of the selected nodes and set the current shape for new nodes
   circleRadioBtn `on` #toggled $ do
-    writeIORef currentShape NCircle
-    es <- readIORef currentState
-    active <- get circleRadioBtn #active
-    let nds = fst $ stateGetSelected es
-        giM = fst $ stateGetGI es
-    if not active || M.null (M.filterWithKey (\k gi -> NodeId k `elem` nds && shape gi /= NCircle) giM)
-      then return ()
-      else do
-        stackUndo undoStack redoStack currentGraph es Nothing
-        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-        modifyIORef currentState (\es -> changeNodeShape es NCircle)
-        Gtk.widgetQueueDraw canvas
-        updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    st <- readIORef currentState
+    changed <- setNewShape circleRadioBtn canvas NCircle currentShape currentState
+    if changed then
+      do indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
+         updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    else return ()
 
   rectRadioBtn `on` #toggled $ do
-    writeIORef currentShape NRect
-    es <- readIORef currentState
-    active <- get rectRadioBtn #active
-    let nds = fst $ stateGetSelected es
-        giM = fst $ stateGetGI es
-    if not active || M.null (M.filterWithKey (\k gi -> NodeId k `elem` nds && shape gi /= NRect) giM)
-      then return ()
-      else do
-        stackUndo undoStack redoStack currentGraph es Nothing
-        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-        modifyIORef currentState (\es -> changeNodeShape es NRect)
-        Gtk.widgetQueueDraw canvas
-        updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    st <- readIORef currentState
+    changed <- setNewShape rectRadioBtn canvas NRect currentShape currentState
+    if changed then
+      do  indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
+          updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    else return ()
 
   squareRadioBtn `on` #toggled $ do
-    writeIORef currentShape NSquare
-    es <- readIORef currentState
-    active <- get squareRadioBtn #active
-    let nds = fst $ stateGetSelected es
-        giM = fst $ stateGetGI es
-    if not active || M.null (M.filterWithKey (\k gi -> NodeId k `elem` nds && shape gi /= NSquare) giM)
-      then return ()
-      else do
-        stackUndo undoStack redoStack currentGraph es Nothing
-        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-        modifyIORef currentState (\es -> changeNodeShape es NSquare)
-        Gtk.widgetQueueDraw canvas
-        updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    st <- readIORef currentState
+    changed <- setNewShape squareRadioBtn canvas NSquare currentShape currentState
+    if changed then
+      do  indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
+          updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    else return ()
+
+
+
+
 
   -- toogle the radio buttons for edge styles
   -- change the style of the selected edges and set the current style for new edges
   normalRadioBtn `on` #toggled $ do
-    writeIORef currentStyle ENormal
-    es <- readIORef currentState
-    active <- get normalRadioBtn #active
-    let edgs = snd $ stateGetSelected es
-        giM = snd $ stateGetGI es
-    if not active || M.null (M.filterWithKey (\k gi -> EdgeId k `elem` edgs && style gi /= ENormal) giM)
-      then return ()
-      else do
-        stackUndo undoStack redoStack currentGraph es Nothing
-        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-        modifyIORef currentState (\es -> changeEdgeStyle es ENormal)
-        Gtk.widgetQueueDraw canvas
-        updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    st <- readIORef currentState
+    changed <- setNewStyle normalRadioBtn canvas ENormal currentStyle currentState
+    if changed then
+      do  indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
+          updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    else return ()
 
   pointedRadioBtn `on` #toggled $ do
-    writeIORef currentStyle EPointed
-    es <- readIORef currentState
-    active <- get pointedRadioBtn #active
-    let edgs = snd $ stateGetSelected es
-        giM = snd $ stateGetGI es
-    if not active || M.null (M.filterWithKey (\k gi -> EdgeId k `elem` edgs && style gi /= EPointed) giM)
-      then return ()
-      else do
-        stackUndo undoStack redoStack currentGraph es Nothing
-        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-        modifyIORef currentState (\es -> changeEdgeStyle es EPointed)
-        Gtk.widgetQueueDraw canvas
-        updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    st <- readIORef currentState
+    changed <- setNewStyle pointedRadioBtn canvas EPointed currentStyle currentState
+    if changed then
+      do  indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
+          updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    else return ()
 
   slashedRadioBtn `on` #toggled $ do
-    writeIORef currentStyle ESlashed
-    es <- readIORef currentState
-    active <- get slashedRadioBtn #active
-    let edgs = snd $ stateGetSelected es
-        giM = snd $ stateGetGI es
-    if not active || M.null (M.filterWithKey (\k gi -> EdgeId k `elem` edgs && style gi /= ESlashed) giM)
-      then return ()
-      else do
-        stackUndo undoStack redoStack currentGraph es Nothing
-        setChangeFlags window store changedProject changedGraph currentPath currentGraph True
-        modifyIORef currentState (\es -> changeEdgeStyle es ESlashed)
-        Gtk.widgetQueueDraw canvas
-        updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    st <- readIORef currentState
+    changed <- setNewStyle slashedRadioBtn canvas ESlashed currentStyle currentState
+    if changed then
+      do  indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
+          updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+    else return ()
 
 
   -- choose a type in the type nodeTypeCBox for nodes
@@ -756,130 +433,75 @@ startEditor window store
         writeIORef currentNodeType $ Just typeInfo
       (False,False) -> do
         typeInfo <- Gtk.comboBoxTextGetActiveText nodeTypeCBox >>= return . T.unpack
-        typeEntry <- readIORef possibleNodeTypes >>= return . M.lookup typeInfo
-        case typeEntry of
+        selectedType <- readIORef possibleNodeTypes >>= return . M.lookup typeInfo
+        case selectedType of
           Nothing -> return ()
           Just (typeNGI,_) -> do
-            es <- readIORef currentState
-
-            let (sNids,sEids) = stateGetSelected es
-                g = stateGetGraph es
-                -- foreach selected node, change their types
-                acceptableSNids = filter (\nid -> case lookupNode nid g of
-                                                    Nothing -> False
-                                                    Just n -> not $ infoLocked (nodeInfo n)) sNids
-                giM = stateGetGI es
-                g' = foldr (\nid g -> updateNodePayload nid g (\info -> infoSetType info typeInfo)) g acceptableSNids
-                newNGI = foldr  (\nid giM -> let ngi = getNodeGI (fromEnum nid) giM
-                                             in M.insert (fromEnum nid) (typeNGI {position = position ngi, dims = dims ngi}) giM)
-                                (fst giM)
-                                acceptableSNids
-                es' = stateSetGraph g' . stateSetGI (newNGI, snd giM) . stateSetSelected (acceptableSNids,sEids) $ es
-
-                -- foreach changed node, change the type of the edges connected to it
-            typesE <- readIORef possibleEdgeTypes >>= return . M.map fst
-            tg <- readIORef typeGraph
-            let es'' = infereEdgesTypesAfterNodeChange es' tg typesE
-
-            if gt == 4
-              then do
-                nacInfoM <- readIORef nacInfoMap
-                index <- readIORef currentGraph
-                let ((ng,ngiM), nacM) = fromMaybe ((G.empty,(M.empty,M.empty)),(M.empty,M.empty)) $ M.lookup index nacInfoM
-                    newNG = extractNacGraph (stateGetGraph es'') nacM
-                    newNGIM = extractNacGI (stateGetGraph es'') (stateGetGI es'') nacM
-                modifyIORef nacInfoMap $ M.insert index ((newNG, newNGIM), nacM)
-              else return ()
-
-            writeIORef currentState es''
             writeIORef currentNodeType $ Just typeInfo
-            Gtk.widgetQueueDraw canvas
-            setCurrentValidFlag store currentState typeGraph currentPath
+            es <- readIORef currentState
+            mergeM <- readIORef mergeMapping
+            changed <- changeNodesType typeGraph possibleEdgeTypes currentState typeInfo typeNGI
+            if changed then do
+              if gt == 4
+                then updateNacInfo nacInfoMap currentGraph mergeMapping currentState
+                else return ()
+              indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
+              Gtk.widgetQueueDraw canvas
+            else return ()
+
 
   -- choose a type in the type comboBox for edges
   on edgeTypeCBox #changed $ do
     gt <- readIORef currentGraphType
-    if gt < 2
-      then return ()
-      else do
-        index <- Gtk.comboBoxGetActive edgeTypeCBox
-        if index == (-1)
-          then return ()
-          else do
-            es <- readIORef currentState
+    index <- Gtk.comboBoxGetActive edgeTypeCBox
+    case (index<0, gt<2) of
+      (True,_) -> return ()
+      (False,True) -> return ()
+      (False,False) -> do
             typeInfo <- Gtk.comboBoxTextGetActiveText edgeTypeCBox >>= return . T.unpack
             typeEntry <- readIORef possibleEdgeTypes >>= return . M.lookup typeInfo
             case typeEntry of
               Nothing -> return()
               Just (pET,_) -> do
-                let (sNids,sEids) = stateGetSelected es
-                    g = stateGetGraph es
-                    giM = stateGetGI es
-                    acceptableSEids = filter (\eid -> case lookupEdge eid g of
-                                                          Nothing -> False
-                                                          Just e -> not $ infoLocked (edgeInfo e)) sEids
-                    edgesInContext = catMaybes $ map (\eid -> lookupEdgeInContext eid g) acceptableSEids
-
-                    changeEdgeGI ((src,_),e,(tgt,_)) giM =
-                          let eid = fromEnum $ edgeId e
-                              egi = getEdgeGI eid giM
-                          in case M.lookup (infoType $ nodeInfo src, infoType $ nodeInfo tgt) pET of
-                                  Nothing -> giM
-                                  Just typeGI -> M.insert eid (typeGI {cPosition = cPosition egi}) giM
-                    newEGI = foldr changeEdgeGI (snd giM) edgesInContext
-                    newGI = (fst giM, newEGI)
-                    newGraph = foldr (\eid g -> updateEdgePayload eid g (\info -> infoSetType info typeInfo)) g acceptableSEids
-                case gt of
-                  4 -> do
-                    nacInfoM <- readIORef nacInfoMap
-                    index <- readIORef currentGraph
-                    let ((ng,ngiM), nacM) = fromMaybe ( (G.empty,(M.empty,M.empty)), (M.empty,M.empty) ) $ M.lookup index nacInfoM
-                        newNG = extractNacGraph newGraph nacM
-                        newNacGI = extractNacGI newGraph newGI nacM
-                        newNacdg = (newNG, newNacGI)
-                    modifyIORef nacInfoMap $ M.insert index (newNacdg, nacM)
-                  _ -> return ()
-                writeIORef currentState (stateSetGI newGI . stateSetGraph newGraph $ es)
                 writeIORef currentEdgeType $ Just typeInfo
-                Gtk.widgetQueueDraw canvas
-                setCurrentValidFlag store currentState typeGraph currentPath
+                es <- readIORef currentState
+                mergeM <- readIORef mergeMapping
+                changed <- changeEdgesType currentState typeInfo pET
+                if changed then
+                  do
+                    if gt == 4
+                      then updateNacInfo nacInfoMap currentGraph mergeMapping currentState
+                      else return ()
+                    indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
+                    Gtk.widgetQueueDraw canvas
+                else
+                  return ()
+
 
   -- choose a operaion in the operation comboBox
   on operationCBox #changed $ do
-    t <- readIORef currentGraphType
-    if t < 3
-      then return ()
-      else do
-        index <- Gtk.comboBoxGetActive operationCBox
-        if index < 0 || index > 2
-          then return ()
-          else do
-            es <- readIORef currentState
-            operationInfo <- return $ case index of
-              0 -> Preserve
-              1 -> Create
-              2 -> Delete
-            let (sNids,sEids) = stateGetSelected es
-                g = stateGetGraph es
-                gi = stateGetGI es
-                newGraph  = foldl (\g nid -> updateNodePayload nid g (\info -> infoSetOperation info operationInfo)) g sNids
-                newGraph' = foldl (\g eid -> updateEdgePayload eid g (\info -> infoSetOperation info operationInfo)) newGraph sEids
-            context <- Gtk.widgetGetPangoContext canvas
-            font <- case operationInfo == Preserve of
-              True -> return Nothing
-              False -> return $ Just "Sans Bold 10"
-            maybeNodedims <- forM sNids $ \nid -> do
-              let maybeNode = G.lookupNode nid newGraph'
-              case maybeNode of
-                Nothing -> return Nothing
-                Just n -> do
-                  dim <- getStringDims (infoVisible $ nodeInfo n) context font
-                  return $ Just (nid, dim)
-            let ndims = catMaybes maybeNodedims
-                newNgiM = foldl (\giM (nid, dim) -> let gi = (getNodeGI (fromEnum nid) giM) {dims = dim}
-                                                    in M.insert (fromEnum nid) gi giM) (fst gi) ndims
-            writeIORef currentState (stateSetGI (newNgiM, snd gi) . stateSetGraph newGraph' $ es)
-            Gtk.widgetQueueDraw canvas
+    gt <- readIORef currentGraphType
+    index <- Gtk.comboBoxGetActive operationCBox
+    case (index<0 || index > 2, gt/=3) of
+      (True,_) -> return ()
+      (_,True) -> return ()
+      (False,False) -> do
+          operationInfo <- return $ case index of
+            0 -> Preserve
+            1 -> Create
+            2 -> Delete
+          es <- readIORef currentState
+          mergeM <- readIORef mergeMapping
+          changed <- changeElementsOperation canvas currentState operationInfo
+          if changed then
+            do
+              if gt == 4
+                then updateNacInfo nacInfoMap currentGraph mergeMapping currentState
+                else return ()
+              indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
+              Gtk.widgetQueueDraw canvas
+          else
+            return ()
 
 
   -- merge or split buttons pressed: merge or split elements in nac
@@ -887,8 +509,21 @@ startEditor window store
   on splitBtn #clicked $ Gtk.menuItemActivate spt
 
   ----------------------------------------------------------------------------------------------------------------------------
-  -- Event Bindings for the TreeView  ----------------------------------------------------------------------------------------
+  -- Event Bindings for the TreeView and TreeStore ---------------------------------------------------------------------------
   ----------------------------------------------------------------------------------------------------------------------------
+
+  -- when the typeGraph row is changed or created, update the typeGraph
+  after store #rowChanged $ \path iter -> do
+    gid <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
+    t   <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
+    case t of
+      1 -> do
+        gt <- readIORef currentGraphType
+        if gt == t then do
+          updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+        else return ()
+      _ -> return ()
+
   -- event: changed the selected graph
   on treeview #cursorChanged $ do
     selection <- Gtk.treeViewGetSelection treeview
@@ -896,26 +531,24 @@ startEditor window store
     case sel of
       False -> return ()
       True -> do
-        -- get the current path for update
-        path <- Gtk.treeModelGetPath model iter >>= Gtk.treePathGetIndices >>= return . fromMaybe [0]
-        -- compare the selected graph with the current one
-        cIndex <- readIORef currentGraph
-        cGType <- readIORef currentGraphType
-        index <- Gtk.treeModelGetValue model iter 2 >>= fromGValue  :: IO Int32
         gType <- Gtk.treeModelGetValue model iter 3 >>= fromGValue  :: IO Int32
+        path <- Gtk.treeModelGetPath model iter >>= Gtk.treePathGetIndices >>= return . fromMaybe [0]
+        if gType /= 0 then do
+          -- update the current path
+          writeIORef currentPath path
+        else return ()
 
-        -- change the graph according to selection
+        cIndex <- readIORef currentGraph
+        index <- Gtk.treeModelGetValue model iter 2 >>= fromGValue  :: IO Int32
+        -- compare the selected graph with the current one and change the graph according to selection
         case (cIndex == index, gType) of
-          -- case the selection did not change, just update the path
-          (True, _)  -> writeIORef currentPath path
-
-          -- case the selection in the treeview is just a Topic, do nothing
+          -- case the index did not change or the graph is a topic, then do nothing
+          (True, _)  -> return ()
           (False, 0) -> return ()
 
           -- case the selection is a NAC, mount the graph with the LHS part, the additional elements and the merge information
           (False, 4) -> do
-            -- update the current path
-            writeIORef currentPath path
+
             -- update the current graph in the tree
             storeCurrentES window currentState storeIORefs nacInfoMap
 
@@ -972,85 +605,33 @@ startEditor window store
                 writeIORef mergeMapping Nothing
               Nothing -> return ()
 
-        -- auxiliar function to update nodes and edges elements according to the active typeGraph
-        let updateElements = do
-              pnt <- readIORef possibleNodeTypes
-              pet <- readIORef possibleEdgeTypes
-              es <- readIORef currentState
-              let g = stateGetGraph es
-                  (ngi, egi) = stateGetGI es
-                  fn node = (nid, infoType (nodeInfo node), getNodeGI nid ngi)
-                            where nid = fromEnum (nodeId node)
-                  gn (i,t,gi) = case M.lookup t pnt of
-                                  Nothing -> (i,gi)
-                                  Just (gi',_) -> (i, gi {fillColor = (fillColor gi'), shape = (shape gi')})
-                  fe ((src,_), edge, (tgt,_)) = (eid, eType, srcType, tgtType, getEdgeGI eid egi)
-                            where eid = fromEnum (edgeId edge)
-                                  eType = infoType (edgeInfo edge)
-                                  srcType = infoType $ nodeInfo src
-                                  tgtType = infoType $ nodeInfo tgt
-                  ge (i,et,currentState,tt,gi) = case M.lookup et pet of
-                                  Nothing -> (i,gi)
-                                  Just (sm,_) -> case M.lookup (currentState,tt) sm of
-                                    Nothing -> (i,gi)
-                                    Just gi' -> (i, gi' {cPosition = cPosition gi})
-                  newNodeGI = M.fromList . map gn . map fn $ nodes g
-                  newEdgeGI = M.fromList . map ge . map fe $ edgesInContext g
-              writeIORef currentState (stateSetGI (newNodeGI, newEdgeGI) es)
 
-        -- auxiliar function to set the GI of new elements to a default
-        let resetCurrentGI = do
-                writeIORef currentShape NCircle
-                writeIORef currentStyle ENormal
-                writeIORef currentC (1,1,1)
-                writeIORef currentLC (0,0,0)
+        -- set the GI of new elements to a default and update the elments of a graph according to the current typegraph
+        -- when the graph is not the typegraph
+        if gType > 1 then do
+          writeIORef currentShape NCircle
+          writeIORef currentStyle ENormal
+          writeIORef currentC (1,1,1)
+          writeIORef currentLC (0,0,0)
+          updateElements currentState possibleNodeTypes possibleEdgeTypes
+        else return ()
 
-        -- change the UI elements according to the selected graph
-        case gType of
-          1 -> do
-            #show layoutBox
-            #hide typeSelectionBox
-            mapM_ (\m -> Gtk.widgetSetSensitive m False) [mrg,spt]
-          2 -> do
-            #hide layoutBox
-            #show typeSelectionBox
-            #hide operationBox
-            #hide mergeBtn
-            #hide splitBtn
-            resetCurrentGI
-            updateElements
-            mapM_ (\m -> Gtk.widgetSetSensitive m False) [mrg,spt]
-          3 -> do
-            #hide layoutBox
-            #show typeSelectionBox
-            #show operationBox
-            #hide mergeBtn
-            #hide splitBtn
-            resetCurrentGI
-            updateElements
-            mapM_ (\m -> Gtk.widgetSetSensitive m False) [mrg,spt]
-          4 -> do
-            #hide layoutBox
-            #show typeSelectionBox
-            #hide operationBox
-            #show mergeBtn
-            #show splitBtn
-            resetCurrentGI
-            updateElements
-            mapM_ (\m -> Gtk.widgetSetSensitive m True) [mrg,spt]
-          _ -> return ()
+        -- draw the graph
+        Gtk.widgetQueueDraw canvas
 
-        if gType == 3 || gType == 4
-          then do
+        -- update the inspector pane according to the current graph type
+        changeInspector layoutBox typeSelectionBox operationBox mergeBtn splitBtn mrg spt gType
+
+        -- show the create Nac button and the remove button when the current graph is a Rule or Nac
+        if gType == 3 || gType == 4 then do
             #show createNBtn
             #show removeBtn
             case gType of
               3 -> set removeBtn [#label := T.pack "Remove Rule"]
               4 -> set removeBtn [#label := T.pack "Remove NAC"]
-          else do
+        else do
             #hide createNBtn
             #hide removeBtn
-        Gtk.widgetQueueDraw canvas
 
   -- pressed the 'new rule' button on the treeview area
   -- create a new Rule
@@ -1179,108 +760,6 @@ startEditor window store
   -- Event Bindings for the MenuItems  ---------------------------------------------------------------------------------------
   ----------------------------------------------------------------------------------------------------------------------------
 
-  -- File Menu Items ---------------------------------------------------------------------------------------------------------
-
-  -- new project
-  on newm #activate $ do
-    continue <- confirmOperation window store changedProject currentState nacInfoMap fileName storeIORefs
-    if continue
-      then do
-        Gtk.treeStoreClear store
-        initStore store
-        initTreeView treeview
-        writeIORef currentState emptyState
-        writeIORef undoStack $ M.fromList [(a, []) | a <- [0..2]]
-        writeIORef redoStack $ M.fromList [(a, []) | a <- [0..2]]
-        writeIORef fileName Nothing
-        writeIORef currentPath [0]
-        writeIORef currentGraphType 1
-        writeIORef currentGraph 0
-        writeIORef graphStates $ M.fromList [(a, emptyState) | a <- [0..2]]
-        writeIORef lastSavedState M.empty
-        writeIORef changedProject False
-        writeIORef changedGraph [False]
-        writeIORef nacInfoMap M.empty
-        writeIORef mergeMapping Nothing
-        set window [#title := "Verigraph-GUI"]
-        Gtk.widgetQueueDraw canvas
-      else return ()
-
-  -- open project
-  on opn #activate $ do
-    continue <- confirmOperation window store changedProject currentState nacInfoMap fileName storeIORefs
-    if continue
-      then do
-        mg <- loadFile window
-        case mg of
-          Nothing -> return ()
-          Just (forest,fn) -> do
-                writeIORef graphStates M.empty
-                Gtk.treeStoreClear store
-                let toGSandStates n = case n of
-                              Topic name -> ((name,False,0,0,False), (0,(-1,emptyState)))
-                              TypeGraph id name es -> ((name,False,id,1,True), (1, (id,es)))
-                              HostGraph id name es -> ((name,False,id,2,True), (2, (id,es)))
-                              RuleGraph id name es a -> ((name,False,id,3,a), (3, (id,es)))
-                              NacGraph id name _ -> ((name,False,id,4,True), (4,(id,emptyState)))
-                let toNACInfos n = case n of
-                              NacGraph id name nacInfo -> (id,nacInfo)
-                              _ -> (0,(DG.empty,(M.empty,M.empty)))
-                    infoForest = map (fmap toGSandStates) forest
-                    nameForest = map (fmap fst) infoForest
-                    statesForest = map (fmap snd) infoForest
-                    statesList = map snd . filter (\st-> fst st /= 0) . concat . map Tree.flatten $ statesForest
-                    nacInfos = filter (\ni -> fst ni /= 0). concat . map Tree.flatten $ map (fmap toNACInfos) forest
-                let putInStore (Tree.Node (name,c,i,t,a) fs) mparent = do
-                        iter <- Gtk.treeStoreAppend store mparent
-                        storeSetGraphStore store iter (name,c,i,t,a,True)
-                        case t of
-                          0 -> mapM_ (\n -> putInStore n (Just iter)) fs
-                          3 -> mapM_ (\n -> putInStore n (Just iter)) fs
-                          _ -> return ()
-                mapM (\n -> putInStore n Nothing) nameForest
-                let (i,es) = if length statesList > 0 then statesList!!0 else (0,emptyState)
-                writeIORef currentState es
-                writeIORef undoStack $ M.fromList [(i,[]) | i <- [0 .. (maximum $ map fst statesList)]]
-                writeIORef redoStack $ M.fromList [(i,[]) | i <- [0 .. (maximum $ map fst statesList)]]
-                let statesMap = M.fromList statesList
-                writeIORef graphStates statesMap
-                writeIORef lastSavedState $ M.map (\es -> (stateGetGraph es, stateGetGI es)) statesMap
-                writeIORef fileName $ Just fn
-                writeIORef currentGraph i
-                writeIORef currentPath [0]
-                writeIORef currentGraphType 1
-                writeIORef mergeMapping Nothing
-                writeIORef nacInfoMap $ M.fromList nacInfos
-                p <- Gtk.treePathNewFromIndices [0]
-                Gtk.treeViewExpandToPath treeview p
-                Gtk.treeViewSetCursor treeview p namesCol False
-                afterSave store window graphStates changesIORefs fileName
-                updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
-                Gtk.widgetQueueDraw canvas
-      else return ()
-
-  -- save project
-  on svn #activate $ do
-    storeCurrentES window currentState storeIORefs nacInfoMap
-    context <- Gtk.widgetGetPangoContext canvas
-    updateAllNacs store graphStates nacInfoMap context
-    structs <- getStructsToSave store graphStates nacInfoMap
-    saved <- saveFile structs fileName window
-    if saved
-      then do afterSave store window graphStates changesIORefs fileName
-      else return ()
-
-  -- save project as
-  sva `on` #activate $ do
-    storeCurrentES window currentState storeIORefs nacInfoMap
-    context <- Gtk.widgetGetPangoContext canvas
-    updateAllNacs store graphStates nacInfoMap context
-    structs <- getStructsToSave store graphStates nacInfoMap
-    saved <- saveFileAs structs fileName window
-    if saved
-      then afterSave store window graphStates changesIORefs fileName
-      else return ()
 
   -- Edit Menu ---------------------------------------------------------------------------------------------------------------
   -- delete item
@@ -1318,22 +797,17 @@ startEditor window store
         -- apply undo
         applyUndo undoStack redoStack currentGraph currentState mergeMapping
         -- reset nac diagraph
-        index <- readIORef currentGraph
         gtype <- readIORef currentGraphType
-        es <- readIORef currentState
-        let (g,gi) = (stateGetGraph es, stateGetGI es)
-        if gtype /= 4
-          then return ()
-          else do
-            mergeM <- readIORef mergeMapping
-            path <- readIORef currentPath
-            lhsdg <- getParentLHSDiaGraph store path graphStates
-            let nacdg' = diagrSubtract (g,gi) lhsdg
-                um = fromMaybe (M.empty,M.empty) mergeM
-            modifyIORef nacInfoMap (M.insert index (nacdg', um))
+        if gtype == 4
+          then updateNacInfo nacInfoMap currentGraph mergeMapping currentState
+          else return ()
+
         -- indicate changes
+        index <- readIORef currentGraph
+        es <- readIORef currentState
         sst <- readIORef lastSavedState
-        let x = fromMaybe DG.empty $ M.lookup index sst
+        let (g,gi) = (stateGetGraph es, stateGetGI es)
+            x = fromMaybe DG.empty $ M.lookup index sst
         setChangeFlags window store changedProject changedGraph currentPath currentGraph $ not (isDiaGraphEqual (g,gi) x)
         Gtk.widgetQueueDraw canvas
         updateByType
@@ -1348,21 +822,15 @@ startEditor window store
         -- apply redo
         applyRedo undoStack redoStack currentGraph currentState mergeMapping
         -- change nac diagraph
-        index <- readIORef currentGraph
         gtype <- readIORef currentGraphType
+        if gtype == 4
+          then updateNacInfo nacInfoMap currentGraph mergeMapping currentState
+          else return ()
+        -- indicate changes
+        index <- readIORef currentGraph
+        sst <- readIORef lastSavedState
         es <- readIORef currentState
         let (g,gi) = (stateGetGraph es, stateGetGI es)
-        if gtype /= 4
-          then return ()
-          else do
-            mergeM <- readIORef mergeMapping
-            path <- readIORef currentPath
-            lhsdg <- getParentLHSDiaGraph store path graphStates
-            let nacdg' = diagrSubtract (g,gi) lhsdg
-                rm = fromMaybe (M.empty,M.empty) mergeM
-            modifyIORef nacInfoMap (M.insert index (nacdg', rm))
-        -- indicate changes
-        sst <- readIORef lastSavedState
         let x = fromMaybe DG.empty $ M.lookup index sst
         setChangeFlags window store changedProject changedGraph currentPath currentGraph $ not (isDiaGraphEqual (g,gi) x)
         Gtk.widgetQueueDraw canvas
@@ -1433,9 +901,10 @@ startEditor window store
             writeIORef currentState $ es'
             stackUndo undoStack redoStack currentGraph es (Just $ snd nacInfo)
             Gtk.widgetQueueDraw canvas
-            updateInspector currentGraphType currentState currentC currentLC typeInspWidgets (fillColorBox, nodeShapeFrame, edgeStyleFrame)
-                            possibleNodeTypes possibleSelectableEdgeTypes currentNodeType currentEdgeType mergeMapping
-                            hostInspWidgets ruleInspWidgets nacInspWidgets (nodeTypeBox, edgeTypeBox)
+            updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
+                            currentC currentLC
+                            typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
+                            (nodeTypeBox, edgeTypeBox)
 
   -- split elements in NACs
   on spt #activate $ do
@@ -1466,8 +935,7 @@ startEditor window store
         stackUndo undoStack redoStack currentGraph es (Just (nM,eM))
         Gtk.widgetQueueDraw canvas
 
-  return (mainPane, canvas, currentState)
-
+  return (mainPane, canvas, treeview, currentState, undoStack, redoStack)
 
 
 
@@ -1475,15 +943,496 @@ startEditor window store
 
 
 ---------------------------------------------------------------------------------------------------------------------------------
---  Exported Callbacks  ---------------------------------------------------------------------------------------------------------
+-- Auxiliar functions for the canvas callbacks ----------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------------------------------------
 
+-- callback used to display a
+drawGraphByType :: IORef GraphState
+                -> IORef (Graph Info Info)
+                -> IORef (Maybe (Double,Double,Double,Double) )
+                -> IORef Int32
+                -> IORef (Maybe MergeMapping)
+                -> Cairo.Context
+                -> IO Bool
+drawGraphByType currentState typeGraph squareSelection currentGraphType mergeMapping context =
+  do
+    es <- readIORef currentState
+    sq <- readIORef squareSelection
+    t <- readIORef currentGraphType
+    case t of
+      1 -> renderWithContext context $ drawTypeGraph es sq
+      2 -> do
+        tg <- readIORef typeGraph
+        renderWithContext context $ drawHostGraph es sq tg
+      3 -> do
+        tg <- readIORef typeGraph
+        renderWithContext context $ drawRuleGraph es sq tg
+      4 -> do
+        tg <- readIORef typeGraph
+        mm <- readIORef mergeMapping >>= return . fromMaybe (M.empty, M.empty)
+        renderWithContext context $ drawNACGraph es sq tg mm
+      _ -> return ()
+    return False
 
+
+-- create a node or n edges and return if something was created or not
+createNodesOrEdgesCallback :: Gtk.DrawingArea -> Gtk.Entry -> Gtk.CheckButton -> Gtk.CheckButton
+                           -> IORef GraphState -> IORef Int32 -> IORef Int32 -> IORef (Graph Info Info) -> IORef (Maybe MergeMapping)
+                           -> IORef (Maybe String) -> IORef (M.Map String (NodeGI,Int32)) -> IORef (Maybe String) -> IORef (M.Map String (M.Map (String, String) EdgeGI, Int32))
+                           -> IORef NodeShape -> IORef EdgeStyle -> IORef GIColor -> IORef GIColor
+                           -> Gdk.EventButton
+                           -> IO Bool
+createNodesOrEdgesCallback canvas nameEntry autoLabelNCheckBtn autoLabelECheckBtn
+                           currentState currentGraph currentGraphType typeGraph mergeMapping
+                           currentNodeType possibleNodeTypes currentEdgeType possibleEdgeTypes
+                           currentShape currentStyle currentC currentLC
+                           eventButton  =
+  do
+    x <- get eventButton #x
+    y <- get eventButton #y
+    es <- readIORef currentState
+    let z = stateGetZoom es
+        (px,py) = stateGetPan es
+        (x',y') = (x/z - px, y/z - py)
+    -- add the current state to the undo stack
+    mergeM <- readIORef mergeMapping
+    let g = stateGetGraph es
+        gi = stateGetGI es
+        dstNode = selectNodeInPosition gi (x',y')
+    context <- Gtk.widgetGetPangoContext canvas
+    case (dstNode) of
+      -- no selected node: create node
+      Nothing -> do
+        auto <- Gtk.toggleButtonGetActive autoLabelNCheckBtn
+        createNodeCallback currentGraphType currentState currentNodeType possibleNodeTypes currentShape currentC currentLC (x',y') auto context
+      -- one node selected: create edges targeting this node
+      Just nid ->
+        if length (fst $ stateGetSelected es) > 0 then do
+          auto <- Gtk.toggleButtonGetActive autoLabelECheckBtn
+          createEdgeCallback typeGraph currentGraphType currentState currentEdgeType possibleEdgeTypes currentStyle currentLC auto nid
+        else do
+          modifyIORef currentState $ stateSetSelected ([nid],[])
+          return False
+
+
+createNodeCallback :: IORef Int32
+                   -> IORef GraphState
+                   -> IORef (Maybe String)
+                   -> IORef (M.Map String (NodeGI, Int32))
+                   -> IORef NodeShape
+                   -> IORef GIColor
+                   -> IORef GIColor
+                   -> GIPos
+                   -> Bool
+                   -> P.Context
+                   -> IO Bool
+createNodeCallback currentGraphType currentState currentNodeType possibleNodeTypes currentShape currentC currentLC (x,y) auto context =
+  do
+    gType <- readIORef currentGraphType
+    case gType of
+      0 -> return False
+      1 -> do
+        cShape <- readIORef currentShape
+        cColor <- readIORef currentC
+        cLColor <- readIORef currentLC
+        createNode' currentState I.empty True (x,y) cShape cColor cLColor context
+        return True
+      _ -> do
+        (t, shape, c, lc) <- getNodeLayoutPrimitives currentNodeType possibleNodeTypes currentShape currentC currentLC
+        createNode' currentState (infoSetType I.empty t) auto (x,y) shape c lc context
+        return True
+
+createEdgeCallback :: IORef (Graph Info Info) -> IORef Int32 -> IORef GraphState
+                   -> IORef (Maybe String) -> IORef (M.Map String (M.Map (String, String) EdgeGI, Int32))
+                   -> IORef EdgeStyle -> IORef GIColor
+                   -> Bool
+                   -> NodeId
+                   -> IO Bool
+createEdgeCallback typeGraph currentGraphType currentState currentEdgeType possibleEdgeTypes currentStyle currentLC auto nid =
+  do
+    gType <- readIORef currentGraphType
+    case gType of
+      0 -> return False
+      1 -> do
+        estyle <- readIORef currentStyle
+        color <- readIORef currentLC
+        modifyIORef currentState (\es -> createEdges es nid I.empty True estyle color)
+        return True
+      _ -> do
+        tg <- readIORef typeGraph
+        es <- readIORef currentState
+        metype <- readIORef currentEdgeType
+
+        -- create edges infering their types
+        let sNids = fst $ stateGetSelected es
+            g = stateGetGraph es
+            srcNodes = catMaybes $ map (\nid -> G.lookupNode nid g) sNids
+            tgtNode = fromJust $ G.lookupNode nid g
+            tgtType = infoType $ nodeInfo tgtNode
+            edgesTs = map (\src -> (src, infereEdgeType tg src tgtNode metype)) srcNodes
+
+        (es', createdEdges) <- foldM
+              (\(es,eids) (src, mt) -> do
+                            (t,estyle,color) <- getEdgeLayoutPrimitives mt (infoType $ nodeInfo src) tgtType possibleEdgeTypes currentStyle currentLC
+                            let srcId = nodeId src
+                                es' = createEdge es Nothing srcId nid (infoSetType I.empty t) auto estyle color
+                                eids' = (snd $ stateGetSelected es') ++ eids
+                            return (es',eids'))
+              (es,[])
+              edgesTs
+
+        writeIORef currentState $ stateSetSelected ([],createdEdges) es'
+        return True
+
+
+
+
+
+
+
+indicateChangesWhenMovingElements :: Gtk.Window -> Gtk.TreeStore
+                                  -> IORef Bool ->  IORef GraphState -> IORef (Maybe MergeMapping)
+                                  -> IORef (M.Map Int32 ChangeStack) -> IORef (M.Map Int32 ChangeStack)
+                                  -> StoreIORefs -> ChangesIORefs -> Gdk.EventMotion
+                                  -> IO Bool
+indicateChangesWhenMovingElements window store movingGI currentState mergeMapping undoStack redoStack
+                                  storeIORefs changesIORefs eventMotion =
+  do
+    ms <- get eventMotion #state
+    es <- readIORef currentState
+    mergeM <- readIORef mergeMapping
+    let leftButton = Gdk.ModifierTypeButton1Mask `elem` ms
+        (sNodes, sEdges) = stateGetSelected es
+    if leftButton && ((length sNodes) + (length sEdges) > 0) then
+      do
+        mv <- readIORef movingGI
+        if not mv then
+          do
+            writeIORef movingGI True
+            indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
+        else
+          return ()
+    else
+      return ()
+
+    return True
+
+
+renameSelectedCallback :: Gtk.Entry -> Gtk.DrawingArea
+               -> IORef GraphState -> IORef (M.Map String (M.Map (String, String) EdgeGI, Int32)) -> IORef (Graph Info Info)
+               -> IO ()
+renameSelectedCallback nameEntry canvas currentState possibleEdgeTypes typeGraph =
+  do
+    es <- readIORef currentState
+    name <- Gtk.entryGetText nameEntry >>= return . T.unpack
+    context <- Gtk.widgetGetPangoContext canvas
+    es' <- renameSelected es name context
+
+    -- infere the types of edge(s) connected to the renamed node(s)
+    typesE <- readIORef possibleEdgeTypes
+    tg <- readIORef typeGraph
+    let
+      typesE' = M.map fst typesE
+      es'' = infereEdgesTypesAfterNodeChange es' tg typesE'
+
+    -- show changes
+    writeIORef currentState es''
+    Gtk.widgetQueueDraw canvas
+
+
+setNewColor :: Gtk.DrawingArea -> Gtk.ColorButton -> IORef GIColor -> Bool -> IORef GraphState -> IO ()
+setNewColor canvas colorBtn colorIORef isLineC currentState =
+  do
+    gtkcolor <- Gtk.colorChooserGetRgba colorBtn
+    r <- get gtkcolor #red
+    g <- get gtkcolor #green
+    b <- get gtkcolor #blue
+    let color = (r,g,b)
+    writeIORef colorIORef color
+
+    es <- readIORef currentState
+    let (nds,eds) = stateGetSelected es
+        (ngiM,egiM) = stateGetGI es
+        newGI = case (isLineC, null nds && null eds, null nds) of
+                  (True,False,_) ->
+                      let newngiM = M.mapWithKey (\k ngi -> if NodeId k `elem` nds then ngi {lineColor = color} else ngi) ngiM
+                          newegiM = M.mapWithKey (\k egi -> if EdgeId k `elem` eds then egi {color = color} else egi) egiM
+                      in Just (newngiM,newegiM)
+                  (False,_,False) ->
+                      let newngiM = M.mapWithKey (\k ngi -> if NodeId k `elem` nds then ngi {fillColor = color} else ngi) ngiM
+                      in Just (newngiM,egiM)
+                  _ -> Nothing
+    case newGI of
+      Nothing -> return ()
+      Just newgi -> do
+        modifyIORef currentState $ stateSetGI newgi
+        Gtk.widgetQueueDraw canvas
+
+
+
+setNewShape :: Gtk.RadioButton -> Gtk.DrawingArea -> NodeShape -> IORef NodeShape -> IORef GraphState -> IO Bool
+setNewShape radioBtn canvas newShape currentShape currentState =
+  do
+    active <- get radioBtn #active
+    es <- readIORef currentState
+    let nds = fst $ stateGetSelected es
+        giM = fst $ stateGetGI es
+    if not active || M.null (M.filterWithKey (\k gi -> NodeId k `elem` nds && shape gi /= newShape) giM)
+      then return False
+      else do
+        writeIORef currentShape newShape
+        modifyIORef currentState (\es -> changeNodeShape es newShape)
+        Gtk.widgetQueueDraw canvas
+        return True
+
+setNewStyle :: Gtk.RadioButton -> Gtk.DrawingArea -> EdgeStyle -> IORef EdgeStyle -> IORef GraphState -> IO Bool
+setNewStyle radioBtn canvas newStyle currentStyle currentState =
+  do
+    active <- get radioBtn #active
+    es <- readIORef currentState
+    let edgs = snd $ stateGetSelected es
+        giM = snd $ stateGetGI es
+    if not active || M.null (M.filterWithKey (\k gi -> EdgeId k `elem` edgs && style gi /= newStyle) giM)
+      then return False
+      else do
+        writeIORef currentStyle newStyle
+        modifyIORef currentState (\es -> changeEdgeStyle es newStyle)
+        Gtk.widgetQueueDraw canvas
+        return True
+
+changeNodesType :: IORef (Graph Info Info) -> IORef (M.Map String (M.Map (String, String) EdgeGI, Int32)) ->
+                  IORef GraphState -> String -> NodeGI -> IO Bool
+changeNodesType typeGraph possibleEdgeTypes currentState typeInfo typeNGI = do
+          es <- readIORef currentState
+          let (sNids,sEids) = stateGetSelected es
+              g = stateGetGraph es
+              -- foreach selected node, change their types
+              unlockedSNids = filter (\nid -> case lookupNode nid g of
+                                                  Nothing -> False
+                                                  Just n -> not $ infoLocked (nodeInfo n)) sNids
+          if length unlockedSNids > 0 then
+            do
+              let giM = stateGetGI es
+                  g' = foldr (\nid g -> updateNodePayload nid g (\info -> infoSetType info typeInfo)) g unlockedSNids
+                  newNGI = foldr  (\nid giM -> let ngi = getNodeGI (fromEnum nid) giM
+                                               in M.insert (fromEnum nid) (typeNGI {position = position ngi, dims = dims ngi}) giM)
+                                  (fst giM)
+                                  unlockedSNids
+                  es' = stateSetGraph g' . stateSetGI (newNGI, snd giM) . stateSetSelected (unlockedSNids,sEids) $ es
+
+                  -- foreach changed node, change the type of the edges connected to it
+              typesE <- readIORef possibleEdgeTypes >>= return . M.map fst
+              tg <- readIORef typeGraph
+              let es'' = infereEdgesTypesAfterNodeChange es' tg typesE
+              writeIORef currentState es''
+
+
+              return True
+          else
+            return False
+
+changeEdgesType :: IORef GraphState -> String -> M.Map (String, String) EdgeGI -> IO Bool
+changeEdgesType currentState typeInfo pET = do
+      es <- readIORef currentState
+      let (sNids,sEids) = stateGetSelected es
+          g = stateGetGraph es
+          giM = stateGetGI es
+          unlockedSEids = filter (\eid -> case lookupEdge eid g of
+                                                Nothing -> False
+                                                Just e -> (not $ infoLocked (edgeInfo e)) &&
+                                                          (infoType $ edgeInfo e) /= typeInfo) sEids
+          edgesInContext = catMaybes $ map (\eid -> lookupEdgeInContext eid g) unlockedSEids
+      if length edgesInContext > 0 then
+          do
+
+            let changeEdgeGI ((src,_),e,(tgt,_)) giM =
+                      let eid = fromEnum $ edgeId e
+                          egi = getEdgeGI eid giM
+                      in case M.lookup (infoType $ nodeInfo src, infoType $ nodeInfo tgt) pET of
+                              Nothing -> giM
+                              Just typeGI -> M.insert eid (typeGI {cPosition = cPosition egi}) giM
+                newEGI = foldr changeEdgeGI (snd giM) edgesInContext
+                newGI = (fst giM, newEGI)
+                newGraph = foldr (\eid g -> updateEdgePayload eid g (\info -> infoSetType info typeInfo)) g unlockedSEids
+
+            writeIORef currentState (stateSetGI newGI . stateSetGraph newGraph $ es)
+            return True
+      else return False
+
+
+changeElementsOperation :: Gtk.DrawingArea -> IORef GraphState -> InfoOperation -> IO Bool
+changeElementsOperation canvas currentState operationInfo = do
+        es <- readIORef currentState
+
+        let (sNids,sEids) = stateGetSelected es
+
+        if (length sNids) + (length sEids) > 0 then
+          do
+            let g = stateGetGraph es
+                gi = stateGetGI es
+                newGraph  = foldl (\g nid -> updateNodePayload nid g (\info -> infoSetOperation info operationInfo)) g sNids
+                newGraph' = foldl (\g eid -> updateEdgePayload eid g (\info -> infoSetOperation info operationInfo)) newGraph sEids
+            context <- Gtk.widgetGetPangoContext canvas
+            font <- case operationInfo == Preserve of
+              True -> return Nothing
+              False -> return $ Just "Sans Bold 10"
+            maybeNodedims <- forM sNids $ \nid -> do
+              let maybeNode = G.lookupNode nid newGraph'
+              case maybeNode of
+                Nothing -> return Nothing
+                Just n -> do
+                  dim <- getStringDims (infoVisible $ nodeInfo n) context font
+                  return $ Just (nid, dim)
+            let ndims = catMaybes maybeNodedims
+                newNgiM = foldl (\giM (nid, dim) -> let gi = (getNodeGI (fromEnum nid) giM) {dims = dim}
+                                                    in M.insert (fromEnum nid) gi giM) (fst gi) ndims
+            writeIORef currentState (stateSetGI (newNgiM, snd gi) . stateSetGraph newGraph' $ es)
+            return True
+        else
+          return False
+
+
+-- auxiliar functions used in changedCursor callback --------------------------------------------------------------------------
+-- auxiliar function to update nodes and edges elements according to the active typeGraph
+updateElements :: IORef GraphState -> IORef (M.Map String (NodeGI, Int32)) -> IORef (M.Map String (M.Map (String,String) EdgeGI, Int32)) -> IO ()
+updateElements currentState possibleNodeTypes possibleEdgeTypes= do
+              pnt <- readIORef possibleNodeTypes
+              pet <- readIORef possibleEdgeTypes
+              es <- readIORef currentState
+              let g = stateGetGraph es
+                  (ngi, egi) = stateGetGI es
+                  fn node = (nid, infoType (nodeInfo node), getNodeGI nid ngi)
+                            where nid = fromEnum (nodeId node)
+                  gn (i,t,gi) = case M.lookup t pnt of
+                                  Nothing -> (i,gi)
+                                  Just (gi',_) -> (i, gi {fillColor = (fillColor gi'), shape = (shape gi')})
+                  fe ((src,_), edge, (tgt,_)) = (eid, eType, srcType, tgtType, getEdgeGI eid egi)
+                            where eid = fromEnum (edgeId edge)
+                                  eType = infoType (edgeInfo edge)
+                                  srcType = infoType $ nodeInfo src
+                                  tgtType = infoType $ nodeInfo tgt
+                  ge (i,et,currentState,tt,gi) = case M.lookup et pet of
+                                  Nothing -> (i,gi)
+                                  Just (sm,_) -> case M.lookup (currentState,tt) sm of
+                                    Nothing -> (i,gi)
+                                    Just gi' -> (i, gi' {cPosition = cPosition gi})
+                  newNodeGI = M.fromList . map gn . map fn $ nodes g
+                  newEdgeGI = M.fromList . map ge . map fe $ edgesInContext g
+              writeIORef currentState (stateSetGI (newNodeGI, newEdgeGI) es)
+
+-- change the Inspector elements according to the selected graph
+changeInspector :: Gtk.Box -> Gtk.Box -> Gtk.Box -> Gtk.Button -> Gtk.Button -> Gtk.MenuItem -> Gtk.MenuItem -> Int32 -> IO ()
+changeInspector layoutBox typeSelectionBox operationBox mergeBtn splitBtn mrg spt gType = do
+              -- if the current graph is the typeGraph then show the layout box else show the typeSelectionBox
+              if gType == 1 then do
+                #show layoutBox
+                #hide typeSelectionBox
+              else do
+                #hide layoutBox
+                #show typeSelectionBox
+
+              -- if the current graph is a ruleGraph, then show the operation box
+              if gType == 3 then
+                #show operationBox
+              else
+                #hide operationBox
+
+              -- if the currentGraph is a nac, then show the merge and split options
+              if gType == 4 then do
+                #show mergeBtn
+                #show splitBtn
+                mapM_ (\m -> Gtk.widgetSetSensitive m True) [mrg,spt]
+              else do
+                #hide mergeBtn
+                #hide splitBtn
+                mapM_ (\m -> Gtk.widgetSetSensitive m False) [mrg,spt]
 
 
 ---------------------------------------------------------------------------------------------------------------------------------
 --  Auxiliar Functions  ---------------------------------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------------------------------------
+
+
+-- indicate if the was changes in the project and add 'oldSt' to the undoStack
+indicateChanges :: Gtk.Window -> Gtk.TreeStore -> StoreIORefs -> ChangesIORefs
+                -> IORef (M.Map Int32 ChangeStack) -> IORef (M.Map Int32 ChangeStack) -> Maybe MergeMapping -> GraphState -> IO ()
+indicateChanges window store (_,currentPath,currentGraph,currentGraphType) (changedProject, changedGraph, _)
+                undoStack redoStack oldMergeM oldSt =
+  do
+    setChangeFlags window store changedProject changedGraph currentPath currentGraph True
+    stackUndo undoStack redoStack currentGraph oldSt oldMergeM
+
+getNodeLayoutPrimitives :: IORef (Maybe String)
+                        -> IORef (M.Map String (NodeGI, Int32))
+                        -> IORef NodeShape
+                        -> IORef GIColor
+                        -> IORef GIColor
+                        -> IO (String, NodeShape, GIColor, GIColor)
+getNodeLayoutPrimitives currentNodeType possibleNodeTypes currentShape currentC currentLC =
+      do
+        cShape <- readIORef currentShape
+        cColor <- readIORef currentC
+        cLColor <- readIORef currentLC
+        mntype <- readIORef currentNodeType
+        case mntype of
+          Nothing -> return ("", cShape, cColor, cLColor)
+          Just t -> do
+            possibleNT <- readIORef possibleNodeTypes
+            let possibleNT' = M.map (\(gi,i) -> gi) possibleNT
+                mngi = M.lookup t possibleNT'
+            case mngi of
+              Nothing -> return ("", cShape, cColor, cLColor)
+              Just gi -> return (t, shape gi, fillColor gi, lineColor gi)
+
+
+-- auxiliar function that checks if the type mt, exist in possibleEdgeTypes.
+-- returns the correspondent triple (type, style, color)
+getEdgeLayoutPrimitives :: Maybe String
+                        -> String
+                        -> String
+                        -> IORef (M.Map String (M.Map (String, String) EdgeGI, Int32))
+                        -> IORef EdgeStyle
+                        -> IORef GIColor
+                        -> IO (String,EdgeStyle,GIColor)
+getEdgeLayoutPrimitives mt srcType tgtType possibleEdgeTypes currentStyle currentLC = do
+        pet <- readIORef possibleEdgeTypes
+        pet' <- return $ M.map fst pet
+        cEstyle <- readIORef currentStyle
+        cColor <- readIORef currentLC
+        return $ case mt of
+            Nothing -> ("", cEstyle, cColor)
+            Just t -> let megi = M.lookup t pet'
+                      in case megi of
+                            Nothing -> ("", cEstyle, cColor)
+                            Just sm -> case M.lookup (srcType,tgtType) sm of
+                                          Nothing -> ("", cEstyle, cColor)
+                                          Just gi -> (t, style gi, color gi)
+
+
+updateNacInfo :: IORef (M.Map Int32 NacInfo) -> IORef Int32 -> IORef (Maybe MergeMapping) -> IORef GraphState -> IO ()
+updateNacInfo nacInfoMap currentGraph mergeMapping currentState = do
+      mergeM <- readIORef mergeMapping >>= return . fromJust
+      st <- readIORef currentState
+      let g = stateGetGraph st
+          gi = stateGetGI st
+          nacInfo = extractNac g gi mergeM
+      index <- readIORef currentGraph
+      modifyIORef nacInfoMap $ M.insert index nacInfo
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 -- auxiliar function to check if the project was changed
 -- it does the checking and if no, ask the user if them want to save.
@@ -1511,22 +1460,7 @@ confirmOperation window store changedProject currentState nacInfoMap fileName st
       saveFile structs fileName window -- returns True if saved the file
     _ -> return False
 
-prepToExport :: Gtk.TreeStore
-             -> IORef (M.Map Int32 GraphState)
-             -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
-             -> IO (Either String (Grammar (TGM.TypedGraphMorphism Info Info)))
-prepToExport store graphStates nacInfoMap = do
-  sts <- readIORef graphStates
 
-  let tg = stateGetGraph . fromJust $ M.lookup 0 sts
-      hg = stateGetGraph . fromJust $ M.lookup 1 sts
-
-  rules <- getRules store graphStates nacInfoMap
-  let rulesNames = map (\(_,_,name) -> name) rules
-      rulesNnacs = map (\(r,ns,_) -> (r,ns)) rules
-
-  let efstOrderGG = makeGrammar tg hg rulesNnacs rulesNames
-  return efstOrderGG
 
 
 
@@ -1603,11 +1537,12 @@ updateComboBoxText cbox texts = do
 changeEdgeTypeCBoxByContext :: IORef (M.Map String (M.Map (String,String)EdgeGI,Int32))
                             -> IORef (M.Map String (M.Map (String,String)EdgeGI,Int32))
                             -> Gtk.ComboBoxText
-                            -> GraphState
+                            -> IORef GraphState
                             -> Graph Info Info
-                            -> [EdgeId]
                             -> IO ()
-changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox es tg sEdges = do
+changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox currentState tg = do
+  es <- readIORef currentState
+  sEdges <- return . snd . stateGetSelected $ es
   pET <- readIORef possibleEdgeTypes
   let defaultAction = do
         writeIORef possibleSelectableEdgeTypes pET

@@ -34,15 +34,15 @@ import           GUI.Data.GraphState
 import           GUI.Data.Info
 import           GUI.Data.Nac
 import           GUI.Dialogs
-import           GUI.Editor                as Edit
 import           GUI.Helper.FilePath
 import           GUI.Helper.GrammarMaker
+import           GUI.Helper.Util
 
 import qualified System.FilePath as FilePath
 
 
 buildCpaBox :: Gtk.Window
-            -> Gtk.TreeStore 
+            -> Gtk.TreeStore
             -> IORef (M.Map Int32 GraphState)
             -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
             -> IO (Gtk.Box)
@@ -72,7 +72,7 @@ buildCpaBox window editStore statesMap nacInfoMap = do
   executedGG   <- newIORef (Nothing :: Maybe (Grammar (TGM.TypedGraphMorphism Info Info)) )
 
   on execBtn #pressed $ do
-    efstOrderGG <- Edit.prepToExport editStore statesMap nacInfoMap
+    efstOrderGG <- convertGrammar editStore statesMap nacInfoMap
     sts <- readIORef statesMap
     let tes = fromJust $ M.lookup 0 sts
         tg = stateGetGraph tes
@@ -104,7 +104,7 @@ buildCpaBox window editStore statesMap nacInfoMap = do
     case (maybeGrammar, filePath) of
       (Nothing, _) -> showError window "The analysis must be run before saving the results"
       (_,"")       -> showError window "File path empty"
-      (Just gg, path) -> do 
+      (Just gg, path) -> do
         sts <- readIORef statesMap
         let tes = fromJust $ M.lookup 0 sts
             tg = stateGetGraph tes
@@ -117,7 +117,7 @@ buildCpaBox window editStore statesMap nacInfoMap = do
             ggName = FilePath.takeBaseName path
         CPA.saveCPXResults gg emptySndOrderGG conflicts' dependencies' ggName names path
         Gtk.textBufferInsertAtCursor resultBuffer (T.pack $ "\n\n result of analysis saved in " ++ path) (-1)
-            
+
   on filePathBtn #pressed $ do
     saveD <- createSaveDialog window
     response <- Gtk.dialogRun saveD
@@ -133,5 +133,5 @@ buildCpaBox window editStore statesMap nacInfoMap = do
             Gtk.entrySetText filePathEntry path'
       _  -> return ()
     Gtk.widgetDestroy saveD
-            
+
   return cpaBox
