@@ -4,6 +4,7 @@
 module GUI.Analysis.ModelChecker.StateSpace (
   exploreStateSpace
 , breadthFirstSearchIO
+, generateStateSpaceVisualization
 , NamedPredicate
 , NamedProduction
 , Space
@@ -11,6 +12,9 @@ module GUI.Analysis.ModelChecker.StateSpace (
 
 import            Control.Monad
 import            Control.Concurrent.MVar
+import            Data.Maybe
+import qualified  Data.Map                          as M
+import qualified  Data.IntMap                        as IntMap
 
 import qualified  Abstract.Category                 as Cat
 import qualified  Abstract.Rewriting.DPO            as DPO
@@ -19,6 +23,10 @@ import qualified  Data.Graphs                       as G
 import qualified  Data.TypedGraph.Morphism          as TGM
 import qualified  Data.TypedGraph                   as TG
 import            Rewriting.DPO.TypedGraph
+import            GUI.Data.GraphState
+import            GUI.Data.Info                     hiding (empty)
+import qualified  GUI.Data.Info                     as Info
+import            GUI.Data.GraphicalInfo
 
 
 type NamedPredicate a b = (String, TypedGraphRule a b)
@@ -118,3 +126,36 @@ splitPredicates ((name, rule) : rest) =
       (productions, (name, rule):predicates)
     else
       ((name, rule):productions, predicates)
+
+
+-- create diagram from space visualization
+generateStateSpaceVisualization :: Space Info Info -> GraphState -> GraphState
+generateStateSpaceVisualization stateSpace st = st''
+  where
+    addLevel levels (a,b) = case M.lookup a levels of
+                              Nothing -> M.insert b 1 $ M.insert a 0 levels
+                              Just l -> M.alter
+                                        (\mx -> case mx of
+                                                  Nothing -> Just (l+1)
+                                                  Just x -> Just (min x (l+1)))
+                                        b levels
+    nidsWithLevels = foldl addLevel (M.singleton 0 0) $ M.keys (SS.transitions stateSpace) :: M.Map Int Int
+    organizeLevels a l levels = case M.lookup l levels of
+                              Nothing -> M.insert l [a] levels
+                              Just ls -> M.insert l (ls++[a]) levels
+    levels = M.foldrWithKey organizeLevels (M.empty) nidsWithLevels :: M.Map Int [Int]
+    getStatePredicates nid = fromMaybe [] $ snd <$> (IntMap.lookup nid (SS.states stateSpace))
+    nodeWithPos nid posX posY =
+      let
+        predicates = getStatePredicates nid
+        label = case predicates of
+                  [] -> ("state " ++ show nid)
+                  ps -> init . unlines $ ("state " ++ show nid ++ "\n"):predicates
+      in
+        (G.Node (G.NodeId nid) (infoSetLabel Info.empty label), (fromIntegral posX, fromIntegral posY))
+    addNodeInLevel l nids nds = foldr (\(nid,posX) ls -> (nodeWithPos nid posX (l*100)):ls ) nds (zip nids [0,100..])
+    nds = M.foldrWithKey addNodeInLevel [] levels
+    ndsGIs = M.fromList $ map (\(n,pos) -> (fromEnum $ G.nodeId n, newNodeGI {position = pos, shape = NRect})) nds
+    g = G.fromNodesAndEdges (map fst nds) []
+    st' = stateSetGI (ndsGIs,M.empty) $ stateSetGraph g $ st
+    st'' = M.foldrWithKey (\(a,b) names st -> createEdge st Nothing (G.NodeId a) (G.NodeId b) (infoSetLabel Info.empty (init $ unlines names)) False ENormal (0,0,0)) st' (SS.transitions stateSpace)

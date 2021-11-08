@@ -321,49 +321,6 @@ showStateSpace statusLabel ssMVar initialGraph canvas context ssGraphState model
 
 
 
-
--- create diagram
-generateStateSpaceVisualization :: Space Info Info -> GraphState -> GraphState
-generateStateSpaceVisualization stateSpace st = st''
-  where
-    addLevel levels (a,b) = case M.lookup a levels of
-                              Nothing -> M.insert b 1 $ M.insert a 0 levels
-                              Just l -> M.alter
-                                        (\mx -> case mx of
-                                                  Nothing -> Just (l+1)
-                                                  Just x -> Just (min x (l+1)))
-                                        b levels
-    nidsWithLevels = foldl addLevel (M.singleton 0 0) $ M.keys (SS.transitions stateSpace) :: M.Map Int Int
-    organizeLevels a l levels = case M.lookup l levels of
-                              Nothing -> M.insert l [a] levels
-                              Just ls -> M.insert l (ls++[a]) levels
-    levels = M.foldrWithKey organizeLevels (M.empty) nidsWithLevels :: M.Map Int [Int]
-    getStatePredicates nid = fromMaybe [] $ snd <$> (IntMap.lookup nid (SS.states stateSpace))
-    nodeWithPos nid posX posY =
-      let
-        predicates = getStatePredicates nid
-        label = case predicates of
-                  [] -> ("state " ++ show nid)
-                  ps -> init . unlines $ ("state " ++ show nid ++ "\n"):predicates
-      in
-        (G.Node (G.NodeId nid) (infoSetLabel Info.empty label), (fromIntegral posX, fromIntegral posY))
-    addNodeInLevel l nids nds = foldr (\(nid,posX) ls -> (nodeWithPos nid posX (l*100)):ls ) nds (zip nids [0,100..])
-    nds = M.foldrWithKey addNodeInLevel [] levels
-    ndsGIs = M.fromList $ map (\(n,pos) -> (fromEnum $ G.nodeId n, newNodeGI {position = pos, shape = NRect})) nds
-    g = G.fromNodesAndEdges (map fst nds) []
-    st' = stateSetGI (ndsGIs,M.empty) $ stateSetGraph g $ st
-    st'' = M.foldrWithKey (\(a,b) names st -> createEdge st Nothing (G.NodeId a) (G.NodeId b) (infoSetLabel Info.empty (init $ unlines names)) False ENormal (0,0,0)) st' (SS.transitions stateSpace)
-
-
-
-
-
-
-
-
-
-
-
 -- | Given a logic model and a expression to parse, verify wich states are good and wich are bad
 -- adapted from Verigraph CLI/ModelChecker.hs
 modelCheck :: Logic.KripkeStructure String -> Logic.Expr -> IORef (Maybe [G.NodeId]) -> IO ()
