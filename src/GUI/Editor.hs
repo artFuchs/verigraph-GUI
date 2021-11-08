@@ -58,8 +58,10 @@ import           GUI.Helper.GrammarMaker
 import           GUI.Helper.GraphicalInfo
 import           GUI.Helper.GraphValidation
 import           GUI.Helper.List
+import           GUI.Helper.Util
 import           GUI.Render.Render
 import           GUI.Render.GraphDraw
+
 
 -- Editor modules
 import GUI.Editor.Helper.Clipboard
