@@ -187,10 +187,14 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
   oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
   squareSelection <- newIORef Nothing   -- selection box : Maybe (x1,y1,x2,y2)
   on canvas #draw $ \context -> do
+    aloc <- Gtk.widgetGetAllocation canvas
+    w <- Gdk.getRectangleWidth aloc >>= return . fromIntegral :: IO Double
+    h <- Gdk.getRectangleHeight aloc >>= return . fromIntegral :: IO Double
     ss <- readIORef ssGraphState
     sq <- readIORef squareSelection
     gsts <- readIORef goodStatesIORef
-    renderWithContext context   $ drawStateSpace ss sq gsts
+    renderWithContext context   $ drawStateSpace ss sq gsts (w,h)
+
     return False
   on canvas #buttonPressEvent   $ basicCanvasButtonPressedCallback ssGraphState oldPoint squareSelection canvas
   on canvas #motionNotifyEvent  $ basicCanvasMotionCallBack ssGraphState oldPoint squareSelection canvas
@@ -332,8 +336,9 @@ modelCheck model expr goodStatesIORef =
 
 
 -- draw state space graph -------------------------------------------------------------
-drawStateSpace :: GraphState -> Maybe (Double,Double,Double,Double) -> Maybe [G.NodeId] -> Render ()
-drawStateSpace state sq maybeGoodStates = drawGraph state sq nodeColors M.empty M.empty M.empty
+drawStateSpace :: GraphState -> Maybe (Double,Double,Double,Double) -> Maybe [G.NodeId] -> (Double,Double) -> Render ()
+drawStateSpace state sq maybeGoodStates alloc = do
+  drawGraph state sq nodeColors M.empty M.empty M.empty (Just alloc)
   where
     g = stateGetGraph state
     allGoodStates = fromMaybe [] maybeGoodStates

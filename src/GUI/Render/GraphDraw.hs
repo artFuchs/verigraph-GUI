@@ -49,8 +49,8 @@ drawSelectionBox sq = case sq of
     stroke
   Nothing -> return ()
 
-drawGraph :: GraphState -> SquareSelection -> M.Map NodeId Color -> M.Map EdgeId Color -> M.Map NodeId Color -> M.Map EdgeId Color -> Render ()
-drawGraph state sq nodeColors edgeColors nodeTextColors edgeTextColors = do
+drawGraph :: GraphState -> SquareSelection -> M.Map NodeId Color -> M.Map EdgeId Color -> M.Map NodeId Color -> M.Map EdgeId Color -> Maybe (Double,Double) -> Render ()
+drawGraph state sq nodeColors edgeColors nodeTextColors edgeTextColors mRect = do
   let g = stateGetGraph state
       (nGI,eGI) = stateGetGI state
       (sNodes,sEdges) = stateGetSelected state
@@ -62,7 +62,7 @@ drawGraph state sq nodeColors edgeColors nodeTextColors edgeTextColors = do
 
   -- draw the edges
   forM (edges g) $ \e -> do
-    let dstN = M.lookup (fromEnum . targetId $ e) nGI
+    let tgtN = M.lookup (fromEnum . targetId $ e) nGI
         srcN = M.lookup (fromEnum . sourceId $ e) nGI
         egi  = M.lookup (fromEnum . edgeId   $ e) eGI
         info = infoVisible $ edgeInfo e
@@ -72,8 +72,25 @@ drawGraph state sq nodeColors edgeColors nodeTextColors edgeTextColors = do
             (True, _) -> (True, selectColor)
             --(True, Just c)  -> (True, mixColors selectColor c)
         (highlightText, textColor) = Maybe.fromMaybe (False,(0,0,0)) $ (\a -> (True, a)) <$> M.lookup (edgeId e) edgeTextColors
-    case (egi, srcN, dstN) of
-      (Just gi, Just src, Just dst) -> renderEdge gi info src dst highlight color highlightText textColor
+    case (egi, srcN, tgtN, mRect) of
+      (Just gi, Just src, Just tgt, Nothing) -> renderEdge gi info src tgt highlight color highlightText textColor
+      (Just gi, Just src, Just tgt, Just (sw,sh)) -> do
+        let (srcx,srcy) = position src
+            (tgtx,tgty) = position tgt
+            w = abs (tgtx-srcx)
+            h = abs (tgty-srcy)
+            x = min srcx tgtx
+            y = min srcy tgty
+            linerect = (x + w/2, y + h/2, w, h)
+        -- if (sourceId e `elem` sNodes) || (targetId e `elem` sNodes)
+        --   then do
+        --     setSourceRGB 1 1 0
+        --     rectangle x y w h
+        --     stroke
+        --   else return ()
+        if isRectOnScreen (px,py) z (sw,sh) linerect
+          then renderEdge gi info src tgt highlight color highlightText textColor
+          else return ()
       _ -> return ()
 
   -- draw the nodes
@@ -86,17 +103,31 @@ drawGraph state sq nodeColors edgeColors nodeTextColors edgeTextColors = do
             (True, Nothing) -> (True, selectColor)
             (True, Just c)  -> (True, mixColors selectColor c)
         (highlightText, textColor) = Maybe.fromMaybe (False,(0,0,0)) $ (\a -> (True, a)) <$> M.lookup (nodeId n) nodeTextColors
-    case (ngi) of
-      Just gi -> renderNode gi info highlight color highlightText textColor
-      Nothing -> return ()
+    case (ngi, mRect) of
+      (Just gi, Nothing) -> renderNode gi info highlight color highlightText textColor
+      (Just gi, Just (sw,sh)) -> do
+        let (x,y) = position gi
+        let (w,h) = dims gi
+        if isRectOnScreen (px,py) z (sw,sh) (x,y,w,h)
+          then renderNode gi info highlight color highlightText textColor
+          else return ()
+      (Nothing,_) -> return ()
+
 
   drawSelectionBox sq
+
+isRectOnScreen :: (Double,Double) -> Double -> (Double,Double) -> (Double,Double,Double,Double) -> Bool
+isRectOnScreen (px,py) z (sw, sh) rect@(rx,ry,rw,rh) =
+  rectangleOverlapsRectangle screenRect rect'
+  where
+    screenRect = (sw/2,sh/2,sw,sh)
+    rect' = ((rx+px)*z,(ry+py)*z,rw*z,rh*z)
 
 -- draw a typegraph in the canvas
 -- if there are nodes or edges with same names, then highlight them as errors
 -- if any element is selected, highlight it as selected
 drawTypeGraph :: GraphState -> SquareSelection -> Render ()
-drawTypeGraph state sq = drawGraph state sq nodeColors edgeColors M.empty M.empty
+drawTypeGraph state sq = drawGraph state sq nodeColors edgeColors M.empty M.empty Nothing
   where
     g = stateGetGraph state
     cg = nameConflictGraph g
@@ -107,7 +138,7 @@ drawTypeGraph state sq = drawGraph state sq nodeColors edgeColors M.empty M.empt
 -- if there are nodes or edges not correctly typed, highlight them as errors
 -- if any element is selected, highlight it as selected
 drawHostGraph :: GraphState -> SquareSelection -> Graph Info Info -> Render ()
-drawHostGraph state sq tg = drawGraph state sq nodeColors edgeColors M.empty M.empty
+drawHostGraph state sq tg = drawGraph state sq nodeColors edgeColors M.empty M.empty Nothing
   where
     g = stateGetGraph state
     vg = correctTypeGraph g tg
@@ -117,7 +148,7 @@ drawHostGraph state sq tg = drawGraph state sq nodeColors edgeColors M.empty M.e
 -- draw a rulegraph
 -- similar to drawHostGraph, but draws bold texts to indicate operations
 drawRuleGraph :: GraphState -> SquareSelection -> Graph Info Info -> Render ()
-drawRuleGraph state sq tg = drawGraph state sq nodeColors edgeColors nodeTextColors edgeTextColors
+drawRuleGraph state sq tg = drawGraph state sq nodeColors edgeColors nodeTextColors edgeTextColors Nothing
   where
     g = stateGetGraph state
     (nGI,eGI) = stateGetGI state
@@ -152,7 +183,7 @@ drawRuleGraph state sq tg = drawGraph state sq nodeColors edgeColors nodeTextCol
 -- it highlights elements of the lhs part of the rule with yellow shadows
 -- and highlights merged elements of the lhs part of the rule with green shadows
 drawNACGraph :: GraphState -> SquareSelection -> Graph Info Info -> MergeMapping -> Render ()
-drawNACGraph state sq tg (nM,eM) = drawGraph state sq nodeColors edgeColors M.empty M.empty
+drawNACGraph state sq tg (nM,eM) = drawGraph state sq nodeColors edgeColors M.empty M.empty Nothing
   where
     g = stateGetGraph state
     vg = correctTypeGraph g tg
@@ -168,7 +199,7 @@ drawNACGraph state sq tg (nM,eM) = drawGraph state sq nodeColors edgeColors M.em
 
 -- draw a graph highlighting elements of the lhs part of the rule with yellow shadows
 drawGraphHighlighting :: GraphState -> SquareSelection -> ([NodeId],[EdgeId]) -> Render ()
-drawGraphHighlighting state sq (nList,eList) = drawGraph state sq nodeColors edgeColors M.empty M.empty
+drawGraphHighlighting state sq (nList,eList) = drawGraph state sq nodeColors edgeColors M.empty M.empty Nothing
   where
     g = stateGetGraph state
     nodeColors = M.fromList $ map (\n -> (n, lockedColor)) $ filter (\n -> n `elem` nList) (nodeIds g)

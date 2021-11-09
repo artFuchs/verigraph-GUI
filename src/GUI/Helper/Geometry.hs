@@ -64,14 +64,16 @@ toPolarFrom  (xRef,yRef) (x,y) =
 pointInsideRectangle :: (Double,Double) -> (Double,Double,Double,Double) -> Bool
 pointInsideRectangle (x,y) (rx,ry,rw,rh) = (abs (x - rx) <= rw/2) && (abs (y - ry) <= rh/2)
 
--- | check if a circle overlaps with another circle
+-- | check if a circle intersects with another circle
 circleOverlapsCircle :: (Double,Double,Double) -> (Double,Double,Double) -> Bool
 circleOverlapsCircle (x1,y1,r1) (x2,y2,r2) = pointDistance (x1,y1) (x2,y2) < (r1+r2)
 
--- | check if a rectangle overlaps with another rectangle
+-- | check if a rectangle intersects with another rectangle
+-- TODO: find a better algorithm - maybe it's a good idea to implement a line
+-- intersection algorithm
 rectangleOverlapsRectangle :: (Double,Double,Double,Double) -> (Double,Double,Double,Double) -> Bool
-rectangleOverlapsRectangle r1@(x1,y1,w1,h1) r2@(x2,y2,w2,h2) = 
-    (or $ map (pointInside r2) (rectPoints r1) ++ map (pointInside r1) (rectPoints r2))
+rectangleOverlapsRectangle r1@(x1,y1,w1,h1) r2@(x2,y2,w2,h2) =
+  (or $ map (pointInside r2) (rectPoints r1) ++ map (pointInside r1) (rectPoints r2) ++ [pointInside r2 (x1,y1), pointInside r1 (x2,y2)])
   where
     rectPoints (x,y,h,w) = [(a,b) | a <- [x-w/2,x+w/2], b <- [y-h/2, y+h/2]]
     pointInside r p = pointInsideRectangle p r
@@ -82,7 +84,7 @@ clamp v min max = case (v < min, v > max) of
                     (True,False)  -> min
                     (False,True)  -> max
                     _             -> v
-                    
+
 -- | check if a circle overlaps or is overlapped by a rectangle
 circleOverlapsRectangle :: (Double,Double,Double) -> (Double,Double,Double,Double) -> Bool
 circleOverlapsRectangle c@(cx,cy,cr) r@(rx,ry,rw,rh) =

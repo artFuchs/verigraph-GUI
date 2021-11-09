@@ -3,6 +3,7 @@ module GUI.Render.Render
 ( renderWithContext
 , renderNode
 , renderEdge
+, renderLabel
 )where
 
 import GI.Cairo
@@ -285,6 +286,17 @@ renderLoop edge content node drawShadow (sr,sg,sb) highlightText textColor = do
           labelPos = pointAt (a-pi/2) ( minD+8 ) (xe, ye)
       moveTo (fst labelPos - pw/2) (snd labelPos - ph/2)
       showLayout pL
+
+
+renderLabel :: String -> (Double,Double) -> Render ()
+renderLabel content (x,y) = do
+  pL <- GRPC.createLayout content
+  desc <- liftIO $ GRP.fontDescriptionFromString "Sans Regular 10"
+  liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
+  setSourceRGB 0 0 0
+  moveTo x y
+  GRP.showLayout pL
+
 
 drawPointedLine :: (Double,Double) -> (Double,Double) -> Render ()
 drawPointedLine p1@(x1,y1) p2@(x2,y2)= do
