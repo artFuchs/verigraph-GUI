@@ -10,56 +10,86 @@ import qualified  Logic.Model                       as Logic
 
 main :: IO ()
 main = do
+  let e0 = Logic.Atom "a"
   [e1,e2,e3,e4,e5,e6] <- return $ map nAF_a [1,10,100,1000,10000,100000]
-  [m1,m2,m3,m4,m5,m6] <- mapM binaryTree [1,10,100,1000,10000,100000]
-  [r1,r2,r3,r4,r5,r6] <- mapM randomTree [1,10,100,1000,10000,100000]
-  [d1,d2,d3,d4,d5,d6] <- mapM completeDigraph [1,10,100,1000,10000,100000]
+  [m1,m2,m3,m4,m5,m6,m7,m8,m9] <- mapM binaryTree [1000,2000,3000,4000,5000,6000,7000,8000,9000]
+  [r1,r2,r3,r4,r5,r6,r7,r8,r9] <- mapM randomTree [1000,2000,3000,4000,5000,6000,7000,8000,9000]
+  [d1,d2,d3,d4,d5,d6,d7,d8,d9] <- mapM completeDigraph [100,200,300,400,500,600,700,800,900]
   defaultMain
     [ bgroup "SAT (AF a) - binary tree"
-      [ bench "1 state" $ whnf (Logic.satisfyExpr m1) e1
-      , bench "10 states" $ whnf (Logic.satisfyExpr m2) e1
-      , bench "100 states" $ whnf (Logic.satisfyExpr m3) e1
-      , bench "1000 states" $ whnf (Logic.satisfyExpr m4) e1
-      , bench "10000 states" $ whnf (Logic.satisfyExpr m5) e1
+      [ bench "1000 states" $ whnf (Logic.satisfyExpr m1) e1
+      , bench "2000 states" $ whnf (Logic.satisfyExpr m2) e1
+      , bench "3000 states" $ whnf (Logic.satisfyExpr m3) e1
+      , bench "4000 states" $ whnf (Logic.satisfyExpr m4) e1
+      , bench "5000 states" $ whnf (Logic.satisfyExpr m5) e1
+      , bench "6000 states" $ whnf (Logic.satisfyExpr m6) e1
+      , bench "7000 states" $ whnf (Logic.satisfyExpr m7) e1
+      , bench "8000 states" $ whnf (Logic.satisfyExpr m8) e1
+      , bench "9000 states" $ whnf (Logic.satisfyExpr m9) e1
       ]
+      -- [ bench "1 state" $ whnf (Logic.satisfyExpr m1) e1
+      -- , bench "10 states" $ whnf (Logic.satisfyExpr m2) e1
+      -- , bench "100 states" $ whnf (Logic.satisfyExpr m3) e1
+      -- , bench "1000 states" $ whnf (Logic.satisfyExpr m4) e1
+      -- , bench "10000 states" $ whnf (Logic.satisfyExpr m5) e1
+      -- ]
     , bgroup "SAT (AF a) - random tree"
-      [ bench "1 state" $ whnf (Logic.satisfyExpr r1) e1
-      , bench "10 states" $ whnf (Logic.satisfyExpr r2) e1
-      , bench "100 states" $ whnf (Logic.satisfyExpr r3) e1
-      , bench "1000 states" $ whnf (Logic.satisfyExpr r4) e1
-      , bench "10000 states" $ whnf (Logic.satisfyExpr r5) e1
+      [ bench "1000 states" $ whnf (Logic.satisfyExpr r1) e1
+      , bench "2000 states" $ whnf (Logic.satisfyExpr r2) e1
+      , bench "3000 states" $ whnf (Logic.satisfyExpr r3) e1
+      , bench "4000 states" $ whnf (Logic.satisfyExpr r4) e1
+      , bench "5000 states" $ whnf (Logic.satisfyExpr r5) e1
+      , bench "6000 states" $ whnf (Logic.satisfyExpr r6) e1
+      , bench "7000 states" $ whnf (Logic.satisfyExpr r7) e1
+      , bench "8000 states" $ whnf (Logic.satisfyExpr r8) e1
+      , bench "9000 states" $ whnf (Logic.satisfyExpr r9) e1
       ]
+      -- [ bench "1 state" $ whnf (Logic.satisfyExpr r1) e1
+      -- , bench "10 states" $ whnf (Logic.satisfyExpr r2) e1
+      -- , bench "100 states" $ whnf (Logic.satisfyExpr r3) e1
+      -- , bench "1000 states" $ whnf (Logic.satisfyExpr r4) e1
+      -- , bench "10000 states" $ whnf (Logic.satisfyExpr r5) e1
+      -- ]
     , bgroup "SAT (AF a) - complete digraph"
-      [ bench "1 state" $ whnf (Logic.satisfyExpr d1) e1
-      , bench "10 states" $ whnf (Logic.satisfyExpr d2) e1
-      , bench "100 states" $ whnf (Logic.satisfyExpr d3) e1
-      , bench "1000 states" $ whnf (Logic.satisfyExpr d4) e1
-      --, bench "10000 states" $ whnf (Logic.satisfyExpr d5) e1
+      [ bench "100 states" $ whnf (Logic.satisfyExpr d1) e1
+      , bench "200 states" $ whnf (Logic.satisfyExpr d2) e1
+      , bench "300 states" $ whnf (Logic.satisfyExpr d3) e1
+      , bench "400 states" $ whnf (Logic.satisfyExpr d4) e1
+      , bench "500 states" $ whnf (Logic.satisfyExpr d5) e1
+      , bench "600 states" $ whnf (Logic.satisfyExpr d6) e1
+      , bench "700 states" $ whnf (Logic.satisfyExpr d7) e1
+      , bench "800 states" $ whnf (Logic.satisfyExpr d8) e1
+      , bench "900 states" $ whnf (Logic.satisfyExpr d9) e1
       ]
-    , bgroup "SAT (AFxN a) - 100 states - binary tree"
-      [ bench "AFx1" $ whnf (Logic.satisfyExpr m3) e1
-      , bench "AFx10" $ whnf (Logic.satisfyExpr m3) e2
-      , bench "AFx100" $ whnf (Logic.satisfyExpr m3) e3
-      , bench "AFx1000" $ whnf (Logic.satisfyExpr m3) e4
-      , bench "AFx10000" $ whnf (Logic.satisfyExpr m3) e5
-      , bench "AFx100000" $ whnf (Logic.satisfyExpr m3) e6
-      ]
-    , bgroup "SAT (AFxN a) - 100 states - random tree"
-      [ bench "AFx1" $ whnf (Logic.satisfyExpr r3) e1
-      , bench "AFx10" $ whnf (Logic.satisfyExpr r3) e2
-      , bench "AFx100" $ whnf (Logic.satisfyExpr r3) e3
-      , bench "AFx1000" $ whnf (Logic.satisfyExpr r3) e4
-      , bench "AFx10000" $ whnf (Logic.satisfyExpr r3) e5
-      , bench "AFx100000" $ whnf (Logic.satisfyExpr r3) e6
-      ]
-    , bgroup "SAT (AFxN a) - 100 states - complete digraph"
-      [ bench "AFx1" $ whnf (Logic.satisfyExpr d3) e1
-      , bench "AFx10" $ whnf (Logic.satisfyExpr d3) e2
-      , bench "AFx100" $ whnf (Logic.satisfyExpr d3) e3
-      , bench "AFx1000" $ whnf (Logic.satisfyExpr d3) e4
-      , bench "AFx10000" $ whnf (Logic.satisfyExpr d3) e5
-      --, bench "AFx100000" $ whnf (Logic.satisfyExpr d3) e6
-      ]
+      -- [ bench "1 state" $ whnf (Logic.satisfyExpr d1) e1
+      -- , bench "10 states" $ whnf (Logic.satisfyExpr d2) e1
+      -- , bench "100 states" $ whnf (Logic.satisfyExpr d3) e1
+      -- , bench "1000 states" $ whnf (Logic.satisfyExpr d4) e1
+      -- ]
+    -- , bgroup "SAT (AFxN a) - 100 states - binary tree"
+    --   [ bench "AFx1" $ whnf (Logic.satisfyExpr m3) e1
+    --   , bench "AFx10" $ whnf (Logic.satisfyExpr m3) e2
+    --   , bench "AFx100" $ whnf (Logic.satisfyExpr m3) e3
+    --   , bench "AFx1000" $ whnf (Logic.satisfyExpr m3) e4
+    --   , bench "AFx10000" $ whnf (Logic.satisfyExpr m3) e5
+    --   , bench "AFx100000" $ whnf (Logic.satisfyExpr m3) e6
+    --   ]
+    -- , bgroup "SAT (AFxN a) - 100 states - random tree"
+    --   [ bench "AFx1" $ whnf (Logic.satisfyExpr r3) e1
+    --   , bench "AFx10" $ whnf (Logic.satisfyExpr r3) e2
+    --   , bench "AFx100" $ whnf (Logic.satisfyExpr r3) e3
+    --   , bench "AFx1000" $ whnf (Logic.satisfyExpr r3) e4
+    --   , bench "AFx10000" $ whnf (Logic.satisfyExpr r3) e5
+    --   , bench "AFx100000" $ whnf (Logic.satisfyExpr r3) e6
+    --   ]
+    -- , bgroup "SAT (AFxN a) - 100 states - complete digraph"
+    --   [ bench "AFx1" $ whnf (Logic.satisfyExpr d3) e1
+    --   , bench "AFx10" $ whnf (Logic.satisfyExpr d3) e2
+    --   , bench "AFx100" $ whnf (Logic.satisfyExpr d3) e3
+    --   , bench "AFx1000" $ whnf (Logic.satisfyExpr d3) e4
+    --   , bench "AFx10000" $ whnf (Logic.satisfyExpr d3) e5
+    --   --, bench "AFx100000" $ whnf (Logic.satisfyExpr d3) e6
+    --   ]
     ]
   return ()
 

@@ -67,3 +67,9 @@ benchmarks:
     dependencies:
     - verigraph-GUI
     - tasty-bench
+  statespace-benchmark:
+    main:             StateSpace.hs
+    source-dirs:      benchmark
+    dependencies:
+      - verigraph-GUI
+      - tasty-bench
