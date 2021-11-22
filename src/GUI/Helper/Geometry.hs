@@ -73,10 +73,17 @@ circleOverlapsCircle (x1,y1,r1) (x2,y2,r2) = pointDistance (x1,y1) (x2,y2) < (r1
 -- intersection algorithm
 rectangleOverlapsRectangle :: (Double,Double,Double,Double) -> (Double,Double,Double,Double) -> Bool
 rectangleOverlapsRectangle r1@(x1,y1,w1,h1) r2@(x2,y2,w2,h2) =
-  (or $ map (pointInside r2) (rectPoints r1) ++ map (pointInside r1) (rectPoints r2) ++ [pointInside r2 (x1,y1), pointInside r1 (x2,y2)])
+  l1<r2 && r1>l2 && t1<b2 && b1>t2
   where
-    rectPoints (x,y,h,w) = [(a,b) | a <- [x-w/2,x+w/2], b <- [y-h/2, y+h/2]]
-    pointInside r p = pointInsideRectangle p r
+    l1 = x1-w1/2
+    l2 = x2-w2/2
+    r1 = l1 + w1
+    r2 = l2 + w2
+    t1 = y1-h1/2
+    t2 = y2-h2/2
+    b1 = t1+h1
+    b2 = t2+h2
+
 
 
 clamp :: Double -> Double -> Double -> Double

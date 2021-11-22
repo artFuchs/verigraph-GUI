@@ -82,12 +82,6 @@ drawGraph state sq nodeColors edgeColors nodeTextColors edgeTextColors mRect = d
             x = min srcx tgtx
             y = min srcy tgty
             linerect = (x + w/2, y + h/2, w, h)
-        -- if (sourceId e `elem` sNodes) || (targetId e `elem` sNodes)
-        --   then do
-        --     setSourceRGB 1 1 0
-        --     rectangle x y w h
-        --     stroke
-        --   else return ()
         if isRectOnScreen (px,py) z (sw,sh) linerect
           then renderEdge gi info src tgt highlight color highlightText textColor
           else return ()
