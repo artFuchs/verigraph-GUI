@@ -123,7 +123,7 @@ startGUI = do
   execStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt, gtypeString]
   Exec.updateTreeStore execStore ("Rule0", 2, 1, 0, "Rule0")
   execItems <- Exec.buildExecutor execStore statesMap typeGraph nacInfoMap focusedCanvas focusedStateIORef
-  let (execPane, execCanvas, execNacCBox, execState, execStarted, execNacListMap) = execItems
+  let (execPane, execCanvas, execNacCBox, execState, execIsInitial, execNacListMap) = execItems
 
   -- start analysis module
   cpaBox <- buildCpaBox window editorStore statesMap nacInfoMap
@@ -231,12 +231,12 @@ startGUI = do
           Gtk.widgetGrabFocus execCanvas
           writeIORef focusedCanvas $ Just execCanvas
           writeIORef focusedStateIORef $ Just execState
-          started <- readIORef execStarted
-          if started
-            then return ()
-            else do
+          isInitial <- readIORef execIsInitial
+          if isInitial
+            then do
               initState <- readIORef statesMap >>= return . fromMaybe emptyState . M.lookup 1
               writeIORef execState initState
+            else return ()
       2 -> do  -- Analysis tab
           mapM_ (\m -> Gtk.widgetSetSensitive m False) editItems
           mapM_ (\m -> Gtk.widgetSetSensitive m False) viewItems

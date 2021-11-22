@@ -125,6 +125,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     currentRuleIndex   <- newIORef (-1 :: Int32) -- index of current selecte Rule
     currentMatchedElements <- newIORef (([],[]) :: ([G.NodeId],[G.EdgeId]))
 
+    isInInitialState <- newIORef True
     execStarted  <- newIORef False   -- if execution has already started
     execThread  <- newIORef Nothing  -- thread for execution process
     execDelay <- newIORef (100000 :: Int) -- delay between execution steps
@@ -145,6 +146,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
             if started || processing
                 then return ()
                 else do
+                    writeIORef isInInitialState False
                     execT <- forkFinally
                                 (do writeIORef execStarted True
                                     executeStep treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel  typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches)
@@ -400,6 +402,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     -- execution controls
     -- when stop button is pressed, reset the host graph to initial state
     on stopBtn #pressed $ do
+        writeIORef isInInitialState True
         writeIORef execStarted False
         mThread <- readIORef execThread
         case mThread of
@@ -454,6 +457,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         if started || processing
             then return ()
             else do
+                writeIORef isInInitialState False
                 loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap
                 execT <- forkFinally
                             (do writeIORef execStarted True
@@ -483,7 +487,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
 
 
     #show executorPane
-    return (executorPane, mainCanvas, nacCBox, hostState, execStarted, nacIDListMap)
+    return (executorPane, mainCanvas, nacCBox, hostState, isInInitialState, nacIDListMap)
 
 
 executeMultipleSteps execDelay treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel typeGraph hostState statesMap nacInfoMap nacIDListMap matchesMap productionMap currentMatchIndex currentRuleIndex processingMatches = do
