@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Document version="0.2">
+  <Grammar>
+    <TypeGraph id="0" name="TypeGraph">
+      <Graph>
+        <Nodes>
+          <Node id="1">
+            <Info locked="False" type="" operation="Preserve">
+              <Label text="1" group="False"/>
+            </Info>
+            <NodeLayout position="(100.40960693359375,129.93800354003906)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NCircle"/>
+          </Node>
+        </Nodes>
+        <Edges>
+          <Edge id="1" source="1" target="1">
+            <Info locked="False" type="" operation="Preserve">
+              <Label text="1" group="False"/>
+            </Info>
+            <EdgeLayout position="(-1.5707963267948966,50.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+          </Edge>
+        </Edges>
+      </Graph>
+    </TypeGraph>
+    <HostGraph id="1" name="InitialGraph">
+      <Graph>
+        <Nodes>
+          <Node id="2">
+            <Info locked="False" type="1" operation="Preserve">
+              <Label text="2" group="False"/>
+            </Info>
+            <NodeLayout position="(178.892822265625,144.7749786376953)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NCircle"/>
+          </Node>
+          <Node id="1">
+            <Info locked="False" type="1" operation="Preserve">
+              <Label text="1" group="False"/>
+            </Info>
+            <NodeLayout position="(80.57736206054688,142.58477783203125)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NCircle"/>
+          </Node>
+        </Nodes>
+        <Edges/>
+      </Graph>
+    </HostGraph>
+    <Rules>
+      <Rule id="2" name="connect" active="True">
+        <Graph>
+          <Nodes>
+            <Node id="2">
+              <Info locked="False" type="1" operation="Preserve">
+                <Label text="2" group="False"/>
+              </Info>
+              <NodeLayout position="(205.5390625,134.45994567871094)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NCircle"/>
+            </Node>
+            <Node id="1">
+              <Info locked="False" type="1" operation="Preserve">
+                <Label text="1" group="False"/>
+              </Info>
+              <NodeLayout position="(80.34429931640625,137.240478515625)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NCircle"/>
+            </Node>
+          </Nodes>
+          <Edges>
+            <Edge id="1" source="1" target="2">
+              <Info locked="False" type="1" operation="Create">
+                <Label text="1" group="False"/>
+              </Info>
+              <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+            </Edge>
+          </Edges>
+        </Graph>
+        <NACs>
+          <NAC id="3" name="NAC_connected">
+            <Graph>
+              <Nodes>
+                <Node id="2">
+                  <Info locked="True" type="1" operation="Preserve">
+                    <Label text="2" group="False"/>
+                  </Info>
+                  <NodeLayout position="(205.5390625,134.45994567871094)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NCircle"/>
+                </Node>
+                <Node id="1">
+                  <Info locked="True" type="1" operation="Preserve">
+                    <Label text="1" group="False"/>
+                  </Info>
+                  <NodeLayout position="(80.34429931640625,137.240478515625)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NCircle"/>
+                </Node>
+              </Nodes>
+              <Edges>
+                <Edge id="1" source="1" target="2">
+                  <Info locked="False" type="1" operation="Preserve">
+                    <Label text="1" group="False"/>
+                  </Info>
+                  <EdgeLayout position="(-1.5707963267948966,0.0)" color="(0.0,0.0,0.0)" style="ENormal"/>
+                </Edge>
+              </Edges>
+            </Graph>
+            <MergeMapping>
+              <Nodes>
+                <NodeMapping src="1" tgt="1"/>
+                <NodeMapping src="2" tgt="2"/>
+              </Nodes>
+              <Edges/>
+            </MergeMapping>
+          </NAC>
+        </NACs>
+      </Rule>
+    </Rules>
+  </Grammar>
+</Document>
+
