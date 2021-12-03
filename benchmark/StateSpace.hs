@@ -21,7 +21,7 @@ main :: IO ()
 main = do
   defaultMain
     [ bgroup "Explore state space"
-      [ bench "Initial Graph with 2 nodes " $ whnfIO (explore initial5)
+      [ bench "Initial Graph with 2 nodes " $ whnfIO (explore initial2)
       , bench "Initial Graph with 3 nodes " $ whnfIO (explore initial3)
       , bench "Initial Graph with 4 nodes " $ whnfIO (explore initial4)
       , bench "Initial Graph with 5 nodes " $ whnfIO (explore initial5)
@@ -33,9 +33,37 @@ explore graph = do
   (_,ss) <- exploreStateSpace mconf 1000 (grammar graph [] prods) graph Nothing
   putStrLn $ show (length $ SS.states ss) ++ " states"
 
+explore' graph depth = do
+  (_,ss) <- exploreStateSpaceDepth mconf depth (grammar graph [] prods) graph
+  putStrLn $ show (length $ SS.states ss) ++ " states"
+
 mconf :: MorphismsConfig (TGM.TypedGraphMorphism Info Info)
 mconf = MorphismsConfig Cat.monic
 
+exploreStateSpaceDepth :: MorphismsConfig (TGM.TypedGraphMorphism a b) -> Int -> Grammar (TGM.TypedGraphMorphism a b) -> TG.TypedGraph a b -> IO (Int,Space a b)
+exploreStateSpaceDepth conf maxDepth grammar graph =
+  let
+    (prods, predicates) =
+      splitPredicates (productions grammar)
+
+    getInitialId =
+      do
+        (idx, _) <- SS.putState graph
+        return idx
+
+    initialSpace =
+      SS.empty conf prods predicates
+  in do
+    (idx,space1) <- return $ SS.runStateSpaceBuilder getInitialId initialSpace
+    (_,spacex) <- return $ SS.runStateSpaceBuilder (SS.depthSearch maxDepth graph) initialSpace
+    return (idx,spacex)
+
+
+
+
+--------------------------------------------------------------------------------
+-- TEST GRAMMAR ----------------------------------------------------------------
+--------------------------------------------------------------------------------
 initial2 =
   GraphMorphism
     { domainGraph = Graph

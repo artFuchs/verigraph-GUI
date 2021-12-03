@@ -5,6 +5,7 @@ module GUI.Analysis.ModelChecker.StateSpace (
   exploreStateSpace
 , breadthFirstSearchIO
 , generateStateSpaceVisualization
+, splitPredicates
 , NamedPredicate
 , NamedProduction
 , Space
