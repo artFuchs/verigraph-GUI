@@ -74,15 +74,8 @@ drawGraph state sq nodeColors edgeColors nodeTextColors edgeTextColors mRect = d
         (highlightText, textColor) = Maybe.fromMaybe (False,(0,0,0)) $ (\a -> (True, a)) <$> M.lookup (edgeId e) edgeTextColors
     case (egi, srcN, tgtN, mRect) of
       (Just gi, Just src, Just tgt, Nothing) -> renderEdge gi info src tgt highlight color highlightText textColor
-      (Just gi, Just src, Just tgt, Just (sw,sh)) -> do
-        let (srcx,srcy) = position src
-            (tgtx,tgty) = position tgt
-            w = abs (tgtx-srcx)
-            h = abs (tgty-srcy)
-            x = min srcx tgtx
-            y = min srcy tgty
-            linerect = (x + w/2, y + h/2, w, h)
-        if isRectOnScreen (px,py) z (sw,sh) linerect
+      (Just gi, Just src, Just tgt, Just (sw,sh)) ->
+        if isEdgeOnScreen (px,py) z (sw,sh) gi src tgt
           then renderEdge gi info src tgt highlight color highlightText textColor
           else return ()
       _ -> return ()
@@ -107,6 +100,25 @@ drawGraph state sq nodeColors edgeColors nodeTextColors edgeTextColors mRect = d
 
 
   drawSelectionBox sq
+
+isEdgeOnScreen :: (Double,Double) -> Double -> (Double,Double) -> EdgeGI -> NodeGI ->  NodeGI ->  Bool
+isEdgeOnScreen (px,py) z (sw, sh) egi srcgi tgtgi =
+  isRectOnScreen (px,py) z (sw, sh) rect
+  where
+    rect =
+      if position srcgi == position tgtgi
+        then pointsToRectangle (position srcgi) (getEGIPosition egi srcgi tgtgi)
+        else
+          let (x1,y1,w1,h1) = pointsToRectangle (position srcgi) (getEGIPosition egi srcgi tgtgi)
+              (x2,y2,w2,h2) = pointsToRectangle (position tgtgi) (getEGIPosition egi srcgi tgtgi)
+              left = min (x1 - w1/2) (x2 - w2/2)
+              right = max (x1 + w1/2) (x2 + w2/2)
+              top = min (y1 - h1/2) (y2 - h2/2)
+              botton = max (y1 + h1/2) (y2 + h2/2)
+              we = right - left
+              he = botton - top
+              (xe,ye) = midPoint (left,top) (right,botton)
+          in (xe,ye,we,he)
 
 
 isNodeOnScreen :: (Double,Double) -> Double -> (Double,Double) -> NodeGI -> Bool

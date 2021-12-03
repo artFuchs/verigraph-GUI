@@ -76,21 +76,15 @@ diagrSubtract (g1, (ngiM1, egiM1)) (g2, (ngiM2,egiM2)) = (g3,(ngiM3,egiM3))
 
 
 -- get edge position in cartesian coordinate system
-getEdgePosition:: DiaGraph -> Edge Info -> (Double,Double)
-getEdgePosition (g,(nodesGi, edgesGi)) e = pos
+getEdgePosition :: DiaGraph -> Edge Info -> (Double,Double)
+getEdgePosition (g,(nodesGi, edgesGi)) e =
+  getEGIPosition egi srcgi tgtgi
   where
     eid = edgeId e
-    gi = getEdgeGI (fromEnum $ eid) edgesGi
-    srcPos = position . getNodeGI (fromEnum $ sourceId e) $ nodesGi
-    dstPos = position . getNodeGI (fromEnum $ targetId e) $ nodesGi
-    (ae, de) = cPosition gi
-    pos = if sourceId e /= targetId e
-      then
-        let pmid = midPoint srcPos dstPos
-            (ang, dist) = toPolarFrom srcPos dstPos
-        in pointAt (ae+ang) de pmid
-      else
-        pointAt ae de srcPos
+    egi = getEdgeGI (fromEnum $ eid) edgesGi
+    srcgi = getNodeGI (fromEnum $ sourceId e) $ nodesGi
+    tgtgi = getNodeGI (fromEnum $ targetId e) $ nodesGi
+
 
 adjustDiagrPosition :: DiaGraph -> DiaGraph
 adjustDiagrPosition (g, (ngiM, egiM)) = (g,(ngiM',egiM))

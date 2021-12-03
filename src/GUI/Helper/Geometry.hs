@@ -4,9 +4,12 @@ module GUI.Helper.Geometry(
   pointDistance
 , pointLineDistance
 , addPoint
+, subPoint
+, vectorBetween
 , multPoint
 , multPointScalar
 , midPoint
+, pointsToRectangle
 , pointInsideRectangle
 , circleOverlapsCircle
 , rectangleOverlapsRectangle
@@ -35,6 +38,13 @@ pointLineDistance (x0,y0) (x1,y1) (x2,y2) = ( abs $ (y2-y1)*x0 - (x2-x1)*y0 + x2
 addPoint :: (Double,Double) -> (Double,Double) -> (Double,Double)
 addPoint (a,b) (c,d) = (a+c,b+d)
 
+-- | subtract one point from another, getting the vector between them
+subPoint :: (Double,Double) -> (Double,Double) -> (Double,Double)
+subPoint (a,b) (c,d) = (a-c,b-d)
+
+-- | alias for subPoint
+vectorBetween = subPoint
+
 -- | multiply two points
 multPoint :: (Double,Double) -> (Double,Double) -> (Double,Double)
 multPoint (a,b) (c,d) = (a*c,b*d)
@@ -58,9 +68,20 @@ toPolarFrom  (xRef,yRef) (x,y) =
       dist = pointDistance  (xRef,yRef) (x,y)
   in (ang,dist)
 
-{-| check if a point is inside a rectangle
-    considers the rectangle position as it's center
--}
+
+
+-- | given two points, get the rectangle defined by them
+-- a rectangle is defined by the tuple (x,y,w,h), where
+-- x,y is the center of the rectangle
+-- w is it's width
+-- h is it's height
+pointsToRectangle :: (Double,Double) -> (Double,Double) -> (Double,Double,Double,Double)
+pointsToRectangle p1 p2 = (x,y,w,h)
+  where
+    (x,y) = midPoint p1 p2
+    (w,h) = (\(a,b) -> (abs a, abs b)) $ subPoint p1 p2
+
+-- | check if a point is inside a rectangle
 pointInsideRectangle :: (Double,Double) -> (Double,Double,Double,Double) -> Bool
 pointInsideRectangle (x,y) (rx,ry,rw,rh) = (abs (x - rx) <= rw/2) && (abs (y - ry) <= rh/2)
 
@@ -69,8 +90,6 @@ circleOverlapsCircle :: (Double,Double,Double) -> (Double,Double,Double) -> Bool
 circleOverlapsCircle (x1,y1,r1) (x2,y2,r2) = pointDistance (x1,y1) (x2,y2) < (r1+r2)
 
 -- | check if a rectangle intersects with another rectangle
--- TODO: find a better algorithm - maybe it's a good idea to implement a line
--- intersection algorithm
 rectangleOverlapsRectangle :: (Double,Double,Double,Double) -> (Double,Double,Double,Double) -> Bool
 rectangleOverlapsRectangle r1@(x1,y1,w1,h1) r2@(x2,y2,w2,h2) =
   l1<r2 && r1>l2 && t1<b2 && b1>t2

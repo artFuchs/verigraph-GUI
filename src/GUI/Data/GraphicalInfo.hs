@@ -11,12 +11,14 @@ module GUI.Data.GraphicalInfo(
 , getEdgeGI
 , newNodeGI
 , newEdgeGI
+, getEGIPosition
 )where
 
 
 
 import qualified Data.Map as M
 import Data.Maybe
+import GUI.Helper.Geometry
 
 
 
@@ -75,3 +77,16 @@ newEdgeGI = EdgeGI { cPosition = (0,0)
                    , color = (0,0,0)
                    , style = ENormal
                    }
+
+-- get edge position in cartesian coordinate system
+getEGIPosition :: EdgeGI -> NodeGI -> NodeGI -> (Double,Double)
+getEGIPosition egi srcgi tgtgi =
+ if srcPos == tgtPos
+   then pointAt ae de srcPos
+   else pointAt (ae+ang) de pmid
+ where
+   (ae,de) = cPosition egi
+   srcPos = position srcgi
+   tgtPos = position tgtgi
+   pmid = midPoint srcPos tgtPos
+   (ang,dist) = toPolarFrom srcPos tgtPos
