@@ -213,7 +213,7 @@ startEditor window store
   ----------------------------------------------------------------------------------------------------------------------------
 
   -- drawing event
-  on canvas #draw $ drawGraphByType currentState typeGraph squareSelection currentGraphType mergeMapping
+  on canvas #draw $ drawGraphByType canvas currentState typeGraph squareSelection currentGraphType mergeMapping
 
   -- mouse button pressed on canvas
   -- set callback to select elements on canvas
@@ -949,30 +949,34 @@ startEditor window store
 ---------------------------------------------------------------------------------------------------------------------------------
 
 -- callback used to display a
-drawGraphByType :: IORef GraphState
+drawGraphByType :: Gtk.DrawingArea
+                -> IORef GraphState
                 -> IORef (Graph Info Info)
                 -> IORef (Maybe (Double,Double,Double,Double) )
                 -> IORef Int32
                 -> IORef (Maybe MergeMapping)
                 -> Cairo.Context
                 -> IO Bool
-drawGraphByType currentState typeGraph squareSelection currentGraphType mergeMapping context =
+drawGraphByType canvas currentState typeGraph squareSelection currentGraphType mergeMapping context =
   do
     es <- readIORef currentState
     sq <- readIORef squareSelection
     t <- readIORef currentGraphType
+    aloc <- Gtk.widgetGetAllocation canvas
+    w <- Gdk.getRectangleWidth aloc >>= return . fromIntegral :: IO Double
+    h <- Gdk.getRectangleHeight aloc >>= return . fromIntegral :: IO Double
     case t of
-      1 -> renderWithContext context $ drawTypeGraph es sq
+      1 -> renderWithContext context $ drawTypeGraph es sq (Just (w,h))
       2 -> do
         tg <- readIORef typeGraph
-        renderWithContext context $ drawHostGraph es sq tg
+        renderWithContext context $ drawHostGraph es sq tg (Just (w,h))
       3 -> do
         tg <- readIORef typeGraph
-        renderWithContext context $ drawRuleGraph es sq tg
+        renderWithContext context $ drawRuleGraph es sq tg (Just (w,h))
       4 -> do
         tg <- readIORef typeGraph
         mm <- readIORef mergeMapping >>= return . fromMaybe (M.empty, M.empty)
-        renderWithContext context $ drawNACGraph es sq tg mm
+        renderWithContext context $ drawNACGraph es sq tg mm (Just (w,h))
       _ -> return ()
     return False
 

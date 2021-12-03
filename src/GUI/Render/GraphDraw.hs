@@ -99,16 +99,27 @@ drawGraph state sq nodeColors edgeColors nodeTextColors edgeTextColors mRect = d
         (highlightText, textColor) = Maybe.fromMaybe (False,(0,0,0)) $ (\a -> (True, a)) <$> M.lookup (nodeId n) nodeTextColors
     case (ngi, mRect) of
       (Just gi, Nothing) -> renderNode gi info highlight color highlightText textColor
-      (Just gi, Just (sw,sh)) -> do
-        let (x,y) = position gi
-        let (w,h) = dims gi
-        if isRectOnScreen (px,py) z (sw,sh) (x,y,w,h)
+      (Just gi, Just (sw,sh)) ->
+        if isNodeOnScreen (px,py) z (sw,sh) gi
           then renderNode gi info highlight color highlightText textColor
           else return ()
       (Nothing,_) -> return ()
 
 
   drawSelectionBox sq
+
+
+isNodeOnScreen :: (Double,Double) -> Double -> (Double,Double) -> NodeGI -> Bool
+isNodeOnScreen (px,py) z (sw, sh) ngi =
+  isRectOnScreen (px,py) z (sw, sh) rect
+  where
+    (x,y) = position ngi
+    (w,h) = dims ngi
+    rect = case (shape ngi) of
+      NCircle -> let d = max w h in (x,y,d,d)
+      NSquare -> let d = max w h in (x,y,d,d)
+      _ -> (x,y,w,h)
+
 
 isRectOnScreen :: (Double,Double) -> Double -> (Double,Double) -> (Double,Double,Double,Double) -> Bool
 isRectOnScreen (px,py) z (sw, sh) rect@(rx,ry,rw,rh) =
@@ -120,8 +131,8 @@ isRectOnScreen (px,py) z (sw, sh) rect@(rx,ry,rw,rh) =
 -- draw a typegraph in the canvas
 -- if there are nodes or edges with same names, then highlight them as errors
 -- if any element is selected, highlight it as selected
-drawTypeGraph :: GraphState -> SquareSelection -> Render ()
-drawTypeGraph state sq = drawGraph state sq nodeColors edgeColors M.empty M.empty Nothing
+drawTypeGraph :: GraphState -> SquareSelection -> Maybe (Double,Double) -> Render ()
+drawTypeGraph state sq mRect = drawGraph state sq nodeColors edgeColors M.empty M.empty mRect
   where
     g = stateGetGraph state
     cg = nameConflictGraph g
@@ -131,8 +142,8 @@ drawTypeGraph state sq = drawGraph state sq nodeColors edgeColors M.empty M.empt
 -- draw a typed graph
 -- if there are nodes or edges not correctly typed, highlight them as errors
 -- if any element is selected, highlight it as selected
-drawHostGraph :: GraphState -> SquareSelection -> Graph Info Info -> Render ()
-drawHostGraph state sq tg = drawGraph state sq nodeColors edgeColors M.empty M.empty Nothing
+drawHostGraph :: GraphState -> SquareSelection -> Graph Info Info -> Maybe (Double,Double) -> Render ()
+drawHostGraph state sq tg mRect = drawGraph state sq nodeColors edgeColors M.empty M.empty mRect
   where
     g = stateGetGraph state
     vg = correctTypeGraph g tg
@@ -141,8 +152,8 @@ drawHostGraph state sq tg = drawGraph state sq nodeColors edgeColors M.empty M.e
 
 -- draw a rulegraph
 -- similar to drawHostGraph, but draws bold texts to indicate operations
-drawRuleGraph :: GraphState -> SquareSelection -> Graph Info Info -> Render ()
-drawRuleGraph state sq tg = drawGraph state sq nodeColors edgeColors nodeTextColors edgeTextColors Nothing
+drawRuleGraph :: GraphState -> SquareSelection -> Graph Info Info -> Maybe (Double,Double) -> Render ()
+drawRuleGraph state sq tg mRect = drawGraph state sq nodeColors edgeColors nodeTextColors edgeTextColors mRect
   where
     g = stateGetGraph state
     (nGI,eGI) = stateGetGI state
@@ -176,8 +187,8 @@ drawRuleGraph state sq tg = drawGraph state sq nodeColors edgeColors nodeTextCol
 -- draw a nac
 -- it highlights elements of the lhs part of the rule with yellow shadows
 -- and highlights merged elements of the lhs part of the rule with green shadows
-drawNACGraph :: GraphState -> SquareSelection -> Graph Info Info -> MergeMapping -> Render ()
-drawNACGraph state sq tg (nM,eM) = drawGraph state sq nodeColors edgeColors M.empty M.empty Nothing
+drawNACGraph :: GraphState -> SquareSelection -> Graph Info Info -> MergeMapping -> Maybe (Double,Double) -> Render ()
+drawNACGraph state sq tg (nM,eM) mRect = drawGraph state sq nodeColors edgeColors M.empty M.empty mRect
   where
     g = stateGetGraph state
     vg = correctTypeGraph g tg
@@ -192,8 +203,8 @@ drawNACGraph state sq tg (nM,eM) = drawGraph state sq nodeColors edgeColors M.em
     isEdgeMerged e = M.size (M.filter (== (edgeId e)) eM) > 1
 
 -- draw a graph highlighting elements of the lhs part of the rule with yellow shadows
-drawGraphHighlighting :: GraphState -> SquareSelection -> ([NodeId],[EdgeId]) -> Render ()
-drawGraphHighlighting state sq (nList,eList) = drawGraph state sq nodeColors edgeColors M.empty M.empty Nothing
+drawGraphHighlighting :: GraphState -> SquareSelection -> ([NodeId],[EdgeId]) -> Maybe (Double,Double) -> Render ()
+drawGraphHighlighting state sq (nList,eList) mRect = drawGraph state sq nodeColors edgeColors M.empty M.empty mRect
   where
     g = stateGetGraph state
     nodeColors = M.fromList $ map (\n -> (n, lockedColor)) $ filter (\n -> n `elem` nList) (nodeIds g)

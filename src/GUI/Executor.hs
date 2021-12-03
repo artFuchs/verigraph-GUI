@@ -170,8 +170,11 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     on mainCanvas #draw $ \context -> do
         st <- readIORef hostState
         sq <- readIORef mainSqrSel
+        aloc <- Gtk.widgetGetAllocation mainCanvas
+        w <- Gdk.getRectangleWidth aloc >>= return . fromIntegral :: IO Double
+        h <- Gdk.getRectangleHeight aloc >>= return . fromIntegral :: IO Double
         matchedElems <- readIORef currentMatchedElements
-        renderWithContext context $ drawGraphHighlighting st sq matchedElems
+        renderWithContext context $ drawGraphHighlighting st sq matchedElems (Just (w,h))
         return False
 
     (_,nacSqrSel)<- setCanvasCallBacks nacCanvas nacState typeGraph Nothing focusedCanvas focusedStateIORef
@@ -181,7 +184,10 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         sq <- readIORef nacSqrSel
         index <- readIORef currentNACIndex
         mm <- readIORef mergeMap >>= return . fromMaybe (M.empty,M.empty)
-        renderWithContext context $ drawNACGraph es sq tg mm
+        aloc <- Gtk.widgetGetAllocation nacCanvas
+        w <- Gdk.getRectangleWidth aloc >>= return . fromIntegral :: IO Double
+        h <- Gdk.getRectangleHeight aloc >>= return . fromIntegral :: IO Double
+        renderWithContext context $ drawNACGraph es sq tg mm (Just (w,h))
         return False
 
     on store #rowInserted $ \path iter -> do
@@ -587,7 +593,7 @@ type SquareSelection = Maybe (Double,Double,Double,Double)
 setCanvasCallBacks :: Gtk.DrawingArea
                    -> IORef GraphState
                    -> IORef (G.Graph Info Info )
-                   -> Maybe (GraphState -> SquareSelection -> G.Graph Info Info -> Render ())
+                   -> Maybe (GraphState -> SquareSelection -> G.Graph Info Info -> Maybe (Double,Double) -> Render ())
                    -> IORef (Maybe Gtk.DrawingArea) -> IORef (Maybe (IORef GraphState))
                    -> IO (IORef (Double,Double), IORef SquareSelection)
 setCanvasCallBacks canvas state refGraph drawMethod focusedCanvas focusedStateIORef = do
@@ -599,7 +605,10 @@ setCanvasCallBacks canvas state refGraph drawMethod focusedCanvas focusedStateIO
                 es <- readIORef state
                 rg <- readIORef refGraph
                 sq <- readIORef squareSelection
-                renderWithContext context $ draw es sq rg
+                aloc <- Gtk.widgetGetAllocation canvas
+                w <- Gdk.getRectangleWidth aloc >>= return . fromIntegral :: IO Double
+                h <- Gdk.getRectangleHeight aloc >>= return . fromIntegral :: IO Double
+                renderWithContext context $ draw es sq rg (Just (w,h))
                 return False
             return ()
         Nothing -> return ()
