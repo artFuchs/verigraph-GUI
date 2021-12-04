@@ -175,7 +175,7 @@ startEditor window store
   currentNodeType     <- newIORef ( Nothing :: Maybe String)
   currentEdgeType     <- newIORef ( Nothing :: Maybe String)
 
-  let selectableTypesIORefs = (possibleNodeTypes, possibleEdgeTypes, currentNodeType, currentEdgeType)
+  let selectableTypesIORefs = (possibleNodeTypes, possibleSelectableEdgeTypes, currentNodeType, currentEdgeType)
 
 
   -- "unpack" IORefs
@@ -252,19 +252,6 @@ startEditor window store
     else
       return ()
 
-    -- changed the edge type box displayed options based on which edges are selected
-    gType <- readIORef currentGraphType
-    tg <- readIORef typeGraph
-    if gType > 1
-      then changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox currentState tg
-      else return ()
-
-    -- update inspector UI
-    updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
-                    currentC currentLC
-                    typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
-                    (nodeTypeBox, edgeTypeBox)
-
     return True
 
   -- mouse motion on canvas
@@ -276,28 +263,27 @@ startEditor window store
   -- mouse button release on canvas
   -- set callback to select elements that are inside squareSelection
   on canvas #buttonReleaseEvent $ basicCanvasButtonReleasedCallback currentState squareSelection canvas
-  -- if there are elements selected by the squareSelection, then update the inspector and the edge type selection comboBox
+  -- if there are elements selected, then update the inspector and the edge type selection comboBox
   on canvas #buttonReleaseEvent $ \eventButton -> do
     b <- get eventButton #button
     gType <- readIORef currentGraphType
     tg <- readIORef typeGraph
     es <- readIORef currentState
     case b of
-      1 -> do
-        writeIORef movingGI False
-        let (sNodes, sEdges) = stateGetSelected es
-        case (length sNodes > 0 || length sEdges > 0) of
-          True -> do
-            if gType > 1
-              then do
-                changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox currentState tg
-              else return ()
-            updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
-                            currentC currentLC
-                            typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
-                            (nodeTypeBox, edgeTypeBox)
-          False -> return ()
+      1 -> writeIORef movingGI False
       _ -> return ()
+
+    if gType > 1 then
+      changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox currentState tg
+    else
+      return ()
+
+    pSET <- readIORef possibleSelectableEdgeTypes
+
+    updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
+                    currentC currentLC
+                    typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
+                    (nodeTypeBox, edgeTypeBox)
     return True
 
   -- mouse wheel scroll on canvas
@@ -1585,6 +1571,7 @@ changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTy
           print eid
           print g
           defaultAction
+    -- TODO: rewrite this atrocity ↓↓↓↓↓
     -- many edges selected
     (False,eids) -> do
       let
@@ -1614,7 +1601,7 @@ changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTy
       case endings of
         -- all selected edges have source and target nodes of same types ->
         --      modify comboboxes to show what kind of types these edges can have
-        (True,Just (src,tgt)) -> do
+        (False,Just (src,tgt)) -> do
           let
             possibleTypes = listPossibleEdgeTypes tg src tgt
             pEST = M.filterWithKey (\k _ -> k `elem` possibleTypes) pET
@@ -1624,7 +1611,7 @@ changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTy
           updateComboBoxText edgeTypeCBox (map T.pack $ M.keys pEST')
         -- the selected edges have source and target nodes of different types ->
         --      all edge types are selectable
-        (False,_) -> defaultAction
+        _ -> defaultAction
 
 -- create a new node, auto-generating it's name and dimensions
 createNode' :: IORef GraphState -> Info -> Bool -> GIPos -> NodeShape -> GIColor -> GIColor -> P.Context ->  IO NodeId
