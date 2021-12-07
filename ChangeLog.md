@@ -1,5 +1,10 @@
 # Changelog for Verigraph-GUI
 
+0.2.1.0
+    - added module for Model Checking
+    - optimized graph drawing
+    - bug fixes
+
 0.2.0.4
     - better id drawing
     - changed how the information about the matches is shown in the executor tree view
