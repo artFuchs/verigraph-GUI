@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<!-- Generated with glade 3.22.1 -->
+<!-- Generated with glade 3.22.2 -->
 <interface>
   <requires lib="gtk+" version="3.20"/>
   <object class="GtkTextTagTable" id="helpTagTable">
@@ -78,11 +78,44 @@ To run the analysis, click in the 'Execute Analysis' button. The result of the a
 
 As in verigraph, it is possible to export the result to a .cpx file to be viewed in AGG. To do this, use the folder icon in the top left to specify a path to save the analysis, or write the path in the "file path" text entry and then click in the save icon on the right of the "file path" field</property>
   </object>
+  <object class="GtkTextBuffer" id="textbuffer4">
+    <property name="tag_table">helpTagTable</property>
+    <property name="text" translatable="yes"># State Space Generation
+
+One can generate the state space for the graph grammar using the 'generate space' button.
+The state space generation can be limited to a maximun number of states and can be interrupted with the 'stop generation' button.
+After generating the state space, the graph layout can be reorganized as you see fit.
+
+
+# Model Checking
+
+It's possible then to check if a formula holds for the state space, by writing a CTL formula in the 'formula' field and clicking on 'check formula'.
+The states in which the formula hold will be highlighted in green, while which doesn't will be highlightet in red. 
+
+# CTL syntax
+
+The formula can be constructed with:
+- rule (must start with lower case)
+- true, false
+- ~f
+- f1 &amp;&amp; f2
+- f1 || f2
+- f1 -&gt; f2
+- f1 &lt;-&gt; f2
+- A Temp
+- E Temp
+
+and Temp can be
+- X f    (f holds for the next state of the current path)
+- F f    (f eventually holds in the current path)
+- G f    (f holds for all the states in the current path)
+- [ f1 U f2 ]    (f1 holds in all states of the current path until before the state where f2 holds)</property>
+  </object>
   <object class="GtkWindow" id="helpWindow">
     <property name="can_focus">False</property>
     <property name="default_width">600</property>
     <property name="default_height">400</property>
-    <child>
+    <child type="titlebar">
       <placeholder/>
     </child>
     <child>
@@ -126,6 +159,7 @@ As in verigraph, it is possible to export the result to a .cpx file to be viewed
                 <property name="visible">True</property>
                 <property name="can_focus">True</property>
                 <property name="margin_right">15</property>
+                <property name="editable">False</property>
                 <property name="wrap_mode">word</property>
                 <property name="buffer">textbuffer2</property>
               </object>
@@ -147,11 +181,19 @@ As in verigraph, it is possible to export the result to a .cpx file to be viewed
           </packing>
         </child>
         <child>
-          <object class="GtkTextView">
+          <object class="GtkScrolledWindow">
             <property name="visible">True</property>
             <property name="can_focus">True</property>
-            <property name="wrap_mode">word</property>
-            <property name="buffer">textbuffer3</property>
+            <property name="shadow_type">in</property>
+            <child>
+              <object class="GtkTextView">
+                <property name="visible">True</property>
+                <property name="can_focus">True</property>
+                <property name="editable">False</property>
+                <property name="wrap_mode">word</property>
+                <property name="buffer">textbuffer3</property>
+              </object>
+            </child>
           </object>
           <packing>
             <property name="position">2</property>
@@ -165,6 +207,36 @@ As in verigraph, it is possible to export the result to a .cpx file to be viewed
           </object>
           <packing>
             <property name="position">2</property>
+            <property name="tab_fill">False</property>
+          </packing>
+        </child>
+        <child>
+          <object class="GtkScrolledWindow">
+            <property name="visible">True</property>
+            <property name="can_focus">True</property>
+            <property name="shadow_type">in</property>
+            <child>
+              <object class="GtkTextView">
+                <property name="visible">True</property>
+                <property name="can_focus">True</property>
+                <property name="editable">False</property>
+                <property name="wrap_mode">word</property>
+                <property name="buffer">textbuffer4</property>
+              </object>
+            </child>
+          </object>
+          <packing>
+            <property name="position">3</property>
+          </packing>
+        </child>
+        <child type="tab">
+          <object class="GtkLabel">
+            <property name="visible">True</property>
+            <property name="can_focus">False</property>
+            <property name="label" translatable="yes">Model Checker</property>
+          </object>
+          <packing>
+            <property name="position">3</property>
             <property name="tab_fill">False</property>
           </packing>
         </child>
