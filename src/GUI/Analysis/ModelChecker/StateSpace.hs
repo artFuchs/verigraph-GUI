@@ -1,6 +1,6 @@
 {-# LANGUAGE ScopedTypeVariables        #-}
 
--- | This module handles state space generation
+-- | This module handles the state space generation and visualization.
 module GUI.Analysis.ModelChecker.StateSpace (
   exploreStateSpace
 , breadthFirstSearchIO
@@ -14,7 +14,8 @@ import            Control.Monad
 import            Control.Concurrent.MVar
 import            Data.Maybe
 import qualified  Data.Map                          as M
-import qualified  Data.IntMap                        as IntMap
+import            Data.IntMap                       (IntMap)
+import qualified  Data.IntMap                       as IntMap
 
 import qualified  Abstract.Category                 as Cat
 import qualified  Abstract.Rewriting.DPO            as DPO
@@ -31,11 +32,12 @@ import            GUI.Data.GraphicalInfo
 
 type NamedPredicate a b = (String, TypedGraphRule a b)
 type NamedProduction a b = (String, TypedGraphRule a b)
-type Space a b = SS.StateSpace (TGM.TypedGraphMorphism a b)
+type Match a b = TGM.TypedGraphMorphism a b
+type Space a b = SS.StateSpace (Match a b)
 
 
 -- state space generation -------------------------------------------------------------------------------------------------------------------------------------------------------
-exploreStateSpace :: DPO.MorphismsConfig (TGM.TypedGraphMorphism a b) -> Int -> DPO.Grammar (TGM.TypedGraphMorphism a b) -> TG.TypedGraph a b -> Maybe (MVar (Space a b, Bool)) -> IO (Int,Space a b)
+exploreStateSpace :: DPO.MorphismsConfig (TGM.TypedGraphMorphism a b) -> Int -> DPO.Grammar (TGM.TypedGraphMorphism a b) -> TG.TypedGraph a b -> Maybe (MVar (Space a b, Bool)) -> IO (Int,Space a b,IntMap (Int, Match a b))
 exploreStateSpace conf maxDepth grammar graph ssMVar =
   {-# SCC "exploreStateSpace" #-}
   let
@@ -51,39 +53,41 @@ exploreStateSpace conf maxDepth grammar graph ssMVar =
       SS.empty conf productions predicates
   in do
     (idx,space1) <- return $ SS.runStateSpaceBuilder getInitialId initialSpace
-    spacex <- breadthFirstSearchIO maxDepth [graph] space1 ssMVar
-    return (idx,spacex)
+    (spacex, matchesM) <- breadthFirstSearchIO maxDepth [graph] (IntMap.empty) space1 ssMVar
+    return (idx, spacex, matchesM)
 
 
 {-| Runs a breadth-first search, starting with a initial state space.
     The number of states explored are limited by the given number.
     At each iteration of the search, updates the MVar ssMVar with the current result so that the user can stop at any moment.
 -}
-breadthFirstSearchIO :: Int -> [(TG.TypedGraph a b)] -> Space a b -> Maybe (MVar (Space a b, Bool)) -> IO (Space a b)
-breadthFirstSearchIO 0 _ initialSpace mssMVar = return initialSpace
-breadthFirstSearchIO _ [] initialSpace mssMVar = return initialSpace
-breadthFirstSearchIO maxNum objs initialSpace mssMVar = do
-  let ((newNum, newObjs), state) = SS.runStateSpaceBuilder (bfsStep maxNum objs) initialSpace
+breadthFirstSearchIO :: Int -> [(TG.TypedGraph a b)] -> IntMap (Int, Match a b) -> Space a b -> Maybe (MVar (Space a b, Bool)) -> IO (Space a b, IntMap (Int, Match a b))
+breadthFirstSearchIO 0 _  matchesM initialSpace _ = return (initialSpace, matchesM)
+breadthFirstSearchIO _ [] matchesM initialSpace _ = return (initialSpace, matchesM)
+breadthFirstSearchIO maxNum objs matchesM initialSpace mssMVar = do
+  let ((newNum, newObjs, matchesM'), state) = SS.runStateSpaceBuilder (bfsStep maxNum objs) initialSpace
+      matchesM'' = IntMap.union matchesM matchesM'
   case mssMVar of
     Just ssMVar -> putMVar ssMVar (state, null newObjs || newNum == 0)
     Nothing -> return ()
-  breadthFirstSearchIO newNum newObjs state mssMVar
+  breadthFirstSearchIO newNum newObjs matchesM'' state mssMVar
 
 
 -- | Step of a breadth-first search.
-bfsStep :: forall morph. DPO.DPO morph => Int -> [Cat.Obj morph] -> SS.StateSpaceBuilder morph (Int,[Cat.Obj morph])
+bfsStep :: forall morph. DPO.DPO morph => Int -> [Cat.Obj morph] -> SS.StateSpaceBuilder morph (Int,[Cat.Obj morph], IntMap (Int, morph))
 bfsStep maxNum (obj:node_list) = do
   (objIndex, _) <- SS.putState obj
   successors <- expandSuccessors' maxNum (objIndex,obj)
-  let successors' = map (\(i,o,n) -> o) successors
-  return (maxNum - length successors', node_list ++ successors')
+  let successors' = map (\(i,o,m) -> o) successors
+  let matchesM = IntMap.fromList $ map (\(i,o,m) -> (i,m)) successors
+  return (maxNum - length successors', node_list ++ successors', matchesM)
 
 
 -- | Finds all transformations of the given state with the productions of the HLR system being explored, adding them to the state space.
--- Returns a list of the successor states as @(index, object, isNew)@, where @isNew@ indicates that the state was not present in the state space before.
+-- Returns a list of the successor states as @(index, object, applied match)@
 -- limits the number of matches applications to @maxNum@
 -- adapted from module Abstract.Rewriting.DPO.StateSpace
-expandSuccessors' :: forall morph. DPO.DPO morph => Int -> (Int, Cat.Obj morph) -> SS.StateSpaceBuilder morph [(Int, Cat.Obj morph, Bool)]
+expandSuccessors' :: forall morph. DPO.DPO morph => Int -> (Int, Cat.Obj morph) -> SS.StateSpaceBuilder morph [(Int, Cat.Obj morph, (Int, morph))]
 expandSuccessors' maxNum (index, object) =
   do
     prods <- SS.getProductions
@@ -92,7 +96,7 @@ expandSuccessors' maxNum (index, object) =
     (_,states) <- foldM expand (maxNum, []) matches
     return states
   where
-    expand :: (Int, [(Int, Cat.Obj morph, Bool)]) -> (String, Production morph, morph) -> SS.StateSpaceBuilder morph  (Int, [(Int, Cat.Obj morph, Bool)])
+    expand :: (Int, [(Int, Cat.Obj morph, (Int, morph))]) -> (String, Production morph, morph) -> SS.StateSpaceBuilder morph  (Int, [(Int, Cat.Obj morph, (Int,morph))])
     expand (n,l) (name,prod,match) =
       if (n > 0) then
         do
@@ -101,7 +105,7 @@ expandSuccessors' maxNum (index, object) =
           SS.putTransition (index,index',name)
           return $
             if isNew then
-              (n-1,(index',object',isNew):l)
+              (n-1,(index',object', (index,match)):l)
             else
               (n,l)
       else
