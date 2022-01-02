@@ -5,6 +5,7 @@ module GUI.Executor (
 , updateTreeStore
 , removeFromTreeStore
 , removeTrashFromTreeStore
+, applyMatch
 ) where
 
 -- GTK related modules
@@ -716,7 +717,7 @@ applyMatchAccordingToLevel hostState statesMap matchesMap productionMap currentM
     -- apply match according to the level selected
     case (prod,match, rIndex, mIndex) of
         (Just p, Just m, _, _) -> do  -- specified rule, specified match
-            applyMatch hostState statesMap rIndex p m
+            applyMatch' hostState statesMap rIndex p m
 
         (Just p,Nothing, _, -1) -> do -- specified rule, random match
             let matchesL = M.elems matches
@@ -725,7 +726,7 @@ applyMatchAccordingToLevel hostState statesMap matchesMap productionMap currentM
                 else do
                     index <- randomRIO (0, (length matchesL)-1)
                     let m = matchesL!!index
-                    applyMatch hostState statesMap rIndex p m
+                    applyMatch' hostState statesMap rIndex p m
 
         (Nothing,Nothing,-1,-1) -> do -- full random
             let matchesLL = M.toList $ M.map M.elems matchesM
@@ -738,86 +739,127 @@ applyMatchAccordingToLevel hostState statesMap matchesMap productionMap currentM
                     index <- randomRIO (0,(length matchesEntries)-1)
                     let (rIndex, m) = matchesEntries!!index
                         p = fromJust $ M.lookup rIndex prodMap
-                    applyMatch hostState statesMap rIndex p m
+                    applyMatch' hostState statesMap rIndex p m
         _ -> return ()
 
 
 
-applyMatch :: IORef GraphState -> IORef (M.Map Int32 GraphState) -> Int32 -> TGMProduction -> Match -> IO ()
-applyMatch hostState statesMap rIndex p m = do
-    let (k,n,f,g) = DPO.calculateDPO m p
-        fMapping = TGM.mapping f
-        gMapping = TGM.mapping g
-        nMapping = TGM.mapping n
-        fNodeRelation' = R.inverseRelation $ GM.nodeRelation fMapping -- G --fn'--> D
-        fEdgeRelation' = R.inverseRelation $ GM.edgeRelation fMapping -- G --fe'--> D
-        gNodeRelation = GM.nodeRelation gMapping                      -- D --gn--> H
-        gEdgeRelation = GM.edgeRelation gMapping                      -- D --ge--> H
-        nNodeRelation = GM.nodeRelation nMapping                      -- R --nn--> H
-        nNodeRelation' = R.inverseRelation $ GM.nodeRelation nMapping -- H --nn'--> R
-        nEdgeRelation' = R.inverseRelation $ GM.edgeRelation nMapping -- H --ne'--> R
-
-    let apply rel k def = case R.apply rel k of [] -> def; id:_ -> id
-        replaceInfo (k,i) m = case lookup k m of Nothing -> i; Just i' -> i'
-
-    -- make sure the mapped elements preserve the information between transformations
-    let gGraph = GM.domainGraph fMapping
-        dGraph = GM.codomainGraph fMapping
-        hGraph = GM.codomainGraph gMapping
-
-        gNodesInfo = map (\(k,n) -> (apply fNodeRelation' k (G.NodeId (-1)), G.nodeInfo n)) (G.nodeMap gGraph)
-        gEdgesInfo = map (\(k,e) -> (apply fEdgeRelation' k (G.EdgeId (-1)), G.edgeInfo e)) (G.edgeMap gGraph)
-
-        dNodesInfo = map (\(k,n) -> (k, G.nodeInfo n)) (G.nodeMap dGraph)
-        dEdgesInfo = map (\(k,e) -> (k, G.edgeInfo e)) (G.edgeMap dGraph)
-        dNodesInfo' = map (\(k,ni) -> (apply gNodeRelation k (G.NodeId (-1)), replaceInfo (k,ni) gNodesInfo) ) dNodesInfo
-        dEdgesInfo' = map (\(k,ei) -> (apply gEdgeRelation k (G.EdgeId (-1)), replaceInfo (k,ei) gEdgesInfo) ) dEdgesInfo
-
-        hNodesInfo = map (\(k,n) -> (k, replaceInfo (k, G.nodeInfo n) dNodesInfo')) (G.nodeMap hGraph)
-        hEdgesInfo = map (\(k,e) -> (k, replaceInfo (k, G.edgeInfo e) dEdgesInfo')) (G.edgeMap hGraph)
-
-        hGraph' = foldr (\(k,i) g -> G.updateNodePayload k g (\ni -> i)) hGraph hNodesInfo
-        hGraph'' = foldr (\(k,i) g -> G.updateEdgePayload k g (\ei -> i)) hGraph' hEdgesInfo
-        hNodeMap' = map (\(k,n) -> (k, GMker.nodeFromJust n)) (G.nodeMap hGraph'')
-        hEdgeMap' = map (\(k,e) -> (k, GMker.edgeFromJust e)) (G.edgeMap hGraph'')
-        finalNodeMap = map (\(k,n) -> (k, n {G.nodeInfo = infoSetOperation (G.nodeInfo n) Preserve})) hNodeMap'
-        finalEdgeMap = map (\(k,e) -> (k, e {G.edgeInfo = infoSetOperation (G.edgeInfo e) Preserve})) hEdgeMap'
-        finalGraph = G.Graph finalNodeMap finalEdgeMap
-
-    -- modify graphical information to match the modifications
+-- | apply a match to the hostGraph, modifying it's IORef.
+applyMatch' :: IORef GraphState -> IORef (M.Map Int32 GraphState) -> Int32 -> TGMProduction -> Match -> IO ()
+applyMatch' hostState statesMap rIndex p m = do
     hostSt <- readIORef hostState
     statesM <- readIORef statesMap
-    let (sgiN,sgiE) = stateGetGI hostSt
-        -- delete layouts of elements that are not in the f morphism (G --f--> D)
-        sgiN' = M.mapKeys G.NodeId $ M.filterWithKey (\k _ -> G.NodeId k `elem` (R.domain fNodeRelation')) sgiN
-        sgiE' = M.mapKeys G.EdgeId $ M.filterWithKey (\k _ -> G.EdgeId k `elem` (R.domain fEdgeRelation')) sgiE
-        -- modify the ids of the elements that are in the f morphism (G --f--> D)
-        dgiN  = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply fNodeRelation' k (G.NodeId (-1))) sgiN'
-        dgiE  = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply fEdgeRelation' k (G.EdgeId (-1))) sgiE'
-        -- modify the ids of the elements that are in the g morphism (D --g--> H)
-        dgiN' = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply gNodeRelation k (G.NodeId (-1))) dgiN
-        dgiE' = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply gEdgeRelation k (G.EdgeId (-1))) dgiE
-
-        -- add layouts to the elements of codomain of g morphism that have no relation to elements of it's domain
-        rSt = fromJust $ M.lookup rIndex statesM
-        (rgiN,rgiE) = stateGetGI rSt
-        rGraph = stateGetGraph rSt
-        addedNodeIds = filter (\id -> id `notElem` (M.keys dgiN')) (R.domain nNodeRelation')
-        addedEdgeIds = filter (\id -> id `notElem` (M.keys dgiE')) (R.domain nEdgeRelation')
-        addedNodeIds' = filter (\(_,kr) -> fromEnum kr > 0) $ map (\k -> (k, apply nNodeRelation' k (-1))) addedNodeIds
-        addedEdgeIds' = filter (\(_,kr) -> fromEnum kr > 0) $ map (\k -> (k, apply nEdgeRelation' k (-1))) addedEdgeIds
-        addedNodeGIs = map (\(k,kr) -> (k,fromJust $ M.lookup (fromEnum kr) rgiN)) addedNodeIds'
-        addedEdgeGIs = map (\(k,kr) -> (k,fromJust $ M.lookup (fromEnum kr) rgiE)) addedEdgeIds'
-
-        -- reposition added elements
-        addedEdgeGIs' = calculateEdgesPositions addedEdgeIds addedEdgeGIs dGraph hGraph gNodeRelation
-        addedNodeGIs' = calculateNodesPositions addedNodeIds' addedNodeGIs rGraph rgiN dgiN' nNodeRelation
-
-    let hgiN = foldr (\(k,gi) m -> M.insert k gi m) (M.mapKeys fromEnum $ dgiN') (map (\(k,gi) -> (fromEnum k, gi)) addedNodeGIs')
-        hgiE = M.mapKeys fromEnum $ foldr (\(k,gi) m -> M.insert k gi m) dgiE' addedEdgeGIs'
-        hState = stateSetSelected (addedNodeIds,addedEdgeIds) . stateSetGraph finalGraph . stateSetGI (hgiN,hgiE) $ hostSt
-
+    hState <- return $ applyMatch hostSt statesM rIndex p m
     writeIORef hostState hState
+
+-- | apply a match in a graphState, generating a new one.
+-- It ensures that he payloads of nodes and edges of the final graph are correct and
+-- updates the GI positioning new nodes relatively to the position it has in the rule.
+applyMatch :: GraphState -> M.Map Int32 GraphState -> Int32 -> TGMProduction -> Match -> GraphState
+applyMatch hostSt statesM rIndex p m = hState
+  where
+    -- calculate graph
+    (k,n,f,g) = DPO.calculateDPO m p
+    (finalGraph, dGraph, hGraph) = applyMatchGraph [k,n,f,g]
+    -- modify graphical information to match the modifications
+    hState = applyMatchGI finalGraph dGraph hGraph hostSt statesM rIndex [k,n,f,g]
+
+-- Apply a match in a graph with paylads of type Info.
+-- This function is auxiliar to applyMatch and it ensures that the payloads of nodes and edges of the final graph are correct.
+applyMatchGraph :: [TGM.TypedGraphMorphism Info Info] -> (G.Graph Info Info, G.Graph (Maybe Info) (Maybe Info), G.Graph (Maybe Info) (Maybe Info))
+applyMatchGraph (k:n:f:g:_)  = (finalGraph, dGraph, hGraph)
+  where
+    fMapping = TGM.mapping f
+    gMapping = TGM.mapping g
+    nMapping = TGM.mapping n
+    fNodeRelation' = R.inverseRelation $ GM.nodeRelation fMapping -- G --fn'--> D
+    fEdgeRelation' = R.inverseRelation $ GM.edgeRelation fMapping -- G --fe'--> D
+    gNodeRelation = GM.nodeRelation gMapping                      -- D --gn--> H
+    gEdgeRelation = GM.edgeRelation gMapping                      -- D --ge--> H
+
+    -- auxiliar functions
+    apply rel k def = case R.apply rel k of [] -> def; id:_ -> id
+    replaceInfo (k,i) m = case lookup k m of Nothing -> i; Just i' -> i'
+
+    -- make sure the mapped elements preserve the information between transformations
+    gGraph = GM.domainGraph fMapping
+    dGraph = GM.codomainGraph fMapping
+    hGraph = GM.codomainGraph gMapping
+
+    gNodesInfo = map (\(k,n) -> (apply fNodeRelation' k (G.NodeId (-1)), G.nodeInfo n)) (G.nodeMap gGraph)
+    gEdgesInfo = map (\(k,e) -> (apply fEdgeRelation' k (G.EdgeId (-1)), G.edgeInfo e)) (G.edgeMap gGraph)
+
+    dNodesInfo = map (\(k,n) -> (k, G.nodeInfo n)) (G.nodeMap dGraph)
+    dEdgesInfo = map (\(k,e) -> (k, G.edgeInfo e)) (G.edgeMap dGraph)
+    dNodesInfo' = map (\(k,ni) -> (apply gNodeRelation k (G.NodeId (-1)), replaceInfo (k,ni) gNodesInfo) ) dNodesInfo
+    dEdgesInfo' = map (\(k,ei) -> (apply gEdgeRelation k (G.EdgeId (-1)), replaceInfo (k,ei) gEdgesInfo) ) dEdgesInfo
+
+    hNodesInfo = map (\(k,n) -> (k, replaceInfo (k, G.nodeInfo n) dNodesInfo')) (G.nodeMap hGraph)
+    hEdgesInfo = map (\(k,e) -> (k, replaceInfo (k, G.edgeInfo e) dEdgesInfo')) (G.edgeMap hGraph)
+
+    hGraph' = foldr (\(k,i) g -> G.updateNodePayload k g (\ni -> i)) hGraph hNodesInfo
+    hGraph'' = foldr (\(k,i) g -> G.updateEdgePayload k g (\ei -> i)) hGraph' hEdgesInfo
+    hNodeMap' = map (\(k,n) -> (k, GMker.nodeFromJust n)) (G.nodeMap hGraph'')
+    hEdgeMap' = map (\(k,e) -> (k, GMker.edgeFromJust e)) (G.edgeMap hGraph'')
+    finalNodeMap = map (\(k,n) -> (k, n {G.nodeInfo = infoSetOperation (G.nodeInfo n) Preserve})) hNodeMap'
+    finalEdgeMap = map (\(k,e) -> (k, e {G.edgeInfo = infoSetOperation (G.edgeInfo e) Preserve})) hEdgeMap'
+    finalGraph = G.Graph finalNodeMap finalEdgeMap
+
+-- Change a graphState, updating it's graph and changing it's GI, positioning new nodes relatively to the position it has in the rule.
+-- This function is an auxiliar to applyMatch.
+applyMatchGI :: G.Graph Info Info -> G.Graph (Maybe Info) (Maybe Info) -> G.Graph (Maybe Info) (Maybe Info) ->  GraphState -> M.Map Int32 GraphState -> Int32 -> [TGM.TypedGraphMorphism Info Info] -> GraphState
+applyMatchGI finalGraph dGraph hGraph hostSt statesM rIndex (k:n:f:g:_) = hState
+  where
+    fMapping = TGM.mapping f
+    gMapping = TGM.mapping g
+    nMapping = TGM.mapping n
+    fNodeRelation' = R.inverseRelation $ GM.nodeRelation fMapping -- G --fn'--> D
+    fEdgeRelation' = R.inverseRelation $ GM.edgeRelation fMapping -- G --fe'--> D
+    gNodeRelation = GM.nodeRelation gMapping                      -- D --gn--> H
+    gEdgeRelation = GM.edgeRelation gMapping                      -- D --ge--> H
+    nNodeRelation = GM.nodeRelation nMapping                      -- R --nn--> H
+    nNodeRelation' = R.inverseRelation $ GM.nodeRelation nMapping -- H --nn'--> R
+    nEdgeRelation' = R.inverseRelation $ GM.edgeRelation nMapping -- H --ne'--> R
+
+    -- auxiliar functions
+    apply rel k def = case R.apply rel k of [] -> def; id:_ -> id
+
+    (sgiN,sgiE) = stateGetGI hostSt
+    -- delete layouts of elements that are not in the f morphism (G --f--> D)
+    sgiN' = M.mapKeys G.NodeId $ M.filterWithKey (\k _ -> G.NodeId k `elem` (R.domain fNodeRelation')) sgiN
+    sgiE' = M.mapKeys G.EdgeId $ M.filterWithKey (\k _ -> G.EdgeId k `elem` (R.domain fEdgeRelation')) sgiE
+    -- modify the ids of the elements that are in the f morphism (G --f--> D)
+    dgiN  = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply fNodeRelation' k (G.NodeId (-1))) sgiN'
+    dgiE  = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply fEdgeRelation' k (G.EdgeId (-1))) sgiE'
+    -- modify the ids of the elements that are in the g morphism (D --g--> H)
+    dgiN' = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply gNodeRelation k (G.NodeId (-1))) dgiN
+    dgiE' = M.filterWithKey (\k _ -> fromEnum k > 0) $ M.mapKeys (\k -> apply gEdgeRelation k (G.EdgeId (-1))) dgiE
+
+    -- add layouts to the elements of codomain of g morphism that have no relation to elements of it's domain
+    rSt = fromJust $ M.lookup rIndex statesM
+    (rgiN,rgiE) = stateGetGI rSt
+    rGraph = stateGetGraph rSt
+    addedNodeIds = filter (\id -> id `notElem` (M.keys dgiN')) (R.domain nNodeRelation')
+    addedEdgeIds = filter (\id -> id `notElem` (M.keys dgiE')) (R.domain nEdgeRelation')
+    addedNodeIds' = filter (\(_,kr) -> fromEnum kr > 0) $ map (\k -> (k, apply nNodeRelation' k (-1))) addedNodeIds
+    addedEdgeIds' = filter (\(_,kr) -> fromEnum kr > 0) $ map (\k -> (k, apply nEdgeRelation' k (-1))) addedEdgeIds
+    addedNodeGIs = map (\(k,kr) -> (k,fromJust $ M.lookup (fromEnum kr) rgiN)) addedNodeIds'
+    addedEdgeGIs = map (\(k,kr) -> (k,fromJust $ M.lookup (fromEnum kr) rgiE)) addedEdgeIds'
+
+    -- reposition added elements
+    addedEdgeGIs' = calculateEdgesPositions addedEdgeIds addedEdgeGIs dGraph hGraph gNodeRelation
+    addedNodeGIs' = calculateNodesPositions addedNodeIds' addedNodeGIs rGraph rgiN dgiN' nNodeRelation
+
+    hgiN = foldr (\(k,gi) m -> M.insert k gi m) (M.mapKeys fromEnum $ dgiN') (map (\(k,gi) -> (fromEnum k, gi)) addedNodeGIs')
+    hgiE = M.mapKeys fromEnum $ foldr (\(k,gi) m -> M.insert k gi m) dgiE' addedEdgeGIs'
+    hState = stateSetSelected (addedNodeIds,addedEdgeIds) . stateSetGraph finalGraph . stateSetGI (hgiN,hgiE) $ hostSt
+
+
+
+
+
+
+
 
 calculateEdgesPositions :: [G.EdgeId] -> [(G.EdgeId, EdgeGI)] -> G.Graph (Maybe Info) (Maybe Info) -> G.Graph (Maybe Info) (Maybe Info) -> R.Relation G.NodeId -> [(G.EdgeId, EdgeGI)]
 calculateEdgesPositions addedEdgeIds addedEdgeGIs dGraph hGraph gNodeRelation =
