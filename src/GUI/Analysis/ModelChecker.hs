@@ -30,6 +30,8 @@ import qualified Data.Set    as Set
 import qualified Data.List   as List
 import           Data.Char
 import qualified Data.Time.Clock   as Time
+import           Data.IntMap                       (IntMap)
+import qualified Data.IntMap                       as IntMap
 
 
 -- verigraph structures
@@ -52,6 +54,7 @@ import            GUI.Data.DiaGraph
 import            GUI.Data.GraphState
 import            GUI.Data.GraphicalInfo
 import            GUI.Dialogs
+import            GUI.Executor
 import            GUI.Helper.BasicCanvasCallbacks
 import            GUI.Helper.GraphicalInfo
 import            GUI.Helper.GrammarMaker
@@ -98,6 +101,7 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
   execThread <- newIORef Nothing -- thread to generate state space
   constructThread <- newIORef Nothing -- thread to show state space
   goodStatesIORef <- newIORef Nothing
+  statesGSs <- newIORef IntMap.empty
 
   -- MVars
   constructEndedMVar <- newEmptyMVar
@@ -121,8 +125,10 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
             maxStates <- Gtk.spinButtonGetValueAsInt depthSpinBtn >>= return . fromIntegral
             context <- Gtk.widgetGetPangoContext canvas
             writeIORef ssGraphState emptyState
+            ruleIndexesMap <- getRuleIndexesMap store
+            gStatesMap <- readIORef graphStatesIORef
             execT <- forkFinally
-                        (generateSSThread statusSpinner statusLabel canvas context timeMVar grammar maxStates ssIORef initialIORef ssGraphState modelIORef constructThread constructEndedMVar)
+                        (generateSSThread statusSpinner statusLabel canvas context timeMVar grammar maxStates ssIORef initialIORef ssGraphState modelIORef constructThread constructEndedMVar ruleIndexesMap statesGSs gStatesMap)
                         (generateSSThreadEnd statusSpinner statusLabel execThread timeMVar constructThread constructEndedMVar)
             writeIORef execThread (Just execT)
 
@@ -221,8 +227,9 @@ generateSSThread :: Gtk.Spinner -> Gtk.Label -> Gtk.DrawingArea -> P.Context
                  -> IORef (Maybe (Space Info Info)) -> IORef Int
                  -> IORef GraphState -> IORef (Maybe (Logic.KripkeStructure String))
                  -> IORef (Maybe ThreadId) -> MVar Bool
+                 -> M.Map String Int32 -> IORef (IntMap GraphState) -> M.Map Int32 GraphState
                  -> IO ()
-generateSSThread statusSpinner statusLabel canvas context timeMVar grammar statesNum ssIORef initialIORef ssGraphState modelIORef constructThread constructEndedMVar = do
+generateSSThread statusSpinner statusLabel canvas context timeMVar grammar statesNum ssIORef initialIORef ssGraphState modelIORef constructThread constructEndedMVar ruleIndexesMap statesGSs graphStatesMap = do
   -- get current time to compare and indicate the duration of the generation
   startTime <- Time.getCurrentTime
   putMVar timeMVar startTime
@@ -243,7 +250,10 @@ generateSSThread statusSpinner statusLabel canvas context timeMVar grammar state
   writeIORef constructThread (Just indicateThread)
 
   -- generate state
-  exploreStateSpace mconf statesNum grammar initialGraph (Just ssMVar)
+  (_,_,matchesMap) <- exploreStateSpace mconf statesNum grammar initialGraph (Just ssMVar)
+  -- generate states visualization
+  writeIORef statesGSs $ generateStatesGraphState graphStatesMap matchesMap ruleIndexesMap
+
   return ()
 
 
@@ -349,3 +359,49 @@ drawStateSpace state sq maybeGoodStates alloc = do
                         in  (M.fromList $ map (\n -> (n,(0,1,0))) goodStates)
                             `M.union`
                             (M.fromList $ map (\n -> (n,(1,0,0))) badStates)
+
+-- | for each of the generated states, generate a GraphState to display it
+generateStatesGraphState :: M.Map Int32 GraphState -> IntMap (Int, Match Info Info, String, TypedGraphRule Info Info) -> M.Map String Int32 -> IntMap GraphState
+generateStatesGraphState graphStatesMap matchesMap ruleIndexesMap =
+  generateStatesGraphState' graphStatesMap matchesMap ruleIndexesMap genStates indexesToGenerate
+  where
+    initialSt = fromJust $ M.lookup 1 graphStatesMap
+    genStates = IntMap.singleton 0 initialSt
+    indexesToGenerate = IntMap.keys $ IntMap.filter (\(i,_,_,_) -> i == 0) matchesMap
+
+
+generateStatesGraphState' :: M.Map Int32 GraphState -> IntMap (Int, Match Info Info, String, TypedGraphRule Info Info) -> M.Map String Int32 -> IntMap GraphState -> [Int] -> IntMap GraphState
+generateStatesGraphState' graphStatesMap matchesMap ruleIndexesMap genStates [] = genStates
+generateStatesGraphState' graphStatesMap matchesMap ruleIndexesMap genStates (index:indexesToGenerate) =
+  generateStatesGraphState' graphStatesMap matchesMap ruleIndexesMap genStates' indexesToGenerate'
+  where
+    indexesToGenerate' = indexesToGenerate ++ (IntMap.keys $ IntMap.filter (\(i,_,_,_) -> i == index) matchesMap)
+    genStates' = case (IntMap.lookup index matchesMap) of
+      Just (i,m,n,p) ->
+        case (most, mri) of
+          (Just ost, Just ri) -> IntMap.insert index (applyMatch ost graphStatesMap ri p m) genStates
+          _ -> genStates
+        where
+          most = IntMap.lookup i genStates
+          mri = M.lookup n ruleIndexesMap
+
+
+
+getRuleIndexesMap :: Gtk.TreeStore -> IO (M.Map String Int32)
+getRuleIndexesMap store = do
+  (valid, iter) <- Gtk.treeModelGetIterFromString store "2:0"
+  if not valid
+    then return M.empty
+    else getRuleNamesAndIndexes store iter >>= return . M.fromList
+
+
+getRuleNamesAndIndexes :: Gtk.TreeStore -> Gtk.TreeIter -> IO [(String, Int32)]
+getRuleNamesAndIndexes store iter = do
+  name <- Gtk.treeModelGetValue store iter 0 >>= fromGValue >>= return . fromJust :: IO String
+  index <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
+  continue <- Gtk.treeModelIterNext store iter
+  if continue then do
+    ls <- getRuleNamesAndIndexes store iter
+    return $ (name,index):ls
+  else
+    return [(name,index)]
