@@ -72,8 +72,9 @@ buildStateSpaceBox :: Gtk.Window
                    -> IORef (Maybe (IORef GraphState))
                    -> IORef (M.Map Int32 GraphState)
                    -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
+                   -> IORef (G.Graph Info Info)
                    -> IO (Gtk.Box, Gtk.DrawingArea, IORef GraphState)
-buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORef graphStatesIORef nacsInfoIORef = do
+buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORef graphStatesIORef nacsInfoIORef typeGraph = do
   -- build -- box
   builder <- new Gtk.Builder []
   resourcesFolder <- getResourcesFolder
@@ -90,6 +91,13 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
   canvas <- Gtk.builderGetObject builder "canvas" >>= unsafeCastTo Gtk.DrawingArea . fromJust
   Gtk.widgetSetEvents canvas [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
 
+  canvasAux <- Gtk.builderGetObject builder "canvas_aux" >>= unsafeCastTo Gtk.DrawingArea . fromJust
+  Gtk.widgetSetEvents canvasAux [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
+
+  paned <-  Gtk.builderGetObject builder "paned" >>= unsafeCastTo Gtk.Paned . fromJust
+  closePos <- get paned #maxPosition
+  Gtk.panedSetPosition paned closePos
+
   statusSpinner <- Gtk.builderGetObject builder "status_spinner" >>= unsafeCastTo Gtk.Spinner . fromJust
   statusLabel <- Gtk.builderGetObject builder "status_label" >>= unsafeCastTo Gtk.Label . fromJust
   Gtk.spinnerStop statusSpinner
@@ -101,7 +109,9 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
   execThread <- newIORef Nothing -- thread to generate state space
   constructThread <- newIORef Nothing -- thread to show state space
   goodStatesIORef <- newIORef Nothing
+  -- IORefs for displaying the graphState of each state
   statesGSs <- newIORef IntMap.empty
+  currentState <- newIORef emptyState
 
   -- MVars
   constructEndedMVar <- newEmptyMVar
@@ -189,9 +199,25 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
       _ -> return ()
     return False
 
+
   -- canvas - to draw the state space graph
-  oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
-  squareSelection <- newIORef Nothing   -- selection box : Maybe (x1,y1,x2,y2)
+  squareSelection <- setCanvasBasicCallbacks canvas ssGraphState focusedCanvas focusedStateIORef
+  on canvas #buttonPressEvent $ \_ -> do
+    ssSt <- readIORef ssGraphState
+    let (ns,_) = stateGetSelected ssSt
+    case ns of
+      (n:_) -> do
+        stMap <- readIORef statesGSs
+        let mst = IntMap.lookup (fromEnum n) stMap
+        case mst of
+          Just st -> do
+            writeIORef currentState st
+            Gtk.widgetQueueDraw canvasAux
+          _ -> return ()
+      _ -> return ()
+    return False
+
+
   on canvas #draw $ \context -> do
     aloc <- Gtk.widgetGetAllocation canvas
     w <- Gdk.getRectangleWidth aloc >>= return . fromIntegral :: IO Double
@@ -200,21 +226,36 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
     sq <- readIORef squareSelection
     gsts <- readIORef goodStatesIORef
     renderWithContext context   $ drawStateSpace ss sq gsts (w,h)
-
     return False
-  on canvas #buttonPressEvent   $ basicCanvasButtonPressedCallback ssGraphState oldPoint squareSelection canvas
-  on canvas #motionNotifyEvent  $ basicCanvasMotionCallBack ssGraphState oldPoint squareSelection canvas
-  on canvas #buttonReleaseEvent $ basicCanvasButtonReleasedCallback ssGraphState squareSelection canvas
-  on canvas #scrollEvent        $ basicCanvasScrollCallback ssGraphState canvas
-  on canvas #focusInEvent       $ \event -> do
-      writeIORef focusedCanvas     $ Just canvas
-      writeIORef focusedStateIORef $ Just ssGraphState
-      return False
+
+  -- canvasAux - to draw the selected state
+  squareSelectionAux <- setCanvasBasicCallbacks canvasAux currentState focusedCanvas focusedStateIORef
+  on canvasAux #draw $ \context -> do
+    aloc <- Gtk.widgetGetAllocation canvasAux
+    w <- Gdk.getRectangleWidth aloc >>= return . fromIntegral :: IO Double
+    h <- Gdk.getRectangleHeight aloc >>= return . fromIntegral :: IO Double
+    ss <- readIORef currentState
+    sq <- readIORef squareSelectionAux
+    tg <- readIORef typeGraph
+    renderWithContext context   $ drawHostGraph ss sq tg (Just (w,h))
+    return False
+
 
   return (mainBox, canvas, ssGraphState)
 
-
-
+setCanvasBasicCallbacks :: Gtk.DrawingArea -> IORef GraphState -> IORef (Maybe Gtk.DrawingArea) -> IORef (Maybe (IORef GraphState)) -> IO ( IORef (Maybe (Double,Double,Double,Double)) )
+setCanvasBasicCallbacks canvas st focusedCanvas focusedStateIORef = do
+  oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
+  squareSelection <- newIORef Nothing   -- selection box : Maybe (x1,y1,x2,y2)
+  on canvas #buttonPressEvent   $ basicCanvasButtonPressedCallback st oldPoint squareSelection canvas
+  on canvas #motionNotifyEvent  $ basicCanvasMotionCallBack st oldPoint squareSelection canvas
+  on canvas #buttonReleaseEvent $ basicCanvasButtonReleasedCallback st squareSelection canvas
+  on canvas #scrollEvent        $ basicCanvasScrollCallback st canvas
+  on canvas #focusInEvent       $ \event -> do
+      writeIORef focusedCanvas     $ Just canvas
+      writeIORef focusedStateIORef $ Just st
+      return False
+  return squareSelection
 
 
 
