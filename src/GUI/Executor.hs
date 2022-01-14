@@ -760,14 +760,19 @@ applyMatch hostSt statesM rIndex p m = hState
   where
     -- calculate graph
     (k,n,f,g) = DPO.calculateDPO m p
-    (finalGraph, dGraph, hGraph) = applyMatchGraph [k,n,f,g]
+
+    gNodes = map (\(G.Node i l) -> G.Node i (Just l) ) $ G.nodes (stateGetGraph hostSt)
+    gEdges = map (\(G.Edge i s t l) -> G.Edge i s t (Just l)) $ G.edges (stateGetGraph hostSt)
+    gGraph = G.fromNodesAndEdges gNodes gEdges
+
+    (finalGraph, dGraph, hGraph) = applyMatchGraph [k,n,f,g] gGraph
     -- modify graphical information to match the modifications
     hState = applyMatchGI finalGraph dGraph hGraph hostSt statesM rIndex [k,n,f,g]
 
 -- Apply a match in a graph with paylads of type Info.
 -- This function is auxiliar to applyMatch and it ensures that the payloads of nodes and edges of the final graph are correct.
-applyMatchGraph :: [TGM.TypedGraphMorphism Info Info] -> (G.Graph Info Info, G.Graph (Maybe Info) (Maybe Info), G.Graph (Maybe Info) (Maybe Info))
-applyMatchGraph (k:n:f:g:_)  = (finalGraph, dGraph, hGraph)
+applyMatchGraph :: [TGM.TypedGraphMorphism Info Info] -> G.Graph (Maybe Info) (Maybe Info) -> (G.Graph Info Info, G.Graph (Maybe Info) (Maybe Info), G.Graph (Maybe Info) (Maybe Info))
+applyMatchGraph (k:n:f:g:_) gGraph = (finalGraph, dGraph, hGraph)
   where
     fMapping = TGM.mapping f
     gMapping = TGM.mapping g
@@ -782,7 +787,7 @@ applyMatchGraph (k:n:f:g:_)  = (finalGraph, dGraph, hGraph)
     replaceInfo (k,i) m = case lookup k m of Nothing -> i; Just i' -> i'
 
     -- make sure the mapped elements preserve the information between transformations
-    gGraph = GM.domainGraph fMapping
+    --gGraph = GM.domainGraph fMapping
     dGraph = GM.codomainGraph fMapping
     hGraph = GM.codomainGraph gMapping
 

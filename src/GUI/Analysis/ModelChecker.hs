@@ -202,13 +202,14 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
 
   -- canvas - to draw the state space graph
   squareSelection <- setCanvasBasicCallbacks canvas ssGraphState focusedCanvas focusedStateIORef
-  on canvas #buttonPressEvent $ \_ -> do
+  on canvas #buttonPressEvent $ \eventButton -> do
     ssSt <- readIORef ssGraphState
     let (ns,_) = stateGetSelected ssSt
     case ns of
       (n:_) -> do
         stMap <- readIORef statesGSs
-        let mst = IntMap.lookup (fromEnum n) stMap
+        let index = (fromEnum n)
+        let mst = IntMap.lookup index stMap
         case mst of
           Just st -> do
             writeIORef currentState st
@@ -294,7 +295,6 @@ generateSSThread statusSpinner statusLabel canvas context timeMVar grammar state
   (_,_,matchesMap) <- exploreStateSpace mconf statesNum grammar initialGraph (Just ssMVar)
   -- generate states visualization
   writeIORef statesGSs $ generateStatesGraphState graphStatesMap matchesMap ruleIndexesMap
-
   return ()
 
 
@@ -418,13 +418,20 @@ generateStatesGraphState' graphStatesMap matchesMap ruleIndexesMap genStates (in
   where
     indexesToGenerate' = indexesToGenerate ++ (IntMap.keys $ IntMap.filter (\(i,_,_,_) -> i == index) matchesMap)
     genStates' = case (IntMap.lookup index matchesMap) of
-      Just (i,m,n,p) ->
-        case (most, mri) of
-          (Just ost, Just ri) -> IntMap.insert index (applyMatch ost graphStatesMap ri p m) genStates
-          _ -> genStates
-        where
-          most = IntMap.lookup i genStates
-          mri = M.lookup n ruleIndexesMap
+      Nothing -> genStates
+      Just matchInfo -> case (generateStateGS graphStatesMap matchInfo ruleIndexesMap genStates index) of
+        Nothing -> genStates
+        Just gst -> IntMap.insert index gst genStates
+
+
+generateStateGS :: M.Map Int32 GraphState -> (Int, Match Info Info, String, TypedGraphRule Info Info) -> M.Map String Int32 -> IntMap GraphState -> Int -> Maybe GraphState
+generateStateGS graphStatesMap (i,m,n,p) ruleIndexesMap genStates index =
+  case (most, mri) of
+    (Just ost, Just ri) -> Just (applyMatch ost graphStatesMap ri p m)
+    _ -> Nothing
+  where
+    most = IntMap.lookup i genStates
+    mri = M.lookup n ruleIndexesMap
 
 
 
