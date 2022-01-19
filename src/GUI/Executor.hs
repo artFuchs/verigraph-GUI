@@ -162,12 +162,12 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         Gtk.panedSetPosition execPane closePos
 
     -- canvas
-    setCanvasCallBacks ruleCanvas ruleState typeGraph (Just drawRuleGraph) focusedCanvas focusedStateIORef
-    setCanvasCallBacks lCanvas lState typeGraph (Just drawHostGraph) focusedCanvas focusedStateIORef
-    setCanvasCallBacks rCanvas rState typeGraph (Just drawHostGraph) focusedCanvas focusedStateIORef
+    setBasicCanvasCallbacks ruleCanvas ruleState typeGraph (Just drawRuleGraph) focusedCanvas focusedStateIORef
+    setBasicCanvasCallbacks lCanvas lState typeGraph (Just drawHostGraph) focusedCanvas focusedStateIORef
+    setBasicCanvasCallbacks rCanvas rState typeGraph (Just drawHostGraph) focusedCanvas focusedStateIORef
 
 
-    (_,mainSqrSel) <- setCanvasCallBacks mainCanvas hostState typeGraph Nothing focusedCanvas focusedStateIORef
+    (_,mainSqrSel) <- setBasicCanvasCallbacks mainCanvas hostState typeGraph Nothing focusedCanvas focusedStateIORef
     on mainCanvas #draw $ \context -> do
         st <- readIORef hostState
         sq <- readIORef mainSqrSel
@@ -178,7 +178,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         renderWithContext context $ drawGraphHighlighting st sq matchedElems (Just (w,h))
         return False
 
-    (_,nacSqrSel)<- setCanvasCallBacks nacCanvas nacState typeGraph Nothing focusedCanvas focusedStateIORef
+    (_,nacSqrSel)<- setBasicCanvasCallbacks nacCanvas nacState typeGraph Nothing focusedCanvas focusedStateIORef
     on nacCanvas #draw $ \context -> do
         es <- readIORef nacState
         tg <- readIORef typeGraph
@@ -587,41 +587,6 @@ executeStep treeView store keepRuleCheckBtn mainCanvas statusSpinner statusLabel
         return False
     return ()
 
-
-
-
-type SquareSelection = Maybe (Double,Double,Double,Double)
-setCanvasCallBacks :: Gtk.DrawingArea
-                   -> IORef GraphState
-                   -> IORef (G.Graph Info Info )
-                   -> Maybe (GraphState -> SquareSelection -> G.Graph Info Info -> Maybe (Double,Double) -> Render ())
-                   -> IORef (Maybe Gtk.DrawingArea) -> IORef (Maybe (IORef GraphState))
-                   -> IO (IORef (Double,Double), IORef SquareSelection)
-setCanvasCallBacks canvas state refGraph drawMethod focusedCanvas focusedStateIORef = do
-    oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
-    squareSelection <- newIORef Nothing   -- selection box : Maybe (x1,y1,x2,y2)
-    case drawMethod of
-        Just draw -> do
-            on canvas #draw $ \context -> do
-                es <- readIORef state
-                rg <- readIORef refGraph
-                sq <- readIORef squareSelection
-                aloc <- Gtk.widgetGetAllocation canvas
-                w <- Gdk.getRectangleWidth aloc >>= return . fromIntegral :: IO Double
-                h <- Gdk.getRectangleHeight aloc >>= return . fromIntegral :: IO Double
-                renderWithContext context $ draw es sq rg (Just (w,h))
-                return False
-            return ()
-        Nothing -> return ()
-    on canvas #buttonPressEvent $ basicCanvasButtonPressedCallback state oldPoint squareSelection canvas
-    on canvas #motionNotifyEvent $ basicCanvasMotionCallBack state oldPoint squareSelection canvas
-    on canvas #buttonReleaseEvent $ basicCanvasButtonReleasedCallback state squareSelection canvas
-    on canvas #scrollEvent $ basicCanvasScrollCallback state canvas
-    on canvas #focusInEvent $ \event -> do
-        writeIORef focusedCanvas $ Just canvas
-        writeIORef focusedStateIORef $ Just state
-        return False
-    return (oldPoint,squareSelection)
 
 loadProductions :: Gtk.TreeStore -> IORef (G.Graph Info Info) -> IORef (M.Map Int32 GraphState) -> IORef (M.Map Int32 NacInfo) -> IORef (M.Map Int32 [(String,Int32)]) -> IORef (M.Map Int32 TGMProduction) -> IO ()
 loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap = do

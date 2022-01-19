@@ -5,7 +5,8 @@
 
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 module GUI.Helper.BasicCanvasCallbacks(
-  basicCanvasButtonPressedCallback
+  setBasicCanvasCallbacks
+, basicCanvasButtonPressedCallback
 , basicCanvasMotionCallBack
 , basicCanvasButtonReleasedCallback
 , basicCanvasScrollCallback
@@ -25,13 +26,53 @@ import           Data.Graphs hiding (null, empty)
 import           GUI.Data.DiaGraph
 import           GUI.Data.GraphState
 import           GUI.Data.GraphicalInfo
+import           GUI.Data.Info
 import           GUI.Helper.Geometry
 import           GUI.Helper.List
+import           GUI.Render.Render
 
 
 
 
-{-| 
+type SquareSelection = Maybe (Double,Double,Double,Double)
+
+{-
+  Set all basic callbacks to a canvas
+-}
+setBasicCanvasCallbacks :: Gtk.DrawingArea
+                   -> IORef GraphState
+                   -> IORef (Graph Info Info )
+                   -> Maybe (GraphState -> SquareSelection -> Graph Info Info -> Maybe (Double,Double) -> Render ())
+                   -> IORef (Maybe Gtk.DrawingArea) -> IORef (Maybe (IORef GraphState))
+                   -> IO (IORef (Double,Double), IORef SquareSelection)
+setBasicCanvasCallbacks canvas state refGraph drawMethod focusedCanvas focusedStateIORef = do
+    oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
+    squareSelection <- newIORef Nothing   -- selection box : Maybe (x1,y1,x2,y2)
+    case drawMethod of
+        Just draw -> do
+            on canvas #draw $ \context -> do
+                es <- readIORef state
+                rg <- readIORef refGraph
+                sq <- readIORef squareSelection
+                aloc <- Gtk.widgetGetAllocation canvas
+                w <- Gdk.getRectangleWidth aloc >>= return . fromIntegral :: IO Double
+                h <- Gdk.getRectangleHeight aloc >>= return . fromIntegral :: IO Double
+                renderWithContext context $ draw es sq rg (Just (w,h))
+                return False
+            return ()
+        Nothing -> return ()
+    on canvas #buttonPressEvent $ basicCanvasButtonPressedCallback state oldPoint squareSelection canvas
+    on canvas #motionNotifyEvent $ basicCanvasMotionCallBack state oldPoint squareSelection canvas
+    on canvas #buttonReleaseEvent $ basicCanvasButtonReleasedCallback state squareSelection canvas
+    on canvas #scrollEvent $ basicCanvasScrollCallback state canvas
+    on canvas #focusInEvent $ \event -> do
+        writeIORef focusedCanvas $ Just canvas
+        writeIORef focusedStateIORef $ Just state
+        return False
+    return (oldPoint,squareSelection)
+
+
+{-|
     When the left mouse button is pressed inside of a canvas, elements of the diagram can be selected and square selection can be started
 -}
 basicCanvasButtonPressedCallback :: IORef GraphState -> IORef (Double,Double) -> IORef (Maybe (Double,Double,Double,Double)) -> Gtk.DrawingArea -> Gdk.EventButton -> IO Bool
@@ -70,7 +111,7 @@ basicCanvasButtonPressedCallback state oldPoint squareSelection canvas eventButt
               eS = if null e then False else e!!0 `elem` oldSE
           if nS || eS
           then return ()
-          else do 
+          else do
             modifyIORef state (stateSetSelected (n, e))
         -- selected nodes or edges with Shift pressed -> add to selection
         (n, e, True, False) -> do
@@ -82,7 +123,7 @@ basicCanvasButtonPressedCallback state oldPoint squareSelection canvas eventButt
           let jointSN = if null n then oldSN else delete (n!!0) oldSN
               jointSE = if null e then oldSE else delete (e!!0) oldSE
           modifyIORef state (stateSetGraph graph . stateSetSelected (jointSN,jointSE))
-    _ -> return () 
+    _ -> return ()
   Gtk.widgetQueueDraw canvas
   Gtk.widgetGrabFocus canvas
   return False
@@ -117,7 +158,7 @@ basicCanvasMotionCallBack state oldPoint squareSelection canvas eventMotion = do
     (True, False, n, e) -> do
       modifyIORef state (\es -> moveNodes es (ox,oy) (x',y') )
       modifyIORef state (\es -> if (>0) . length . fst . stateGetSelected $ es
-                              then es 
+                              then es
                               else moveEdges es (ox,oy) (x',y'))
       writeIORef oldPoint (x',y')
       Gtk.widgetQueueDraw canvas

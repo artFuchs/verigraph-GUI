@@ -75,7 +75,8 @@ buildStateSpaceBox :: Gtk.Window
                    -> IORef (G.Graph Info Info)
                    -> IO (Gtk.Box, Gtk.DrawingArea, IORef GraphState)
 buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORef graphStatesIORef nacsInfoIORef typeGraph = do
-  -- build -- box
+
+  -- build GUI
   builder <- new Gtk.Builder []
   resourcesFolder <- getResourcesFolder
   Gtk.builderAddFromFile builder $ T.pack (resourcesFolder ++ "stateSpace.glade")
@@ -91,8 +92,8 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
   canvas <- Gtk.builderGetObject builder "canvas" >>= unsafeCastTo Gtk.DrawingArea . fromJust
   Gtk.widgetSetEvents canvas [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
 
-  canvasAux <- Gtk.builderGetObject builder "canvas_aux" >>= unsafeCastTo Gtk.DrawingArea . fromJust
-  Gtk.widgetSetEvents canvasAux [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
+  auxCanvas <- Gtk.builderGetObject builder "canvas_aux" >>= unsafeCastTo Gtk.DrawingArea . fromJust
+  Gtk.widgetSetEvents auxCanvas [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
 
   paned <-  Gtk.builderGetObject builder "paned" >>= unsafeCastTo Gtk.Paned . fromJust
   closePos <- get paned #maxPosition
@@ -103,7 +104,7 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
   Gtk.spinnerStop statusSpinner
   Gtk.labelSetText statusLabel ""
 
-  -- IORefs
+  -- set IORefs for generating the stateSpace and execute the model check
   ssGraphState <- newIORef emptyState
   modelIORef <- newIORef Nothing
   execThread <- newIORef Nothing -- thread to generate state space
@@ -113,14 +114,47 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
   statesGSs <- newIORef IntMap.empty
   currentState <- newIORef emptyState
 
-  -- MVars
+  -- set the MVars
   constructEndedMVar <- newEmptyMVar
   timeMVar <- newEmptyMVar
 
-  -- bindings ------------------------------------------------------------------------
-  -- controls
+  -- callback bindings ------------------------------------------------------------------------
+  let widgets = (window, canvas, store, depthSpinBtn, statusLabel, statusSpinner)
+      resIORefs = (ssGraphState, modelIORef, goodStatesIORef, statesGSs)
+      gsIORefs = (graphStatesIORef, nacsInfoIORef)
+      threadIORefs = (execThread, constructThread)
+      mvars = (constructEndedMVar, timeMVar)
+
   on generateBtn #pressed $ Gtk.menuItemActivate genStateSpaceItem
-  on genStateSpaceItem #activate $ do
+  on genStateSpaceItem #activate $ genStateSpaceItemActivate widgets resIORefs gsIORefs threadIORefs mvars
+
+  -- stop generation of state space
+  on stopBtn #pressed $ stopBtnCallback execThread constructThread constructEndedMVar
+
+
+  on formulaCheckBtn #pressed $ checkFormula window formulaEntry statusLabel modelIORef goodStatesIORef
+  on formulaEntry #keyPressEvent $ formulaEntryKeyPressedCallback window formulaEntry statusLabel modelIORef goodStatesIORef
+
+
+  -- canvas - to draw the state space graph
+  setMainCanvasCallbacks canvas ssGraphState focusedCanvas focusedStateIORef statesGSs auxCanvas currentState goodStatesIORef
+  -- auxCanvas - to draw the selected state
+  setBasicCanvasCallbacks auxCanvas currentState typeGraph (Just drawHostGraph) focusedCanvas focusedStateIORef
+
+  return (mainBox, canvas, ssGraphState)
+
+genStateSpaceItemActivate :: (Gtk.Window, Gtk.DrawingArea, Gtk.TreeStore, Gtk.SpinButton, Gtk.Label, Gtk.Spinner)
+                          -> (IORef GraphState, IORef (Maybe (Logic.KripkeStructure String)), IORef (Maybe [G.NodeId]), IORef (IntMap GraphState))
+                          -> (IORef (M.Map Int32 GraphState), IORef (M.Map Int32 NacInfo))
+                          -> (IORef (Maybe ThreadId), IORef (Maybe ThreadId))
+                          -> (MVar Bool, MVar Time.UTCTime)
+                          -> IO ()
+genStateSpaceItemActivate (window, canvas, store, depthSpinBtn, statusLabel, statusSpinner)
+                          (ssGraphState, modelIORef, goodStatesIORef, statesGSs)
+                          (graphStatesIORef, nacsInfoIORef)
+                          (execThread, constructThread)
+                          (constructEndedMVar, timeMVar) =
+  do
     maybeT <- readIORef execThread
     case maybeT of
       Just t -> return ()
@@ -142,66 +176,80 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
                         (generateSSThreadEnd statusSpinner statusLabel execThread timeMVar constructThread constructEndedMVar)
             writeIORef execThread (Just execT)
 
-  -- stop generation of state space
-  on stopBtn #pressed $ do
-    execT <- readIORef execThread
-    case execT of
-      Nothing -> return ()
-      Just et -> do
-        constructT <- readIORef constructThread
-        case constructT of
-          Nothing -> return ()
-          Just ct -> killThread ct
-        _ <- tryTakeMVar constructEndedMVar
-        putMVar constructEndedMVar False
-        killThread et
-        writeIORef constructThread Nothing
-        writeIORef execThread Nothing
+
+stopBtnCallback :: IORef (Maybe ThreadId) -> IORef (Maybe ThreadId) -> MVar Bool -> IO ()
+stopBtnCallback execThread constructThread constructEndedMVar = do
+  execT <- readIORef execThread
+  case execT of
+    Nothing -> return ()
+    Just et -> do
+      constructT <- readIORef constructThread
+      case constructT of
+        Nothing -> return ()
+        Just ct -> killThread ct
+      _ <- tryTakeMVar constructEndedMVar
+      putMVar constructEndedMVar False
+      killThread et
+      writeIORef constructThread Nothing
+      writeIORef execThread Nothing
 
 
-  -- check formula
-  let checkFormula = do
-        exprTxt <- Gtk.entryGetText formulaEntry
-        exprStr <- return $ T.unpack exprTxt
-        case Logic.parseExpr "" exprStr of
-          Left err -> do
-            showError window $ T.pack ("Invalid CTL formula:\n" ++ (show err))
-          Right expr -> do
-            maybeModel <- readIORef modelIORef
-            case maybeModel of
-              Nothing -> showError window $ "Must Generate State Space before checking a formula"
-              Just model -> do
-                startTime <- Time.getCurrentTime
-                modelCheck model expr goodStatesIORef
-                endTime <- Time.getCurrentTime
-                gstates <- readIORef goodStatesIORef
-                let diff = Time.diffUTCTime endTime startTime
-                let text = if (G.NodeId 0) `elem` fromMaybe [] gstates then
-                            T.pack ("The formula \"" ++ exprStr ++ "\" holds for the initial state. Formula checked in " ++ (show diff) ++ "seconds" )
-                           else
-                            T.pack ("The formula \"" ++ exprStr ++ "\" doesn't hold for the inital state. Formula checked in " ++ (show diff) ++ "seconds" )
-                Gtk.labelSetText statusLabel text
+formulaEntryKeyPressedCallback :: Gtk.Window -> Gtk.Entry -> Gtk.Label
+             -> IORef (Maybe (Logic.KripkeStructure String)) -> IORef (Maybe [G.NodeId])
+             -> Gdk.EventKey
+             -> IO Bool
+formulaEntryKeyPressedCallback window formulaEntry statusLabel modelIORef goodStatesIORef eventKey = do
+  k <- get eventKey #keyval >>= return . chr . fromIntegral
+  case k of
+    -- Return or Enter (Numpad) -> then check formula
+    '\65293' -> checkFormula window formulaEntry statusLabel modelIORef goodStatesIORef
+    '\65421' -> checkFormula window formulaEntry statusLabel modelIORef goodStatesIORef
+    -- Backspace -> clear goodStatesIORef
+    '\65288' -> do
+        t <- Gtk.entryGetTextLength formulaEntry >>= return . fromIntegral
+        if t == 0 then do
+          writeIORef goodStatesIORef Nothing
+          Gtk.labelSetText statusLabel ""
+        else return ()
+    _ -> return ()
+  return False
 
-  on formulaCheckBtn #pressed $ checkFormula
+checkFormula :: Gtk.Window -> Gtk.Entry -> Gtk.Label
+             -> IORef (Maybe (Logic.KripkeStructure String)) -> IORef (Maybe [G.NodeId])
+             -> IO ()
+checkFormula window formulaEntry statusLabel modelIORef goodStatesIORef =
+  do
+    exprTxt <- Gtk.entryGetText formulaEntry
+    exprStr <- return $ T.unpack exprTxt
+    case Logic.parseExpr "" exprStr of
+      Left err -> do
+        showError window $ T.pack ("Invalid CTL formula:\n" ++ (show err))
+      Right expr -> do
+        maybeModel <- readIORef modelIORef
+        case maybeModel of
+          Nothing -> showError window $ "Must Generate State Space before checking a formula"
+          Just model -> do
+            startTime <- Time.getCurrentTime
+            modelCheck model expr goodStatesIORef
+            endTime <- Time.getCurrentTime
+            gstates <- readIORef goodStatesIORef
+            let diff = Time.diffUTCTime endTime startTime
+            let text = if (G.NodeId 0) `elem` fromMaybe [] gstates then
+                        T.pack ("The formula \"" ++ exprStr ++ "\" holds for the initial state. Formula checked in " ++ (show diff) ++ "seconds" )
+                       else
+                        T.pack ("The formula \"" ++ exprStr ++ "\" doesn't hold for the inital state. Formula checked in " ++ (show diff) ++ "seconds" )
+            Gtk.labelSetText statusLabel text
 
-  on formulaEntry #keyPressEvent $ \eventKey -> do
-    k <- get eventKey #keyval >>= return . chr . fromIntegral
-    --if it's Return or Enter (Numpad), then check formula
-    case k of
-      '\65293' -> checkFormula
-      '\65421' -> checkFormula
-      '\65288' -> do
-          t <- Gtk.entryGetTextLength formulaEntry >>= return . fromIntegral
-          if t == 0 then do
-            writeIORef goodStatesIORef Nothing
-            Gtk.labelSetText statusLabel ""
-          else return ()
-      _ -> return ()
-    return False
 
 
-  -- canvas - to draw the state space graph
-  squareSelection <- setCanvasBasicCallbacks canvas ssGraphState focusedCanvas focusedStateIORef
+setMainCanvasCallbacks :: Gtk.DrawingArea -> IORef GraphState
+                       -> IORef (Maybe Gtk.DrawingArea) -> IORef (Maybe (IORef GraphState))
+                       -> IORef (IntMap GraphState) -> Gtk.DrawingArea -> IORef GraphState
+                       -> IORef (Maybe [G.NodeId])
+                       -> IO ()
+setMainCanvasCallbacks canvas ssGraphState focusedCanvas focusedStateIORef statesGSs auxCanvas currentState goodStatesIORef = do
+  emptyG <- newIORef G.empty
+  (_,squareSelection) <- setBasicCanvasCallbacks canvas ssGraphState emptyG Nothing focusedCanvas focusedStateIORef
   on canvas #buttonPressEvent $ \eventButton -> do
     ssSt <- readIORef ssGraphState
     let (ns,_) = stateGetSelected ssSt
@@ -213,11 +261,10 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
         case mst of
           Just st -> do
             writeIORef currentState st
-            Gtk.widgetQueueDraw canvasAux
+            Gtk.widgetQueueDraw auxCanvas
           _ -> return ()
       _ -> return ()
     return False
-
 
   on canvas #draw $ \context -> do
     aloc <- Gtk.widgetGetAllocation canvas
@@ -228,35 +275,11 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
     gsts <- readIORef goodStatesIORef
     renderWithContext context   $ drawStateSpace ss sq gsts (w,h)
     return False
-
-  -- canvasAux - to draw the selected state
-  squareSelectionAux <- setCanvasBasicCallbacks canvasAux currentState focusedCanvas focusedStateIORef
-  on canvasAux #draw $ \context -> do
-    aloc <- Gtk.widgetGetAllocation canvasAux
-    w <- Gdk.getRectangleWidth aloc >>= return . fromIntegral :: IO Double
-    h <- Gdk.getRectangleHeight aloc >>= return . fromIntegral :: IO Double
-    ss <- readIORef currentState
-    sq <- readIORef squareSelectionAux
-    tg <- readIORef typeGraph
-    renderWithContext context   $ drawHostGraph ss sq tg (Just (w,h))
-    return False
+  return ()
 
 
-  return (mainBox, canvas, ssGraphState)
 
-setCanvasBasicCallbacks :: Gtk.DrawingArea -> IORef GraphState -> IORef (Maybe Gtk.DrawingArea) -> IORef (Maybe (IORef GraphState)) -> IO ( IORef (Maybe (Double,Double,Double,Double)) )
-setCanvasBasicCallbacks canvas st focusedCanvas focusedStateIORef = do
-  oldPoint        <- newIORef (0.0,0.0) -- last point where a mouse button was pressed
-  squareSelection <- newIORef Nothing   -- selection box : Maybe (x1,y1,x2,y2)
-  on canvas #buttonPressEvent   $ basicCanvasButtonPressedCallback st oldPoint squareSelection canvas
-  on canvas #motionNotifyEvent  $ basicCanvasMotionCallBack st oldPoint squareSelection canvas
-  on canvas #buttonReleaseEvent $ basicCanvasButtonReleasedCallback st squareSelection canvas
-  on canvas #scrollEvent        $ basicCanvasScrollCallback st canvas
-  on canvas #focusInEvent       $ \event -> do
-      writeIORef focusedCanvas     $ Just canvas
-      writeIORef focusedStateIORef $ Just st
-      return False
-  return squareSelection
+
 
 
 

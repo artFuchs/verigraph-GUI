@@ -1,6 +1,7 @@
 -- | module containing functions related with the rendering of a graph
-module GUI.Render.Render
-( renderWithContext
+module GUI.Render.Render(
+  Render
+, renderWithContext
 , renderNode
 , renderEdge
 , renderLabel
