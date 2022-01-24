@@ -1,5 +1,8 @@
 # Changelog for Verigraph-GUI
 
+0.2.1.1
+    - implemented visualization of the graphs related to each state in the state space
+
 0.2.1.0
     - added module for Model Checking
     - optimized graph drawing
