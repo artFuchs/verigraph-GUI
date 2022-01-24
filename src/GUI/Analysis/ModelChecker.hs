@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 {-# LANGUAGE ScopedTypeVariables        #-}
 module GUI.Analysis.ModelChecker (
-  buildStateSpaceBox
+  buildModelCheckerGUI
 , breadthFirstSearchIO
 ) where
 
@@ -65,7 +65,14 @@ import            GUI.Render.GraphDraw
 
 
 -- User Interface -----------------------------------------------------------------------------------------
-buildStateSpaceBox :: Gtk.Window
+
+{- | Builds the GUI for the Model Checker module, setting the callbacks for the widgets
+     This method returns
+     * The Gtk.Box that is the superior level of the GUI
+     * The Canvas where the state space is drawn
+     * The reference to the GraphState that is drawn on the canvas
+-}
+buildModelCheckerGUI :: Gtk.Window
                    -> Gtk.TreeStore
                    -> Gtk.MenuItem
                    -> IORef (Maybe Gtk.DrawingArea)
@@ -74,7 +81,7 @@ buildStateSpaceBox :: Gtk.Window
                    -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
                    -> IORef (G.Graph Info Info)
                    -> IO (Gtk.Box, Gtk.DrawingArea, IORef GraphState)
-buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORef graphStatesIORef nacsInfoIORef typeGraph = do
+buildModelCheckerGUI window store genStateSpaceItem focusedCanvas focusedStateIORef graphStatesIORef nacsInfoIORef typeGraph = do
 
   -- build GUI
   builder <- new Gtk.Builder []
@@ -143,6 +150,8 @@ buildStateSpaceBox window store genStateSpaceItem focusedCanvas focusedStateIORe
 
   return (mainBox, canvas, ssGraphState)
 
+
+-- callbacks ------------------------------------------------------------------------
 genStateSpaceItemActivate :: (Gtk.Window, Gtk.DrawingArea, Gtk.TreeStore, Gtk.SpinButton, Gtk.Label, Gtk.Spinner)
                           -> (IORef GraphState, IORef (Maybe (Logic.KripkeStructure String)), IORef (Maybe [G.NodeId]), IORef (IntMap GraphState))
                           -> (IORef (M.Map Int32 GraphState), IORef (M.Map Int32 NacInfo))
@@ -163,16 +172,15 @@ genStateSpaceItemActivate (window, canvas, store, depthSpinBtn, statusLabel, sta
         case eGG of
           Left msg -> showError window (T.pack msg)
           Right grammar -> do
-            writeIORef goodStatesIORef Nothing
             ssIORef <- newIORef Nothing
-            initialIORef <- newIORef 0
             maxStates <- Gtk.spinButtonGetValueAsInt depthSpinBtn >>= return . fromIntegral
             context <- Gtk.widgetGetPangoContext canvas
-            writeIORef ssGraphState emptyState
             ruleIndexesMap <- getRuleIndexesMap store
             gStatesMap <- readIORef graphStatesIORef
+            writeIORef goodStatesIORef Nothing
+            writeIORef ssGraphState emptyState
             execT <- forkFinally
-                        (generateSSThread statusSpinner statusLabel canvas context timeMVar grammar maxStates ssIORef initialIORef ssGraphState modelIORef constructThread constructEndedMVar ruleIndexesMap statesGSs gStatesMap)
+                        (generateSSThread statusSpinner statusLabel canvas context timeMVar grammar maxStates ssIORef ssGraphState modelIORef constructThread constructEndedMVar ruleIndexesMap statesGSs gStatesMap)
                         (generateSSThreadEnd statusSpinner statusLabel execThread timeMVar constructThread constructEndedMVar)
             writeIORef execThread (Just execT)
 
@@ -214,6 +222,7 @@ formulaEntryKeyPressedCallback window formulaEntry statusLabel modelIORef goodSt
     _ -> return ()
   return False
 
+
 checkFormula :: Gtk.Window -> Gtk.Entry -> Gtk.Label
              -> IORef (Maybe (Logic.KripkeStructure String)) -> IORef (Maybe [G.NodeId])
              -> IO ()
@@ -222,8 +231,7 @@ checkFormula window formulaEntry statusLabel modelIORef goodStatesIORef =
     exprTxt <- Gtk.entryGetText formulaEntry
     exprStr <- return $ T.unpack exprTxt
     case Logic.parseExpr "" exprStr of
-      Left err -> do
-        showError window $ T.pack ("Invalid CTL formula:\n" ++ (show err))
+      Left err -> showError window $ T.pack ("Invalid CTL formula:\n" ++ (show err))
       Right expr -> do
         maybeModel <- readIORef modelIORef
         case maybeModel of
@@ -285,16 +293,17 @@ setMainCanvasCallbacks canvas ssGraphState focusedCanvas focusedStateIORef state
 
 
 
-
+-- | Function that the state space generation thread executes
+-- this thread generates a subthread in which the state space visualization is generated while the exploration progresses
 generateSSThread :: Gtk.Spinner -> Gtk.Label -> Gtk.DrawingArea -> P.Context
                  -> MVar Time.UTCTime
                  -> DPO.Grammar (TGM.TypedGraphMorphism Info Info) -> Int
-                 -> IORef (Maybe (Space Info Info)) -> IORef Int
+                 -> IORef (Maybe (Space Info Info))
                  -> IORef GraphState -> IORef (Maybe (Logic.KripkeStructure String))
                  -> IORef (Maybe ThreadId) -> MVar Bool
                  -> M.Map String Int32 -> IORef (IntMap GraphState) -> M.Map Int32 GraphState
                  -> IO ()
-generateSSThread statusSpinner statusLabel canvas context timeMVar grammar statesNum ssIORef initialIORef ssGraphState modelIORef constructThread constructEndedMVar ruleIndexesMap statesGSs graphStatesMap = do
+generateSSThread statusSpinner statusLabel canvas context timeMVar grammar statesNum ssIORef ssGraphState modelIORef constructThread constructEndedMVar ruleIndexesMap statesGSs graphStatesMap = do
   -- get current time to compare and indicate the duration of the generation
   startTime <- Time.getCurrentTime
   putMVar timeMVar startTime
@@ -321,7 +330,7 @@ generateSSThread statusSpinner statusLabel canvas context timeMVar grammar state
   return ()
 
 
-
+-- | function that executes after the the state space generation ends
 generateSSThreadEnd :: Gtk.Spinner -> Gtk.Label
                     -> IORef (Maybe ThreadId)
                     -> MVar Time.UTCTime
@@ -357,7 +366,8 @@ generateSSThreadEnd statusSpinner statusLabel execThread timeMVar constructThrea
   writeIORef execThread Nothing
 
 
--- get the model indicate how many states were created
+
+-- | generates the visualization of the state space
 showStateSpace :: Gtk.Label -> MVar (Space Info Info, Bool) -> TG.TypedGraph Info Info
                      -> Gtk.DrawingArea -> P.Context
                      -> IORef GraphState -> IORef (Maybe (Logic.KripkeStructure String))
@@ -409,7 +419,7 @@ modelCheck model expr goodStatesIORef =
     writeIORef goodStatesIORef $ Just (map G.NodeId allGoodStates)
 
 
--- draw state space graph -------------------------------------------------------------
+-- | draw state space graph -------------------------------------------------------------
 drawStateSpace :: GraphState -> Maybe (Double,Double,Double,Double) -> Maybe [G.NodeId] -> (Double,Double) -> Render ()
 drawStateSpace state sq maybeGoodStates alloc = do
   drawGraph state sq nodeColors M.empty M.empty M.empty (Just alloc)
@@ -433,39 +443,40 @@ generateStatesGraphState graphStatesMap matchesMap ruleIndexesMap =
     genStates = IntMap.singleton 0 initialSt
     indexesToGenerate = IntMap.keys $ IntMap.filter (\(i,_,_,_) -> i == 0) matchesMap
 
-
+-- auxiliar function to generateStatesGraphState
 generateStatesGraphState' :: M.Map Int32 GraphState -> IntMap (Int, Match Info Info, String, TypedGraphRule Info Info) -> M.Map String Int32 -> IntMap GraphState -> [Int] -> IntMap GraphState
 generateStatesGraphState' graphStatesMap matchesMap ruleIndexesMap genStates [] = genStates
 generateStatesGraphState' graphStatesMap matchesMap ruleIndexesMap genStates (index:indexesToGenerate) =
   generateStatesGraphState' graphStatesMap matchesMap ruleIndexesMap genStates' indexesToGenerate'
   where
     indexesToGenerate' = indexesToGenerate ++ (IntMap.keys $ IntMap.filter (\(i,_,_,_) -> i == index) matchesMap)
-    genStates' = case (IntMap.lookup index matchesMap) of
-      Nothing -> genStates
-      Just matchInfo -> case (generateStateGS graphStatesMap matchInfo ruleIndexesMap genStates index) of
-        Nothing -> genStates
-        Just gst -> IntMap.insert index gst genStates
+    genStates' =
+      fromMaybe genStates $ do
+        matchInfo <- IntMap.lookup index matchesMap
+        gst <- generateStateGS graphStatesMap matchInfo ruleIndexesMap genStates index
+        return (IntMap.insert index gst genStates)
 
-
+-- auxiliar function to generateStatesGraphState
+-- generates the state space of one state
 generateStateGS :: M.Map Int32 GraphState -> (Int, Match Info Info, String, TypedGraphRule Info Info) -> M.Map String Int32 -> IntMap GraphState -> Int -> Maybe GraphState
 generateStateGS graphStatesMap (i,m,n,p) ruleIndexesMap genStates index =
-  case (most, mri) of
-    (Just ost, Just ri) -> Just (applyMatch ost graphStatesMap ri p m)
-    _ -> Nothing
-  where
-    most = IntMap.lookup i genStates
-    mri = M.lookup n ruleIndexesMap
+  do
+    ost <- IntMap.lookup i genStates
+    ri <- M.lookup n ruleIndexesMap
+    return (applyMatch ost graphStatesMap ri p m)
 
 
-
+-- Function to get a Map that translates rule names to rule indexes
 getRuleIndexesMap :: Gtk.TreeStore -> IO (M.Map String Int32)
 getRuleIndexesMap store = do
   (valid, iter) <- Gtk.treeModelGetIterFromString store "2:0"
   if not valid
     then return M.empty
-    else getRuleNamesAndIndexes store iter >>= return . M.fromList
+    else do
+      l <- getRuleNamesAndIndexes store iter
+      return (M.fromList l)
 
-
+-- Auxiliar function to get releIndexesMap
 getRuleNamesAndIndexes :: Gtk.TreeStore -> Gtk.TreeIter -> IO [(String, Int32)]
 getRuleNamesAndIndexes store iter = do
   name <- Gtk.treeModelGetValue store iter 0 >>= fromGValue >>= return . fromJust :: IO String

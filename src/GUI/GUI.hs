@@ -127,7 +127,7 @@ startGUI = do
 
   -- start analysis module
   cpaBox <- buildCpaBox window editorStore statesMap nacInfoMap
-  (ssBox, ssCanvas, ssGraphState) <- buildStateSpaceBox window editorStore genss focusedCanvas focusedStateIORef statesMap nacInfoMap typeGraph
+  (ssBox, ssCanvas, ssGraphState) <- buildModelCheckerGUI window editorStore genss focusedCanvas focusedStateIORef statesMap nacInfoMap typeGraph
 
   -- set the tabs
   editorTabLabel <- new Gtk.Label [#label := "Editor"]

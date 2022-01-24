@@ -139,7 +139,7 @@ splitPredicates ((name, rule) : rest) =
     else
       ((name, rule):productions, predicates)
 
-
+-- TODO: make this better, using the previous GraphState intead of simply overwriting it
 -- create diagram from space visualization
 generateStateSpaceVisualization :: Space Info Info -> GraphState -> GraphState
 generateStateSpaceVisualization stateSpace st = st''
