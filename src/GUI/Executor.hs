@@ -127,9 +127,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
 
     -- control variables
     isInInitialState <- newIORef True -- if hostState refers to the initial state of grammar
-    execStarted  <- newIORef False -- if execution has already started
     execThread  <- newIORef Nothing -- thread for execution process
-    processingMatches <- newIORef False -- flag to check if Verigraph is calculating the next matches - can be a long process if the graph is big and it would be bad to be executed more than once at the same time.
     execKeepInProd <- newIORef True  -- if after a execution step the same match should be selected
     execDelay <- newIORef (100000 :: Int) -- delay between execution steps
 
@@ -140,7 +138,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     -- callbacks ----------------------------------------------------------------------------------------------------------------
 
     -- variable bundles
-    let controlVars = (execStarted, processingMatches, isInInitialState, execThread) -- variables used to decide what action to ake when pressing 'step' or 'start'
+    let controlVars = (isInInitialState, execThread) -- variables used to decide what action to ake when pressing 'step' or 'start'
         widgets = (treeView, keepRuleCheckBtn, mainCanvas, statusSpinner, statusLabel)
         statusWidgets = (statusSpinner, statusLabel)
         baseVars = (store, statesMap, typeGraph, nacInfoMap) -- 'global' variables
@@ -167,7 +165,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     setBasicCanvasCallbacks lCanvas lState typeGraph (Just drawHostGraph) focusedCanvas focusedStateIORef
     setBasicCanvasCallbacks rCanvas rState typeGraph (Just drawHostGraph) focusedCanvas focusedStateIORef
     setMainCanvasCallbacks mainCanvas hostState typeGraph focusedCanvas focusedStateIORef currentMatchedElements
-    setMainCanvasCallbacks mainCanvas hostState typeGraph focusedCanvas focusedStateIORef currentMatchedElements
+    setNacCanvasCallbacks nacCanvas nacState typeGraph focusedCanvas focusedStateIORef mergeMap
 
     on store #rowInserted $ \path iter -> do
         _ <- Gtk.treePathUp path
@@ -176,8 +174,8 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
 
     -- when select a rule, change their states
     on treeView #cursorChanged $
-      treeViewCursorChangedCallback
-          treeView nacCBox lCanvas rCanvas ruleCanvas nacCanvas mainCanvas
+      selectRuleAndMatch
+          treeView nacCBox [mainCanvas, lCanvas, rCanvas, ruleCanvas, nacCanvas]
           statesMap currentRuleIndex nacIDListMap
           matchesMap currentMatchIndex currentMatchedElements
           hostState lStateOrig rState lState ruleState kGraph
@@ -192,7 +190,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     on stopBtn #pressed $ stopPressedCallBack controlVars baseVars execVars execStVars statusWidgets
 
     -- when pause button is pressed, kills the execution thread
-    on pauseBtn #pressed $ pausePressedCallBack controlVars
+    on pauseBtn #pressed $ killThreadIfRunning execThread
 
     -- when the step button is pressed, apply the match that is selected
     on stepBtn #pressed $ step controlVars widgets baseVars execVars execStVars
@@ -220,7 +218,9 @@ setMainCanvasCallbacks mainCanvas hostState typeGraph focusedCanvas focusedState
         renderWithContext context $ drawGraphHighlighting st sq matchedElems (Just (w,h))
         return False
 
-set nacCanvasCallbacks nacCanvas nacState typeGraph focusedCanvas focusedStateIORef mergeMap = do
+
+
+setNacCanvasCallbacks nacCanvas nacState typeGraph focusedCanvas focusedStateIORef mergeMap = do
     (_,nacSqrSel) <- setBasicCanvasCallbacks nacCanvas nacState typeGraph Nothing focusedCanvas focusedStateIORef
     on nacCanvas #draw $ \context -> do
         es <- readIORef nacState
@@ -233,8 +233,13 @@ set nacCanvasCallbacks nacCanvas nacState typeGraph focusedCanvas focusedStateIO
         renderWithContext context $ drawNACGraph es sq tg mm (Just (w,h))
         return False
 
-treeViewCursorChangedCallback
-  treeView nacCBox lCanvas rCanvas ruleCanvas nacCanvas mainCanvas
+
+-- | Callback for when the treeview cursor is changed.
+--   Show the selected rule, as well as the selected match if any.
+--   This also select the first Nac of the rule, showing it.
+selectRuleAndMatch
+  treeView nacCBox
+  allCanvas@[mainCanvas, lCanvas, rCanvas, ruleCanvas, nacCanvas]
   statesMap currentRuleIndex nacIDListMap
   matchesMap currentMatchIndex currentMatchedElements
   hostState lStateOrig rState lState ruleState kGraph =
@@ -246,10 +251,9 @@ treeViewCursorChangedCallback
         (rIndex, mIndex) <- getRuleAndMatchIndex model iter
         currRIndex <- readIORef currentRuleIndex
         --load rule
-        when (currRIndex /= rIndex) $
-          do
-            loadSelectedRule statesMap rIndex ruleState lState rState lStateOrig kGraph lCanvas rCanvas ruleCanvas
-            writeIORef currentRuleIndex rIndex
+        when (currRIndex /= rIndex) $ do
+          loadSelectedRule statesMap rIndex ruleState lState rState lStateOrig kGraph lCanvas rCanvas ruleCanvas
+          writeIORef currentRuleIndex rIndex
 
         -- set the NAC list to the NAC combo box
         nacListM <- readIORef nacIDListMap
@@ -262,11 +266,7 @@ treeViewCursorChangedCallback
         setMatchingElementsText matchesMap rIndex mIndex hostState mainCanvas currentMatchedElements
         writeIORef currentMatchIndex mIndex
 
-
-        Gtk.widgetQueueDraw lCanvas
-        Gtk.widgetQueueDraw rCanvas
-        Gtk.widgetQueueDraw ruleCanvas
-        Gtk.widgetQueueDraw nacCanvas
+        mapM_ Gtk.widgetQueueDraw allCanvas
 
 loadSelectedRule :: IORef (M.Map Int32 GraphState) -> Int32
                   -> IORef GraphState -> IORef GraphState -> IORef GraphState -> IORef GraphState -> IORef (G.Graph Info Info)
@@ -285,7 +285,7 @@ loadSelectedRule
         (ngiM,egiM) = stateGetGI es
     lcontext <- Gtk.widgetGetPangoContext lCanvas
     rcontext <- Gtk.widgetGetPangoContext rCanvas
-    -- split layouts into left, right and middle layouts and change the labels to include the id on the mapping
+    -- split layouts into left and right layouts and change the labels to include the id on the mapping
     let lngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds l)) ngiM
         legiM = M.filterWithKey (\k a -> (G.EdgeId k) `elem` (G.edgeIds l)) egiM
         rngiM = M.filterWithKey (\k a -> (G.NodeId k) `elem` (G.nodeIds r)) ngiM
@@ -381,6 +381,9 @@ nacCBoxChangedCallback
                         writeIORef currentNACIndex nacIndex
                         Gtk.widgetQueueDraw nacCanvas
 
+
+
+
 treeViewRowActivatedCallback
   controlVars
   widgets
@@ -391,17 +394,15 @@ treeViewRowActivatedCallback
   =
   do
     (v,iter) <- Gtk.treeModelGetIter store path
-    if v then
-      do
-        t <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
-        case t of
-          1 -> step controlVars widgets baseVars execVars execStVars
-          2 -> step controlVars widgets baseVars execVars execStVars
-          3 -> step controlVars widgets baseVars execVars execStVars
-          4 -> showNextMatches store iter matchesMap
-          5 -> showPreviousMatches store iter matchesMap
-          _ -> return ()
-    else return ()
+    when v $ do
+      t <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
+      case t of
+        1 -> step controlVars widgets baseVars execVars execStVars
+        2 -> step controlVars widgets baseVars execVars execStVars
+        3 -> step controlVars widgets baseVars execVars execStVars
+        4 -> showNextMatches store iter matchesMap
+        5 -> showPreviousMatches store iter matchesMap
+        _ -> return ()
 
 
 
@@ -475,15 +476,14 @@ showNextMatches store iter matchesMap = do
 
 
 stopPressedCallBack
-  (execStarted, processingMatches, isInInitialState, execThread)
+  (isInInitialState, execThread)
   (store, statesMap, typeGraph, nacInfoMap)
   (nacIDListMap, matchesMap, productionMap)
   (hostState, currentMatchIndex, currentRuleIndex, execDelay)
-  (statusSpinner, statusLabel) =
+  statusWidgets@(statusSpinner, statusLabel) =
   do
     -- stop execution if running and set control variables to initial state
     writeIORef isInInitialState True
-    writeIORef execStarted False
     killThreadIfRunning execThread
     -- reset the host graph to the initial stage
     statesM <- readIORef statesMap
@@ -492,27 +492,13 @@ stopPressedCallBack
     -- load the productions of the treeStore
     loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap
     -- process matches
-    execT <- forkFinally (do
-                            Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
-                                Gtk.spinnerStart statusSpinner
-                                Gtk.labelSetText statusLabel "processing matches"
-                                return False
-                            writeIORef processingMatches True
-                            findMatches store hostState typeGraph nacInfoMap nacIDListMap matchesMap productionMap
-                            )
-                        (\_ -> do
-                            clearStatusIndicators statusSpinner statusLabel
-                            writeIORef processingMatches False
-                        )
-    writeIORef execThread $ Just execT
-
-
-pausePressedCallBack
-  (execStarted, processingMatches, isInInitialState, execThread) =
-  do
-    writeIORef execStarted False
-    writeIORef processingMatches False
-    killThreadIfRunning execThread
+    startExecThread execThread statusWidgets $
+      do
+        Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
+            Gtk.spinnerStart statusSpinner
+            Gtk.labelSetText statusLabel "processing matches"
+            return False
+        findMatches store hostState typeGraph nacInfoMap nacIDListMap matchesMap productionMap
 
 
 killThreadIfRunning :: IORef (Maybe ThreadId) -> IO ()
@@ -527,64 +513,60 @@ killThreadIfRunning threadIORef = do
 
 
 startPressedCallback
-  controlVars@(execStarted, processingMatches, isInInitialState, execThread)
+  controlVars@(isInInitialState, execThread)
   (treeView, keepRuleCheckBtn, mainCanvas, statusSpinner, statusLabel)
   (store, statesMap, typeGraph, nacInfoMap)
   (nacIDListMap, matchesMap, productionMap)
   (hostState, currentMatchIndex, currentRuleIndex, execDelay) =
     startExecThread
-      controlVars (statusSpinner, statusLabel)
-      $ executeMultipleSteps
-          execDelay
-          treeView keepRuleCheckBtn mainCanvas statusSpinner statusLabel
-          store statesMap typeGraph nacInfoMap
-          nacIDListMap matchesMap productionMap
-          hostState currentMatchIndex currentRuleIndex
-          processingMatches
+      execThread (statusSpinner, statusLabel)
+      $ do
+          writeIORef isInInitialState False
+          executeMultipleSteps
+            execDelay
+            treeView keepRuleCheckBtn mainCanvas statusSpinner statusLabel
+            store statesMap typeGraph nacInfoMap
+            nacIDListMap matchesMap productionMap
+            hostState currentMatchIndex currentRuleIndex
 
 -- start the execTread with a function of type IO ()
 -- if the execution and it's not processing matches
-startExecThread :: (IORef Bool, IORef Bool, IORef Bool, IORef (Maybe ThreadId))
+startExecThread :: IORef (Maybe ThreadId)
                 -> (Gtk.Spinner, Gtk.Label)
                 -> IO () -> IO ()
 startExecThread
-  (execStarted, processingMatches, isInInitialState, execThread)
+  execThread
   (statusSpinner, statusLabel)
   function
   =
   do
-    started <- readIORef execStarted
-    processing <- readIORef processingMatches
-    if started || processing then
-      return ()
-    else
-      do
-        writeIORef isInInitialState False
+    mT <- readIORef execThread
+    case mT of
+      Just t -> return ()
+      Nothing -> do
         execT <- forkFinally
-                    (do
-                      writeIORef execStarted True
-                      function)
+                    function
                     (\_ -> do
                       clearStatusIndicators statusSpinner statusLabel
-                      putStrLn "ended"
-                      writeIORef execStarted False)
+                      writeIORef execThread $ Nothing)
         writeIORef execThread $ Just execT
 
 step
-  controlVars@(execStarted, processingMatches, isInInitialState, execThread)
+  controlVars@(isInInitialState, execThread)
   (treeView, keepRuleCheckBtn, mainCanvas, statusSpinner, statusLabel)
   (store, statesMap, typeGraph, nacInfoMap)
   (nacIDListMap, matchesMap, productionMap)
   (hostState, currentMatchIndex, currentRuleIndex, _)
   =
   startExecThread
-    controlVars (statusSpinner, statusLabel) $
-    executeStep
-      treeView keepRuleCheckBtn mainCanvas statusSpinner statusLabel
-      store statesMap typeGraph nacInfoMap
-      nacIDListMap matchesMap productionMap
-      hostState currentMatchIndex currentRuleIndex
-      processingMatches
+    execThread (statusSpinner, statusLabel)
+    $ do
+        writeIORef isInInitialState False
+        executeStep
+          treeView keepRuleCheckBtn mainCanvas statusSpinner statusLabel
+          store statesMap typeGraph nacInfoMap
+          nacIDListMap matchesMap productionMap
+          hostState currentMatchIndex currentRuleIndex
 
 execSpeedBtnChangeCallback :: Gtk.SpinButton -> IORef Int -> IO ()
 execSpeedBtnChangeCallback execSpeedBtn execDelay = do
@@ -596,20 +578,17 @@ executeMultipleSteps :: IORef Int -- speed control
             -> Gtk.TreeStore -> IORef (M.Map Int32 GraphState) -> IORef (G.Graph Info Info) -> IORef (M.Map Int32 NacInfo) -- general graph information
             -> IORef (M.Map Int32 [(String, Int32)]) -> IORef (M.Map Int32 (M.Map Int32 Match)) -> IORef (M.Map Int32 TGMProduction) -- matches  and productions
             -> IORef GraphState -> IORef Int32 -> IORef Int32 -- current state
-            -> IORef Bool -- state control
             -> IO ()
 executeMultipleSteps execDelay
                      treeView keepRuleCheckBtn mainCanvas statusSpinner statusLabel
                      store statesMap typeGraph nacInfoMap
                      nacIDListMap matchesMap productionMap
-                     hostState currentMatchIndex currentRuleIndex
-                     processingMatches =
+                     hostState currentMatchIndex currentRuleIndex =
   do
     executeStep treeView keepRuleCheckBtn mainCanvas statusSpinner statusLabel
                 store statesMap typeGraph nacInfoMap
                 nacIDListMap matchesMap productionMap
                 hostState currentMatchIndex currentRuleIndex
-                processingMatches
 
     Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
         Gtk.spinnerStart statusSpinner
@@ -630,20 +609,17 @@ executeMultipleSteps execDelay
                                  store statesMap typeGraph nacInfoMap
                                  nacIDListMap matchesMap productionMap
                                  hostState currentMatchIndex currentRuleIndex
-                                 processingMatches
         else return ()
 
 executeStep :: Gtk.TreeView -> Gtk.CheckButton -> Gtk.DrawingArea -> Gtk.Spinner -> Gtk.Label -- widgets
             -> Gtk.TreeStore -> IORef (M.Map Int32 GraphState) -> IORef (G.Graph Info Info) -> IORef (M.Map Int32 NacInfo) -- general graph information
             -> IORef (M.Map Int32 [(String, Int32)]) -> IORef (M.Map Int32 (M.Map Int32 Match)) -> IORef (M.Map Int32 TGMProduction) -- matches  and productions
             -> IORef GraphState -> IORef Int32 -> IORef Int32 -- current state
-            -> IORef Bool -- state control
             -> IO ()
 executeStep treeView keepRuleCheckBtn mainCanvas statusSpinner statusLabel
             store statesMap typeGraph nacInfoMap
             nacIDListMap matchesMap productionMap
-            hostState currentMatchIndex currentRuleIndex
-            processingMatches = do
+            hostState currentMatchIndex currentRuleIndex = do
     Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
         Gtk.spinnerStart statusSpinner
         Gtk.labelSetText statusLabel "applying match"
@@ -683,9 +659,7 @@ executeStep treeView keepRuleCheckBtn mainCanvas statusSpinner statusLabel
         return False
 
     -- find next matches
-    writeIORef processingMatches True
     findMatches store hostState typeGraph nacInfoMap nacIDListMap matchesMap productionMap
-    writeIORef processingMatches False
 
     clearStatusIndicators statusSpinner statusLabel
 
@@ -732,9 +706,10 @@ loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap 
     let tg = GMker.makeTypeGraph typeG
     productions <- forM rulesStates $ \(id,st) -> do
                         let nacList = fromMaybe [] $ M.lookup id nacListM
-                        let getNac index = Just (\(dg,mm) -> (fst dg, mm)) <*> (M.lookup index nacInfoM)
-                            mnacs = filter (not . null) $ map (\(_,index) -> getNac index) nacList
-                            nacs = map fromJust mnacs
+                        let getNac index = do
+                                            (dg,mm) <- M.lookup index nacInfoM
+                                            return (fst dg, mm)
+                            nacs = catMaybes $ map (\(_,index) -> getNac index) nacList
                         let rg = stateGetGraph st
                         return $ (id,GMker.graphToRule rg nacs tg)
     writeIORef productionMap (M.fromList productions)
@@ -838,8 +813,10 @@ applyMatchAccordingToLevel hostState statesMap matchesMap productionMap currentM
                 else do
                     index <- randomRIO (0,(length matchesEntries)-1)
                     let (rIndex, m) = matchesEntries!!index
-                        p = fromJust $ M.lookup rIndex prodMap
-                    applyMatchIO hostState statesMap rIndex p m
+                        mp = M.lookup rIndex prodMap
+                    case mp of
+                      Nothing -> return ()
+                      Just p -> applyMatchIO hostState statesMap rIndex p m
         _ -> return ()
 
 
