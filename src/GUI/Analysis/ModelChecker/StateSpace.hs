@@ -29,10 +29,10 @@ import            GUI.Data.GraphState
 import            GUI.Data.Info                     hiding (empty)
 import qualified  GUI.Data.Info                     as Info
 import            GUI.Data.GraphicalInfo
+import            GUI.Helper.SplitPredicates
 
 
-type NamedPredicate a b = (String, TypedGraphRule a b)
-type NamedProduction a b = (String, TypedGraphRule a b)
+
 type Match a b = TGM.TypedGraphMorphism a b
 type Space a b = SS.StateSpace (Match a b)
 
@@ -122,22 +122,7 @@ expandSuccessors' maxNum (index, object) =
 
 
 
--- | Separates the rules that change nothing (which are considered predicates)
--- from those that have some effect (which are considered productions).
--- definition taken as is from Verigraph CLI/ModelChecker.hs
-splitPredicates :: [(String, TypedGraphRule a b)] -> ([NamedProduction a b], [NamedPredicate a b])
-splitPredicates [] =
-  ([], [])
 
-splitPredicates ((name, rule) : rest) =
-  let
-    (productions, predicates) =
-      splitPredicates rest
-  in
-    if Cat.isIsomorphism (leftMorphism rule) && Cat.isIsomorphism (rightMorphism rule) then
-      (productions, (name, rule):predicates)
-    else
-      ((name, rule):productions, predicates)
 
 -- TODO: make this better, using the previous GraphState intead of simply overwriting it
 -- create diagram from space visualization

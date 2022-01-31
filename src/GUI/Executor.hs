@@ -54,10 +54,13 @@ import           GUI.Helper.FilePath
 import qualified GUI.Helper.GrammarMaker  as GMker
 import           GUI.Helper.Geometry
 import           GUI.Helper.GraphicalInfo
+import           GUI.Helper.SplitPredicates
 
 -- shouldn't use functions from editor module. Must refactore later
 import qualified GUI.Editor.Helper.Nac    as Nac
 
+
+type TGMPredicate = TGMProduction
 
 
 buildExecutor :: Gtk.TreeStore
@@ -121,7 +124,9 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     currentNACIndex    <- newIORef (-1 :: Int32) -- index of current selected NAC
 
     productionMap <- newIORef (M.empty :: M.Map Int32 TGMProduction) -- map containing the productions of the grammar, must be set before executing transformations
-    matchesMap <- newIORef (M.empty :: M.Map Int32 (M.Map Int32 Match)) -- map containing applicable matches
+    predicateMap <- newIORef (M.empty :: M.Map Int32 TGMPredicate) -- matches for predicates are computed, but not executed
+    matchesMap <- newIORef (M.empty :: M.Map Int32 (M.Map Int32 Match)) -- map containing applicable matche of productions and predicates
+    prodMatchesMap <- newIORef (M.empty :: M.Map Int32 (M.Map Int32 Match)) -- map containing applicable matches of productions
     currentMatchIndex <- newIORef (-1 :: Int32) -- index of current match
     currentRuleIndex   <- newIORef (-1 :: Int32) -- index of current selecte Rule
 
@@ -142,7 +147,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         widgets = (treeView, keepRuleCheckBtn, mainCanvas, statusSpinner, statusLabel)
         statusWidgets = (statusSpinner, statusLabel)
         baseVars = (store, statesMap, typeGraph, nacInfoMap) -- 'global' variables
-        execVars = (nacIDListMap, matchesMap, productionMap) -- variables to store match information
+        execVars = (nacIDListMap, matchesMap, prodMatchesMap, productionMap, predicateMap) -- variables to store match information
         execStVars = (hostState, currentMatchIndex, currentRuleIndex, execDelay) -- variables needed to execute transformation steps
         selectedNacVars = (currentRuleIndex, currentNACIndex, nacIDListMap) -- variables to select wich nac is used
         nacStVars = (nacState, lStateOrig) -- variables used to show the current nac
@@ -388,7 +393,7 @@ treeViewRowActivatedCallback
   controlVars
   widgets
   baseVars@(store,_,_,_)
-  execVars@(_, matchesMap, _)
+  execVars@(_, matchesMap, _, _, _)
   execStVars
   path col
   =
@@ -478,7 +483,7 @@ showNextMatches store iter matchesMap = do
 stopPressedCallBack
   (isInInitialState, execThread)
   (store, statesMap, typeGraph, nacInfoMap)
-  (nacIDListMap, matchesMap, productionMap)
+  (nacIDListMap, matchesMap, prodMatchesMap, productionMap, predicateMap)
   (hostState, currentMatchIndex, currentRuleIndex, execDelay)
   statusWidgets@(statusSpinner, statusLabel) =
   do
@@ -490,7 +495,7 @@ stopPressedCallBack
     writeIORef hostState $ fromMaybe emptyState ( M.lookup 1 statesM )
     removeMatchesFromTreeStore store
     -- load the productions of the treeStore
-    loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap
+    loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap predicateMap
     -- process matches
     startExecThread execThread statusWidgets $
       do
@@ -498,7 +503,7 @@ stopPressedCallBack
             Gtk.spinnerStart statusSpinner
             Gtk.labelSetText statusLabel "processing matches"
             return False
-        findMatches store hostState typeGraph nacInfoMap nacIDListMap matchesMap productionMap
+        findMatches store hostState typeGraph nacInfoMap nacIDListMap matchesMap prodMatchesMap productionMap predicateMap
 
 
 killThreadIfRunning :: IORef (Maybe ThreadId) -> IO ()
@@ -516,7 +521,7 @@ startPressedCallback
   controlVars@(isInInitialState, execThread)
   (treeView, keepRuleCheckBtn, mainCanvas, statusSpinner, statusLabel)
   (store, statesMap, typeGraph, nacInfoMap)
-  (nacIDListMap, matchesMap, productionMap)
+  (nacIDListMap, matchesMap, prodMatchesMap, productionMap, predicateMap)
   (hostState, currentMatchIndex, currentRuleIndex, execDelay) =
     startExecThread
       execThread (statusSpinner, statusLabel)
@@ -526,7 +531,7 @@ startPressedCallback
             execDelay
             treeView keepRuleCheckBtn mainCanvas statusSpinner statusLabel
             store statesMap typeGraph nacInfoMap
-            nacIDListMap matchesMap productionMap
+            nacIDListMap matchesMap prodMatchesMap productionMap predicateMap
             hostState currentMatchIndex currentRuleIndex
 
 -- start the execTread with a function of type IO ()
@@ -555,7 +560,7 @@ step
   controlVars@(isInInitialState, execThread)
   (treeView, keepRuleCheckBtn, mainCanvas, statusSpinner, statusLabel)
   (store, statesMap, typeGraph, nacInfoMap)
-  (nacIDListMap, matchesMap, productionMap)
+  (nacIDListMap, matchesMap, prodMatchesMap, productionMap, predicateMap)
   (hostState, currentMatchIndex, currentRuleIndex, _)
   =
   startExecThread
@@ -565,7 +570,7 @@ step
         executeStep
           treeView keepRuleCheckBtn mainCanvas statusSpinner statusLabel
           store statesMap typeGraph nacInfoMap
-          nacIDListMap matchesMap productionMap
+          nacIDListMap matchesMap prodMatchesMap productionMap predicateMap
           hostState currentMatchIndex currentRuleIndex
 
 execSpeedBtnChangeCallback :: Gtk.SpinButton -> IORef Int -> IO ()
@@ -576,18 +581,19 @@ execSpeedBtnChangeCallback execSpeedBtn execDelay = do
 executeMultipleSteps :: IORef Int -- speed control
             -> Gtk.TreeView -> Gtk.CheckButton -> Gtk.DrawingArea -> Gtk.Spinner -> Gtk.Label -- widgets
             -> Gtk.TreeStore -> IORef (M.Map Int32 GraphState) -> IORef (G.Graph Info Info) -> IORef (M.Map Int32 NacInfo) -- general graph information
-            -> IORef (M.Map Int32 [(String, Int32)]) -> IORef (M.Map Int32 (M.Map Int32 Match)) -> IORef (M.Map Int32 TGMProduction) -- matches  and productions
+            -> IORef (M.Map Int32 [(String, Int32)]) -> IORef (M.Map Int32 (M.Map Int32 Match)) -> IORef (M.Map Int32 (M.Map Int32 Match))
+            -> IORef (M.Map Int32 TGMProduction) -> IORef (M.Map Int32 TGMPredicate) -- matches  and productions
             -> IORef GraphState -> IORef Int32 -> IORef Int32 -- current state
             -> IO ()
 executeMultipleSteps execDelay
                      treeView keepRuleCheckBtn mainCanvas statusSpinner statusLabel
                      store statesMap typeGraph nacInfoMap
-                     nacIDListMap matchesMap productionMap
+                     nacIDListMap matchesMap prodMatchesMap productionMap predicateMap
                      hostState currentMatchIndex currentRuleIndex =
   do
     executeStep treeView keepRuleCheckBtn mainCanvas statusSpinner statusLabel
                 store statesMap typeGraph nacInfoMap
-                nacIDListMap matchesMap productionMap
+                nacIDListMap matchesMap prodMatchesMap productionMap predicateMap
                 hostState currentMatchIndex currentRuleIndex
 
     Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
@@ -600,25 +606,26 @@ executeMultipleSteps execDelay
     threadDelay delay
 
     -- if there are matches to apply then apply them
-    matchesM <- readIORef matchesMap
+    matchesM <- readIORef prodMatchesMap
     let allMatches = concat $ M.elems $ M.map M.elems matchesM
     if length allMatches > 0
         then do
             executeMultipleSteps execDelay
                                  treeView keepRuleCheckBtn mainCanvas statusSpinner statusLabel
                                  store statesMap typeGraph nacInfoMap
-                                 nacIDListMap matchesMap productionMap
+                                 nacIDListMap matchesMap prodMatchesMap productionMap predicateMap
                                  hostState currentMatchIndex currentRuleIndex
         else return ()
 
 executeStep :: Gtk.TreeView -> Gtk.CheckButton -> Gtk.DrawingArea -> Gtk.Spinner -> Gtk.Label -- widgets
             -> Gtk.TreeStore -> IORef (M.Map Int32 GraphState) -> IORef (G.Graph Info Info) -> IORef (M.Map Int32 NacInfo) -- general graph information
-            -> IORef (M.Map Int32 [(String, Int32)]) -> IORef (M.Map Int32 (M.Map Int32 Match)) -> IORef (M.Map Int32 TGMProduction) -- matches  and productions
+            -> IORef (M.Map Int32 [(String, Int32)]) -> IORef (M.Map Int32 (M.Map Int32 Match)) -> IORef (M.Map Int32 (M.Map Int32 Match))
+            -> IORef (M.Map Int32 TGMProduction) -> IORef (M.Map Int32 TGMPredicate)
             -> IORef GraphState -> IORef Int32 -> IORef Int32 -- current state
             -> IO ()
 executeStep treeView keepRuleCheckBtn mainCanvas statusSpinner statusLabel
             store statesMap typeGraph nacInfoMap
-            nacIDListMap matchesMap productionMap
+            nacIDListMap matchesMap prodMatchesMap productionMap predicateMap
             hostState currentMatchIndex currentRuleIndex = do
     Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
         Gtk.spinnerStart statusSpinner
@@ -626,7 +633,7 @@ executeStep treeView keepRuleCheckBtn mainCanvas statusSpinner statusLabel
         return False
 
     --apply match
-    applyMatchAccordingToLevel hostState statesMap matchesMap productionMap currentMatchIndex currentRuleIndex
+    applyMatchAccordingToLevel hostState statesMap prodMatchesMap productionMap currentMatchIndex currentRuleIndex
 
     Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
         hostSt <- readIORef hostState
@@ -659,7 +666,7 @@ executeStep treeView keepRuleCheckBtn mainCanvas statusSpinner statusLabel
         return False
 
     -- find next matches
-    findMatches store hostState typeGraph nacInfoMap nacIDListMap matchesMap productionMap
+    findMatches store hostState typeGraph nacInfoMap nacIDListMap matchesMap prodMatchesMap productionMap predicateMap
 
     clearStatusIndicators statusSpinner statusLabel
 
@@ -697,22 +704,30 @@ indicateStatus statusSpinner statusLabel statusText = do
     return False
 
 
-loadProductions :: Gtk.TreeStore -> IORef (G.Graph Info Info) -> IORef (M.Map Int32 GraphState) -> IORef (M.Map Int32 NacInfo) -> IORef (M.Map Int32 [(String,Int32)]) -> IORef (M.Map Int32 TGMProduction) -> IO ()
-loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap = do
+loadProductions :: Gtk.TreeStore
+                -> IORef (G.Graph Info Info) -> IORef (M.Map Int32 GraphState) -> IORef (M.Map Int32 NacInfo)
+                -> IORef (M.Map Int32 [(String,Int32)])
+                -> IORef (M.Map Int32 TGMProduction) -> IORef (M.Map Int32 TGMProduction)
+                -> IO ()
+loadProductions store typeGraph statesMap nacInfoMap nacIDListMap productionMap predicateMap = do
     typeG <- readIORef typeGraph
     nacListM <- readIORef nacIDListMap
     rulesStates <- treeStoreGetRules store statesMap
     nacInfoM <- readIORef nacInfoMap
     let tg = GMker.makeTypeGraph typeG
-    productions <- forM rulesStates $ \(id,st) -> do
+    rules <- forM rulesStates $ \(id,st) -> do
                         let nacList = fromMaybe [] $ M.lookup id nacListM
                         let getNac index = do
                                             (dg,mm) <- M.lookup index nacInfoM
                                             return (fst dg, mm)
                             nacs = catMaybes $ map (\(_,index) -> getNac index) nacList
                         let rg = stateGetGraph st
-                        return $ (id,GMker.graphToRule rg nacs tg)
+                        return $ (show id, GMker.graphToRule rg nacs tg)
+    let (productions', predicates') = splitPredicates rules
+        productions = map (\(k,r) -> (read k :: Int32, r)) productions'
+        predicates = map (\(k,r) -> (read k :: Int32, r)) predicates'
     writeIORef productionMap (M.fromList productions)
+    writeIORef predicateMap (M.fromList predicates)
 
 -- process matches and
 -- this function should be executed inside a thread
@@ -722,22 +737,35 @@ findMatches :: Gtk.TreeStore
             -> IORef (M.Map Int32 NacInfo)
             -> IORef (M.Map Int32 [(String,Int32)])
             -> IORef (M.Map Int32 (M.Map Int32 Match))
+            -> IORef (M.Map Int32 (M.Map Int32 Match))
             -> IORef (M.Map Int32 TGMProduction)
+            -> IORef (M.Map Int32 TGMPredicate)
             -> IO ()
-findMatches store hostState typeGraph nacInfoMap nacIDListMap matchesMap productionMap = do
+findMatches store hostState typeGraph nacInfoMap nacIDListMap matchesMap prodMatchesMap productionMap predicateMap = do
     -- prepare initial graph
     g <- readIORef hostState >>= return . stateGetGraph
     typeG <- readIORef typeGraph
     let tg = GMker.makeTypeGraph typeG
         obj = GMker.makeTypedGraph g tg
     productions <- readIORef productionMap >>= return . M.toList
+    predicates <- readIORef predicateMap >>= return . M.toList
     -- get dpo matches
     let morphismClass = Cat.monic :: Cat.MorphismClass (TGM.TypedGraphMorphism Info Info)
         conf = DPO.MorphismsConfig morphismClass
-        matches = map (\(id,prod) -> (id,DPO.findApplicableMatches conf prod obj)) productions
-    let matchesM = foldr (\(rid,l) m -> M.insert rid (M.fromList $ zip ([1..] :: [Int32]) l) m) M.empty matches
+        findMs (id,prod) = (id,DPO.findApplicableMatches conf prod obj)
+        prodMatches = map findMs productions
+        predMatches = map findMs predicates
+    let buildMatchM = foldr (\(rid,l) m -> M.insert rid (M.fromList $ zip ([1..] :: [Int32]) l) m) M.empty
+        prodMatchesM = buildMatchM prodMatches
+        matchesM = buildMatchM (prodMatches ++ predMatches)
+    writeIORef matchesMap matchesM
+    writeIORef prodMatchesMap prodMatchesM
     -- add matches entries to the treeStore
-    forM_ (M.toList matchesM) $ \(rid,mM) -> do
+    populateTreeStoreWithMatches store (M.toList matchesM)
+
+
+populateTreeStoreWithMatches store matches =do
+    forM_ matches $ \(rid,mM) -> do
         mk <- return $ M.keys mM
         numMatches <- return $ length mk
         matchesEntries <- forM (take 100 mk) $ \mid -> return ("match " ++ (show mid), mid, 2, rid, "")
@@ -764,7 +792,8 @@ findMatches store hostState typeGraph nacInfoMap nacIDListMap matchesMap product
                     return ()
             return False
         return ()
-    writeIORef matchesMap matchesM
+
+
 
 
 -- apply matches according to the selected level on the treeView.
@@ -817,6 +846,7 @@ applyMatchAccordingToLevel hostState statesMap matchesMap productionMap currentM
                     case mp of
                       Nothing -> return ()
                       Just p -> applyMatchIO hostState statesMap rIndex p m
+
         _ -> return ()
 
 
