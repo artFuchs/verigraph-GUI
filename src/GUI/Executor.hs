@@ -837,41 +837,15 @@ populateTreeStoreWithMatches store matchesM = do
 
 
 showPreviousMatches :: Gtk.TreeStore -> Gtk.TreeIter -> IORef (M.Map Int32 (M.Map Int32 Match)) -> IO ()
-showPreviousMatches store iter matchesMap =
-  do
-    ri <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
-    matchesM <- readIORef matchesMap
-    case M.lookup ri matchesM of
-        Nothing -> return ()
-        Just nM -> do
-            offset <- Gtk.treeModelGetValue store iter 1 >>= fromGValue :: IO Int32
-            let numMatches = M.size nM
-                offset' = (fromIntegral offset) - 100
-                matchesL = drop offset' $ M.toList nM
-                comment = " -> " ++ (show numMatches) ++ " matches (showing " ++ (show $ offset'+1) ++ "-" ++ (show $ min numMatches (offset'+100)) ++ ")"
-                newNextEntry = ( "next 100 matches", (fromIntegral offset'), 4, ri, "")
-                newPreviousEntry = if offset' >= 100
-                                    then Just ("previous 100 matches", (fromIntegral offset'), 5, ri, "")
-                                    else Nothing
+showPreviousMatches = showXMatches (-100)
 
-            (parentValid,ruleIter) <- Gtk.treeModelIterParent store iter
-            (childValid,firstChildIter) <- Gtk.treeModelIterChildren store (Just ruleIter)
-            treeStoreClearCurrrentLevel store firstChildIter
-
-            -- set the comment of number of matches to the rule name
-            realRuleName <- Gtk.treeModelGetValue store ruleIter 4 >>= fromGValue >>= return . fromMaybe "" :: IO String
-            newNameGV <- toGValue $ Just (realRuleName ++ comment)
-            #set store ruleIter [0] [newNameGV]
-
-            -- add the "next matches" and "previous matches" entries
-            updateTreeStore store newNextEntry
-            case newPreviousEntry of
-                Nothing    -> return ()
-                Just entry -> updateTreeStore store entry
-            forM_ (take 100 matchesL) $ \(mid,m) -> updateTreeStore store ("match " ++ (show mid), mid, 2, ri, "")
 
 showNextMatches :: Gtk.TreeStore -> Gtk.TreeIter -> IORef (M.Map Int32 (M.Map Int32 Match)) -> IO ()
-showNextMatches store iter matchesMap = do
+showNextMatches = showXMatches 100
+
+
+showXMatches :: Int -> Gtk.TreeStore -> Gtk.TreeIter -> IORef (M.Map Int32 (M.Map Int32 Match)) -> IO ()
+showXMatches delta store iter matchesMap = do
     ri <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
     matchesM <- readIORef matchesMap
     case M.lookup ri matchesM of
@@ -879,13 +853,20 @@ showNextMatches store iter matchesMap = do
         Just nM -> do
             offset <- Gtk.treeModelGetValue store iter 1 >>= fromGValue :: IO Int32
             let numMatches = M.size nM
-                offset' = 100+(fromIntegral offset)
+                offset' = (fromIntegral offset) + delta
                 matchesL = drop offset' $ M.toList nM
-                comment = " -> " ++ (show numMatches) ++ " matches (showing " ++ (show $ offset'+1) ++ "-" ++ (show $ min numMatches (offset'+100)) ++ ")"
-                newNextEntry = if numMatches-offset' > 100
-                                then Just ( "next " ++ (show $ min (numMatches-offset'-100) 100 ) ++ " matches", fromIntegral offset', 4, ri, "")
-                                else Nothing
-                newPreviousEntry = ("previous 100 matches", fromIntegral offset', 5, ri, "")
+                firstShown = offset'+1
+                lastShown =  min numMatches (offset'+delta)
+                comment = " -> " ++ (show numMatches) ++ " matches (showing " ++ (show firstShown) ++ "-" ++ (show lastShown) ++ ")"
+                newNextEntry = case (delta > 0, numMatches-offset' > delta) of
+                                (True, False) -> Nothing
+                                (True, True) -> let rest = min (numMatches-offset'-delta) delta
+                                                in Just ( "next " ++ (show rest) ++ " matches", fromIntegral offset', 4, ri, "")
+                                _ -> Just ( "next " ++ (show delta) ++ " matches", fromIntegral offset', 4, ri, "")
+                newPreviousEntry = case (delta < 0, offset' >= 0) of
+                                    (True, False) -> Nothing
+                                    _ -> Just ("previous " ++ (show delta) ++ " matches", fromIntegral offset', 5, ri, "")
+
 
             (_,ruleIter) <- Gtk.treeModelIterParent store iter
             (_,firstChildIter) <- Gtk.treeModelIterChildren store (Just ruleIter)
@@ -900,5 +881,7 @@ showNextMatches store iter matchesMap = do
             case newNextEntry of
                 Nothing    -> return ()
                 Just entry -> updateTreeStore store entry
-            updateTreeStore store newPreviousEntry
-            forM_ (take 100 matchesL) $ \(mid,m) -> updateTreeStore store ("match " ++ (show mid), mid, 2, ri, "")
+            case newPreviousEntry of
+                Nothing    -> return ()
+                Just entry -> updateTreeStore store entry
+            forM_ (take (abs delta) matchesL) $ \(mid,m) -> updateTreeStore store ("match " ++ (show mid), mid, 2, ri, "")
