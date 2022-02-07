@@ -12,6 +12,7 @@ import           Data.GI.Base.GType
 import           Data.GI.Base.ManagedPtr (unsafeCastTo)
 
 -- haskell data modules
+import           Control.Concurrent
 import           Control.Monad
 import           Data.IORef
 import           Data.Int
@@ -95,7 +96,7 @@ startGUI = do
   Gtk.init Nothing
 
   -- build main window
-  (window, tabs, (fileItems:editItems:viewItems:helpItems:analysisItems:[])) <- buildMainWindow
+  (window, tabs, (fileItems:editItems:viewItems:helpItems:analysisItems:_)) <- buildMainWindow
   -- set the menubar
   let [newm,opn,svn,sva] = fileItems
       [del,udo,rdo,cpy,pst,cut,sla,sln,sle,mrg,spt] = editItems
@@ -123,7 +124,8 @@ startGUI = do
   execStore <- Gtk.treeStoreNew [gtypeString, gtypeInt, gtypeInt, gtypeInt, gtypeString]
   Exec.updateTreeStore execStore ("Rule0", 2, 1, 0, "Rule0")
   execItems <- Exec.buildExecutor execStore statesMap typeGraph nacInfoMap focusedCanvas focusedStateIORef
-  let (execPane, execCanvas, execNacCBox, execState, execIsInitial, execNacListMap) = execItems
+  let (execPane, execCanvas, execNacCBox, execState, execIsInitial, execNacListMap, execThread) = execItems
+      execCore = (execStore, execThread, execIsInitial, execState)
 
   -- start analysis module
   cpaBox <- buildCpaBox window editorStore statesMap nacInfoMap
@@ -253,9 +255,9 @@ startGUI = do
   ----------------------------------------------------------------------------------------------------------------------------
   -- File Menu ---------------------------------------------------------------------------------------------------------------
   -- new project
-  on newm #activate $ startNewProject window fileName storeIORefs editorStore editorTreeView editorState changesIORefs (undoStack,redoStack) nacIORefs
+  on newm #activate $ startNewProject window fileName storeIORefs editorStore editorTreeView editorState changesIORefs (undoStack,redoStack) nacIORefs execCore
   -- open project
-  on opn #activate $ loadProject window fileName storeIORefs editorStore editorTreeView editorState changesIORefs (undoStack,redoStack) nacIORefs
+  on opn #activate $ loadProject window fileName storeIORefs editorStore editorTreeView editorState changesIORefs (undoStack,redoStack) nacIORefs execCore
   -- save project
   on svn #activate $ saveProject window editorCanvas fileName editorStore editorState storeIORefs changesIORefs nacInfoMap
   -- save project as
@@ -468,13 +470,15 @@ startNewProject :: Gtk.Window -> IORef (Maybe String)
                 -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 DiaGraph))
                 -> (IORef (M.Map Int32 ChangeStack), IORef (M.Map Int32 ChangeStack))
                 -> (IORef (M.Map Int32 NacInfo), IORef (Maybe MergeMapping))
+                -> (Gtk.TreeStore, IORef (Maybe ThreadId), IORef Bool, IORef GraphState)
                 -> IO ()
 startNewProject window fileName
                 storeIORefs@(statesMap,currentPath,currentGraph,currentGraphType)
                 editorStore editorTreeView editorState
                 changesIORefs@(changedProject, changedGraph, lastSavedState)
                 changeStacks
-                nacIORefs@(nacInfoMap, mergeMapping) = do
+                nacIORefs@(nacInfoMap, mergeMapping)
+                execCore = do
   continue <- Edit.confirmOperation window editorStore changedProject editorState nacInfoMap fileName storeIORefs
   if continue
     then do
@@ -483,7 +487,7 @@ startNewProject window fileName
       Edit.initTreeView editorTreeView
       writeIORef fileName Nothing
       writeIORef editorState emptyState
-      setDefaults storeIORefs changesIORefs nacIORefs changeStacks
+      setDefaults storeIORefs changesIORefs nacIORefs changeStacks execCore
       set window [#title := "Verigraph-GUI"]
     else return ()
 
@@ -492,22 +496,26 @@ setDefaults :: (IORef (M.Map Int32 GraphState), IORef [Int32], IORef Int32, IORe
             -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 DiaGraph))
             -> (IORef (M.Map Int32 NacInfo), IORef (Maybe MergeMapping))
             -> (IORef (M.Map Int32 ChangeStack), IORef (M.Map Int32 ChangeStack))
+            -> (Gtk.TreeStore, IORef (Maybe ThreadId), IORef Bool, IORef GraphState)
             -> IO ()
 setDefaults (statesMap,currentPath,currentGraph,currentGraphType)
             (changedProject, changedGraph, lastSavedState)
             (nacInfoMap, mergeMapping)
-            (undoStack, redoStack) = do
-  writeIORef statesMap $ M.fromList [(a, emptyState) | a <- [0..2]]
-  writeIORef currentPath [0]
-  writeIORef currentGraph 0
-  writeIORef currentGraphType 1
-  writeIORef changedProject False
-  writeIORef changedGraph [False]
-  writeIORef lastSavedState M.empty
-  writeIORef nacInfoMap M.empty
-  writeIORef mergeMapping Nothing
-  writeIORef undoStack $ M.fromList [(a, []) | a <- [0..2]]
-  writeIORef redoStack $ M.fromList [(a, []) | a <- [0..2]]
+            (undoStack, redoStack)
+            (execStore, execThread, execIsInitial, execState) =
+  do
+    writeIORef statesMap $ M.fromList [(a, emptyState) | a <- [0..2]]
+    writeIORef currentPath [0]
+    writeIORef currentGraph 0
+    writeIORef currentGraphType 1
+    writeIORef changedProject False
+    writeIORef changedGraph [False]
+    writeIORef lastSavedState M.empty
+    writeIORef nacInfoMap M.empty
+    writeIORef mergeMapping Nothing
+    writeIORef undoStack $ M.fromList [(a, []) | a <- [0..2]]
+    writeIORef redoStack $ M.fromList [(a, []) | a <- [0..2]]
+    Exec.resetExecutor execStore execThread execIsInitial execState
 
 
 
@@ -517,13 +525,15 @@ loadProject :: Gtk.Window -> IORef (Maybe String)
                 -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 DiaGraph))
                 -> (IORef (M.Map Int32 ChangeStack), IORef (M.Map Int32 ChangeStack))
                 -> (IORef (M.Map Int32 NacInfo), IORef (Maybe MergeMapping))
+                -> (Gtk.TreeStore, IORef (Maybe ThreadId), IORef Bool, IORef GraphState)
                 -> IO ()
 loadProject window fileName
             storeIORefs@(statesMap,currentPath,currentGraph,currentGraphType)
             editorStore editorTreeView editorState
             changesIORefs@(changedProject, changedGraph, lastSavedState)
             changeStacks
-            nacIORefs@(nacInfoMap, mergeMapping) = do
+            nacIORefs@(nacInfoMap, mergeMapping)
+            execCore = do
     continue <- confirmOperation window editorStore changedProject editorState nacInfoMap fileName storeIORefs
     if continue
       then do
@@ -541,7 +551,7 @@ loadProject window fileName
                 let (i,es) = if length statesList > 0 then statesList!!0 else (0,emptyState)
                 writeIORef fileName $ Just fn
                 writeIORef editorState es
-                setDefaults storeIORefs changesIORefs nacIORefs changeStacks
+                setDefaults storeIORefs changesIORefs nacIORefs changeStacks execCore
                 let statesM = M.fromList statesList
                 writeIORef statesMap statesM
                 mapM (\n -> putInStore editorStore n Nothing) nameForest

@@ -5,6 +5,7 @@ module GUI.Executor (
 , removeFromTreeStore
 , removeTrashFromTreeStore
 , applyMatch
+, resetExecutor
 ) where
 
 -- GTK related modules
@@ -68,8 +69,10 @@ buildExecutor :: Gtk.TreeStore
               -> IORef (G.Graph Info Info)
               -> IORef (M.Map Int32 NacInfo)
               -> IORef (Maybe Gtk.DrawingArea) -> IORef (Maybe (IORef GraphState))
-              -> IO (Gtk.Paned, Gtk.DrawingArea, Gtk.ComboBoxText, IORef GraphState, IORef Bool, IORef (M.Map Int32 [(String, Int32)]))
+              -> IO (Gtk.Paned, Gtk.DrawingArea, Gtk.ComboBoxText, IORef GraphState, IORef Bool, IORef (M.Map Int32 [(String, Int32)]), IORef (Maybe ThreadId))
 buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIORef = do
+
+    -- Read the glade file and build the GUI widgets
     builder <- new Gtk.Builder []
     resourcesFolder <- getResourcesFolder
     Gtk.builderAddFromFile builder $ T.pack (resourcesFolder ++ "executor.glade")
@@ -140,10 +143,9 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     initExecDelay <- Gtk.spinButtonGetValue execSpeedBtn
     writeIORef execDelay $ round (initExecDelay * 1000000)
 
-    -- callbacks ----------------------------------------------------------------------------------------------------------------
 
     -- variable bundles
-    let controlVars = (isInInitialState, execThread) -- variables used to decide what action to ake when pressing 'step' or 'start'
+    let controlVars = (isInInitialState, execThread) -- variables used to decide what action to take when pressing 'step' or 'start'
         widgets = (treeView, keepRuleCheckBtn, mainCanvas, statusSpinner, statusLabel)
         statusWidgets = (statusSpinner, statusLabel)
         baseVars = (store, statesMap, typeGraph, nacInfoMap) -- 'global' variables
@@ -154,30 +156,30 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
         nacInfoVars = (nacInfoMap, mergeMap, typeGraph) -- variables used to build the nac
 
 
-
-
-    -- some callbacks called by multiple events ---------------------------------------------------------------------------------
-
-    -- Events and their callbacks -----------------------------------------------------------------------------------------------
+    -- callbacks ----------------------------------------------------------------------------------------------------------------
 
     -- hide rule viewer panel when colse button is pressed
     on hideRVBtn #pressed $ do
         closePos <- get execPane #maxPosition
         Gtk.panedSetPosition execPane closePos
 
-    -- canvas
+    -- when inserting a row on the TreeStore, expand it's path
+    on store #rowInserted $ \path iter -> do
+        _ <- Gtk.treePathUp path
+        _ <- Gtk.treeViewExpandRow treeView path False
+        return ()
+
+    -- set callbacks for all the canvas
     setBasicCanvasCallbacks ruleCanvas ruleState typeGraph (Just drawRuleGraph) focusedCanvas focusedStateIORef
     setBasicCanvasCallbacks lCanvas lState typeGraph (Just drawHostGraph) focusedCanvas focusedStateIORef
     setBasicCanvasCallbacks rCanvas rState typeGraph (Just drawHostGraph) focusedCanvas focusedStateIORef
     setMainCanvasCallbacks mainCanvas hostState typeGraph focusedCanvas focusedStateIORef currentMatchedElements
     setNacCanvasCallbacks nacCanvas nacState typeGraph focusedCanvas focusedStateIORef mergeMap
 
-    on store #rowInserted $ \path iter -> do
-        _ <- Gtk.treePathUp path
-        _ <- Gtk.treeViewExpandRow treeView path False
-        return ()
+    -- use the comboBox on RuleViewer to select NAC graph to display
+    on nacCBox #changed $ nacCBoxChangedCallback nacCBox nacCanvas selectedNacVars nacInfoVars nacStVars
 
-    -- when select a rule, change their states
+    -- when select a rule or match, show it on the canvas
     on treeView #cursorChanged $
       selectRuleAndMatch
           treeView nacCBox [mainCanvas, lCanvas, rCanvas, ruleCanvas, nacCanvas]
@@ -185,12 +187,9 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
           matchesMap currentMatchIndex currentMatchedElements
           hostState lStateOrig rState lState ruleState kGraph
 
-    -- use the comboBox on RuleViewer to select NAC graph to display
-    on nacCBox #changed $ nacCBoxChangedCallback nacCBox nacCanvas selectedNacVars nacInfoVars nacStVars
-
+    -- when a treeview row is activated, apply a match or navigate the matches
     on treeView #rowActivated $ treeViewRowActivatedCallback controlVars widgets baseVars execVars execStVars
 
-    -- execution controls
     -- when stop button is pressed, reset the host graph to initial state
     on stopBtn #pressed $ stopPressedCallBack controlVars baseVars execVars execStVars statusWidgets
 
@@ -203,11 +202,21 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     -- when the start button is pressed, start applying mutiple steps
     on startBtn #pressed $ startPressedCallback controlVars widgets baseVars execVars execStVars
 
+    -- modify the speed of the transformation steps execution when it's executing multiple steps
     on execSpeedBtn #valueChanged $ execSpeedBtnChangeCallback execSpeedBtn execDelay
 
     #show executorPane
-    return (executorPane, mainCanvas, nacCBox, hostState, isInInitialState, nacIDListMap)
+    return (executorPane, mainCanvas, nacCBox, hostState, isInInitialState, nacIDListMap, execThread)
 
+
+-- reset the executor state
+resetExecutor :: Gtk.TreeStore -> IORef (Maybe ThreadId) -> IORef Bool -> IORef GraphState -> IO ()
+resetExecutor store execThread isInInitialState execState =
+  do
+    removeMatchesFromTreeStore store
+    killThreadIfRunning execThread
+    writeIORef isInInitialState True
+    writeIORef execState emptyState
 
 --------------------------------------------------------------------------------------------------------------------------------
 -- Callback functions in appearance order order --------------------------------------------------------------------------------
