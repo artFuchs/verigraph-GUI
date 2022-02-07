@@ -301,33 +301,41 @@ nacCBoxChangedCallback
             nacName <- Gtk.comboBoxTextGetActiveText nacCBox >>= return . T.unpack
             ruleIndex <- readIORef currentRuleIndex
             nacListM <- readIORef nacIDListMap
-            case M.lookup ruleIndex nacListM of
-                Nothing -> writeIORef nacState $ emptyState
-                Just nacList -> case lookup nacName nacList of
-                    Nothing -> writeIORef nacState $ emptyState
-                    Just nacIndex -> do
-                        les <- readIORef lStateOrig
-                        let l = stateGetGraph les
-                            lgi = stateGetGI les
-                        nacInfoM <- readIORef nacInfoMap
-                        (nacdg,mergeM) <- case M.lookup nacIndex nacInfoM of
-                            Nothing -> return ((l,lgi),(M.empty,M.empty))
-                            Just nacInfo -> do
-                                context <- Gtk.widgetGetPangoContext nacCanvas
-                                tg <- readIORef typeGraph
-                                (nacdg,mergeM) <- Nac.applyLhsChangesToNac l nacInfo (Just context)
-                                let nacdg' = Nac.mountNACGraph (l,lgi) tg (nacdg,mergeM)
-                                return (nacdg',mergeM)
-                        context <- Gtk.widgetGetPangoContext nacCanvas
-                        let (nacG,ngi') = adjustDiagrPosition nacdg
-                            rNMapping = M.fromList $ map (\(a,b) -> (b,"[" ++ (show . fromEnum $ a) ++ "]") ) $ M.toList $ M.union (fst mergeM) $ M.fromList (map (\a -> (a,a)) $ G.nodeIds l)
-                            rEMapping = M.fromList $ map (\(a,b) -> (b,"[" ++ (show . fromEnum $ a) ++ "]") ) $ M.toList $ M.union (snd mergeM) $ M.fromList (map (\a -> (a,a)) $ G.edgeIds l)
-                            nst = stateSetGI ngi' . stateSetGraph nacG $ emptyState
-                        nst' <- setInfoExtra nst (rNMapping, rEMapping) context
-                        writeIORef mergeMap (Just mergeM)
-                        writeIORef nacState nst'
-                        writeIORef currentNACIndex nacIndex
-                        Gtk.widgetQueueDraw nacCanvas
+            nacInfoM <- readIORef nacInfoMap
+
+            let mIndexAndInfo =
+                  do  nacList <- M.lookup ruleIndex nacListM
+                      nacIndex <- lookup nacName nacList
+                      nacInfo <- M.lookup nacIndex nacInfoM
+                      return (nacIndex, nacInfo)
+
+            context <- Gtk.widgetGetPangoContext nacCanvas
+            case mIndexAndInfo of
+              Nothing -> writeIORef nacState $ emptyState
+              Just (nacIndex, nacInfo) -> do
+                context <- Gtk.widgetGetPangoContext nacCanvas
+
+                les <- readIORef lStateOrig
+                let l = stateGetGraph les
+                    lgi = stateGetGI les
+
+                tg <- readIORef typeGraph
+                (nacdg',mergeM) <- Nac.applyLhsChangesToNac l nacInfo (Just context)
+                let nacdg = Nac.mountNACGraph (l,lgi) tg (nacdg',mergeM)
+                    (nacG,ngi') = adjustDiagrPosition nacdg
+                    nst = stateSetGI ngi' . stateSetGraph nacG $ emptyState
+
+                let configureInfoExtra m ids =
+                      M.fromList . map (\(a,b) -> (b,"[" ++ (show . fromEnum $ a) ++ "]") ) . M.toList . M.union m . M.fromList
+                      $ map (\a -> (a,a)) ids
+                    rNMapping = configureInfoExtra (fst mergeM) (G.nodeIds l)
+                    rEMapping = configureInfoExtra (snd mergeM) (G.edgeIds l)
+
+                nst' <- setInfoExtra nst (rNMapping, rEMapping) context
+                writeIORef mergeMap (Just mergeM)
+                writeIORef nacState nst'
+                writeIORef currentNACIndex nacIndex
+                Gtk.widgetQueueDraw nacCanvas
 
 
 
