@@ -120,7 +120,7 @@ buildModelCheckerGUI window store genStateSpaceItem focusedCanvas focusedStateIO
   -- IORefs for displaying the graphState of each state
   statesGSs <- newIORef IntMap.empty
   currentState <- newIORef emptyState
-
+  completedGen <- newIORef False
   -- set the MVars
   constructEndedMVar <- newEmptyMVar
   timeMVar <- newEmptyMVar
@@ -133,7 +133,7 @@ buildModelCheckerGUI window store genStateSpaceItem focusedCanvas focusedStateIO
       mvars = (constructEndedMVar, timeMVar)
 
   on generateBtn #pressed $ Gtk.menuItemActivate genStateSpaceItem
-  on genStateSpaceItem #activate $ genStateSpaceItemActivate widgets resIORefs gsIORefs threadIORefs mvars
+  on genStateSpaceItem #activate $ genStateSpaceItemActivate widgets resIORefs gsIORefs threadIORefs mvars completedGen
 
   -- stop generation of state space
   on stopBtn #pressed $ stopBtnCallback execThread constructThread constructEndedMVar
@@ -157,12 +157,14 @@ genStateSpaceItemActivate :: (Gtk.Window, Gtk.DrawingArea, Gtk.TreeStore, Gtk.Sp
                           -> (IORef (M.Map Int32 GraphState), IORef (M.Map Int32 NacInfo))
                           -> (IORef (Maybe ThreadId), IORef (Maybe ThreadId))
                           -> (MVar Bool, MVar Time.UTCTime)
+                          -> IORef Bool
                           -> IO ()
 genStateSpaceItemActivate (window, canvas, store, depthSpinBtn, statusLabel, statusSpinner)
                           (ssGraphState, modelIORef, goodStatesIORef, statesGSs)
                           (graphStatesIORef, nacsInfoIORef)
                           (execThread, constructThread)
-                          (constructEndedMVar, timeMVar) =
+                          (constructEndedMVar, timeMVar)
+                          completedGen =
   do
     maybeT <- readIORef execThread
     case maybeT of
@@ -179,27 +181,21 @@ genStateSpaceItemActivate (window, canvas, store, depthSpinBtn, statusLabel, sta
             gStatesMap <- readIORef graphStatesIORef
             writeIORef goodStatesIORef Nothing
             writeIORef ssGraphState emptyState
+            writeIORef completedGen False
             execT <- forkFinally
-                        (generateSSThread statusSpinner statusLabel canvas context timeMVar grammar maxStates ssIORef ssGraphState modelIORef constructThread constructEndedMVar ruleIndexesMap statesGSs gStatesMap)
-                        (generateSSThreadEnd statusSpinner statusLabel execThread timeMVar constructThread constructEndedMVar)
+                        (generateSSThread statusSpinner statusLabel canvas context timeMVar grammar maxStates ssIORef ssGraphState modelIORef constructThread constructEndedMVar ruleIndexesMap statesGSs gStatesMap completedGen)
+                        (generateSSThreadEnd statusSpinner statusLabel execThread timeMVar constructThread constructEndedMVar completedGen)
             writeIORef execThread (Just execT)
 
 
 stopBtnCallback :: IORef (Maybe ThreadId) -> IORef (Maybe ThreadId) -> MVar Bool -> IO ()
 stopBtnCallback execThread constructThread constructEndedMVar = do
-  execT <- readIORef execThread
-  case execT of
-    Nothing -> return ()
-    Just et -> do
-      constructT <- readIORef constructThread
-      case constructT of
-        Nothing -> return ()
-        Just ct -> killThread ct
-      _ <- tryTakeMVar constructEndedMVar
-      putMVar constructEndedMVar False
-      killThread et
-      writeIORef constructThread Nothing
-      writeIORef execThread Nothing
+  killThreadIfRunning constructThread
+  killThreadIfRunning execThread
+  _ <- tryTakeMVar constructEndedMVar
+  putMVar constructEndedMVar False
+  writeIORef constructThread Nothing
+  writeIORef execThread Nothing
 
 
 formulaEntryKeyPressedCallback :: Gtk.Window -> Gtk.Entry -> Gtk.Label
@@ -302,8 +298,9 @@ generateSSThread :: Gtk.Spinner -> Gtk.Label -> Gtk.DrawingArea -> P.Context
                  -> IORef GraphState -> IORef (Maybe (Logic.KripkeStructure String))
                  -> IORef (Maybe ThreadId) -> MVar Bool
                  -> M.Map String Int32 -> IORef (IntMap GraphState) -> M.Map Int32 GraphState
+                 -> IORef Bool
                  -> IO ()
-generateSSThread statusSpinner statusLabel canvas context timeMVar grammar statesNum ssIORef ssGraphState modelIORef constructThread constructEndedMVar ruleIndexesMap statesGSs graphStatesMap = do
+generateSSThread statusSpinner statusLabel canvas context timeMVar grammar statesNum ssIORef ssGraphState modelIORef constructThread constructEndedMVar ruleIndexesMap statesGSs graphStatesMap completedGen = do
   -- get current time to compare and indicate the duration of the generation
   startTime <- Time.getCurrentTime
   putMVar timeMVar startTime
@@ -324,9 +321,11 @@ generateSSThread statusSpinner statusLabel canvas context timeMVar grammar state
   writeIORef constructThread (Just indicateThread)
 
   -- generate state
-  (_,_,matchesMap) <- exploreStateSpace mconf statesNum grammar initialGraph (Just ssMVar)
+  (_,_,matchesMap, completed) <- exploreStateSpace mconf statesNum grammar initialGraph (Just ssMVar)
   -- generate states visualization
   writeIORef statesGSs $ generateStatesGraphState graphStatesMap matchesMap ruleIndexesMap
+  writeIORef completedGen completed
+
   return ()
 
 
@@ -336,15 +335,14 @@ generateSSThreadEnd :: Gtk.Spinner -> Gtk.Label
                     -> MVar Time.UTCTime
                     -> IORef (Maybe ThreadId)
                     -> MVar Bool
-                    -> Either SomeException () -> IO ()
-generateSSThreadEnd statusSpinner statusLabel execThread timeMVar constructThread constructEndedMVar e = do
+                    -> IORef Bool
+                    -> Either SomeException ()  -- this is just ignored
+                    -> IO ()
+generateSSThreadEnd statusSpinner statusLabel execThread timeMVar constructThread constructEndedMVar completedGen e = do
   ended <- takeMVar constructEndedMVar
+  completed <- readIORef completedGen
 
-  -- stop the thread that generates the graphState and model for the state space
-  constructThread <- readIORef constructThread
-  case constructThread of
-    Nothing -> return ()
-    Just t -> killThread t
+  killThreadIfRunning constructThread
 
   -- get current time to compare and indicate the duration of the generation
   endTime <- Time.getCurrentTime
@@ -356,10 +354,10 @@ generateSSThreadEnd statusSpinner statusLabel execThread timeMVar constructThrea
   -- indicate that the generation ended
   Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
     Gtk.spinnerStop statusSpinner
-    let text =  if ended then
-                  T.pack $ "generation completed in " ++ (show diff)
-                else
-                  T.pack $ "generation interrupted. Time elapsed: " ++ (show diff)
+    let text =  case (ended, completed) of
+                  (True, True) -> T.pack $ "Generation completed in " ++ (show diff)
+                  (True, False) -> T.pack $ "Incomplete generation. Time elapsed: " ++ (show diff)
+                  _ -> T.pack $ "Generation interrupted. Time elapsed: " ++ (show diff)
     Gtk.labelSetText statusLabel text
     return False
 

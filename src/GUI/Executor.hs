@@ -6,6 +6,7 @@ module GUI.Executor (
 , removeTrashFromTreeStore
 , applyMatch
 , resetExecutor
+, killThreadIfRunning
 ) where
 
 -- GTK related modules

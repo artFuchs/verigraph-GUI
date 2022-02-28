@@ -47,7 +47,7 @@ type Space a b = SS.StateSpace (Match a b)
         - @m@ is the match found between the lhs of the prodution and O
         - @p@ is the predution applied to generate S
 -}
-exploreStateSpace :: DPO.MorphismsConfig (TGM.TypedGraphMorphism a b) -> Int -> DPO.Grammar (TGM.TypedGraphMorphism a b) -> TG.TypedGraph a b -> Maybe (MVar (Space a b, Bool)) -> IO (Int,Space a b,IntMap (Int, Match a b, String, TypedGraphRule a b))
+exploreStateSpace :: DPO.MorphismsConfig (TGM.TypedGraphMorphism a b) -> Int -> DPO.Grammar (TGM.TypedGraphMorphism a b) -> TG.TypedGraph a b -> Maybe (MVar (Space a b, Bool)) -> IO (Int,Space a b,IntMap (Int, Match a b, String, TypedGraphRule a b), Bool)
 exploreStateSpace conf maxDepth grammar graph ssMVar =
   {-# SCC "exploreStateSpace" #-}
   let (productions, predicates) = splitPredicates (DPO.productions grammar)
@@ -57,18 +57,18 @@ exploreStateSpace conf maxDepth grammar graph ssMVar =
         return idx
   in do
     (idx,space1) <- return $ SS.runStateSpaceBuilder getInitialId initialSpace
-    (spacex, matchesM) <- breadthFirstSearchIO maxDepth [graph] (IntMap.empty) space1 ssMVar
-    return (idx, spacex, matchesM)
+    (spacex, matchesM, completed) <- breadthFirstSearchIO maxDepth [graph] (IntMap.empty) space1 ssMVar
+    return (idx, spacex, matchesM, completed)
 
 
 {-| Runs a breadth-first search, starting with a initial state space.
     The number of states explored are limited by the given number.
     At each iteration of the search, updates the MVar ssMVar with the current result so that the user can stop at any moment.
-    Returns a tuple @(state space, matchesMap)@
+    Returns a tuple @(state space, matchesMap, completed)@
 -}
-breadthFirstSearchIO :: Int -> [(TG.TypedGraph a b)] -> IntMap (Int, Match a b, String, TypedGraphRule a b) -> Space a b -> Maybe (MVar (Space a b, Bool)) -> IO (Space a b, IntMap (Int, Match a b, String, TypedGraphRule a b))
-breadthFirstSearchIO 0 _  matchesM initialSpace _ = return (initialSpace, matchesM)
-breadthFirstSearchIO _ [] matchesM initialSpace _ = return (initialSpace, matchesM)
+breadthFirstSearchIO :: Int -> [(TG.TypedGraph a b)] -> IntMap (Int, Match a b, String, TypedGraphRule a b) -> Space a b -> Maybe (MVar (Space a b, Bool)) -> IO (Space a b, IntMap (Int, Match a b, String, TypedGraphRule a b),Bool)
+breadthFirstSearchIO 0 objs matchesM initialSpace _ = return (initialSpace, matchesM, (length objs) == 0)
+breadthFirstSearchIO _ [] matchesM initialSpace _ = return (initialSpace, matchesM, True)
 breadthFirstSearchIO maxNum objs matchesM initialSpace mssMVar = do
   let
     ((newNum, newObjs, matchesM'), state) = SS.runStateSpaceBuilder (bfsStep maxNum objs) initialSpace
