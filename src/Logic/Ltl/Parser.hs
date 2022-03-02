@@ -19,6 +19,7 @@ expr :: Parser Expr
 expr =
   exprImplicative
 
+
 exprImplicative :: Parser Expr
 exprImplicative =
   do
@@ -31,17 +32,19 @@ exprImplicative =
     exprEquiv e1 =
       Equiv e1 <$> (reservedOp "<->" *> exprBoolean)
 
+
 exprBoolean :: Parser Expr
 exprBoolean =
   do
-    e1 <- exprUnary
+    e1 <- exprBinary
     exprAnd e1 <|> exprOr e1 <|> pure e1
   where
     exprAnd =
-      exprAssocRight exprUnary (reservedOp "&&") And
+      exprAssocRight exprBinary (reservedOp "&&") And
 
     exprOr =
-      exprAssocRight exprUnary (reservedOp "||") Or
+      exprAssocRight exprBinary (reservedOp "||") Or
+
 
 exprAssocRight :: Parser a -> Parser b -> (a -> a -> a) -> a -> Parser a
 exprAssocRight item sep combine =
@@ -53,26 +56,19 @@ exprAssocRight item sep combine =
   in
     go
 
-exprUnary :: Parser Expr
-exprUnary =
-  exprNot <|> exprUnaryTemporal <|> exprBinaryTemporal
 
-exprNot, exprUnaryTemporal, exprBinaryTemporal :: Parser Expr
-exprNot =
-  Not <$> (reservedOp "~" *> exprUnary)
+exprBinary :: Parser Expr
+exprBinary =
+  do
+    e1 <- exprUnary
+    exprBinaryTemporal e1 <|> pure e1
 
-exprUnaryTemporal =
-  Temporal <$> (unaryStateQuantifier <*> exprUnary)
-
-exprBinaryTemporal =
-  Temporal <$> (exprInfix expr binaryStateQuantifier)
-
-unaryStateQuantifier :: Parser (e -> StateQuantified e)
-unaryStateQuantifier =
-  (reserved "X" *> pure X)
-  <|> (reserved "F" *> pure F)
-  <|> (reserved "G" *> pure G)
-  <?> "temporal connective"
+exprBinaryTemporal :: Expr -> Parser Expr
+exprBinaryTemporal e1 =
+  do
+    op <- binaryStateQuantifier
+    e2 <- exprBinary
+    return (Temporal (e1 `op` e2))
 
 binaryStateQuantifier :: Parser (e -> e -> StateQuantified e)
 binaryStateQuantifier =
@@ -83,13 +79,23 @@ binaryStateQuantifier =
 
 
 
-exprInfix :: Parser a -> Parser (a -> a -> b) -> Parser b
-exprInfix item operator =
-  do
-    e1 <- item
-    op <- operator
-    e2 <- item
-    return (e1 `op` e2)
+exprUnary :: Parser Expr
+exprUnary =
+  exprNot <|> exprUnaryTemporal <|> exprAtomic
+
+exprNot, exprUnaryTemporal :: Parser Expr
+exprNot =
+  Not <$> (reservedOp "~" *> exprUnary)
+
+exprUnaryTemporal =
+  Temporal <$> (unaryStateQuantifier <*> exprUnary)
+
+unaryStateQuantifier :: Parser (e -> StateQuantified e)
+unaryStateQuantifier =
+  (reserved "X" *> pure X)
+  <|> (reserved "F" *> pure F)
+  <|> (reserved "G" *> pure G)
+  <?> "temporal connective"
 
 exprAtomic :: Parser Expr
 exprAtomic =
@@ -111,6 +117,7 @@ literal =
   in
     Literal <$> (true <|> false)
 
+
 brackets, parens :: Parser a -> Parser a
 brackets =
   P.brackets lexer
@@ -118,14 +125,12 @@ brackets =
 parens =
   P.parens lexer
 
-
 reserved, reservedOp :: String -> Parser ()
 reserved =
   P.reserved lexer
 
 reservedOp =
   P.reservedOp lexer
-
 
 identifier :: Parser String
 identifier =
