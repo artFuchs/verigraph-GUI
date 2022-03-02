@@ -4,8 +4,6 @@ module Logic.Ltl.Base
   , StateQuantified(..)
   ) where
 
-import           Data.Text.Prettyprint.Doc
-
 data Expr
   = Literal Bool
   | Atom String
@@ -13,7 +11,7 @@ data Expr
   | And Expr Expr
   | Or Expr Expr
   | Implies Expr Expr
-  | Equiv Expr Expr 
+  | Equiv Expr Expr
   | Temporal (StateQuantified Expr)
   deriving (Eq, Show, Read)
 
