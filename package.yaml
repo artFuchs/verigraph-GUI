@@ -73,3 +73,14 @@ benchmarks:
     dependencies:
       - verigraph-GUI
       - tasty-bench
+
+tests:
+  HSpecTests:
+    main:             HSpecRunner.hs
+    source-dirs:      test
+    dependencies:
+      - verigraph-GUI
+      - hspec
+      - hspec-discover
+      - HUnit
+      - QuickCheck
