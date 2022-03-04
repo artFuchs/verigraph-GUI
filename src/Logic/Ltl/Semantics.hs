@@ -1,4 +1,4 @@
-module Logic.Ltl.Semantics () where
+module Logic.Ltl.Semantics (rewriteExpr) where
 
 import Logic.Ltl.Base
 import Logic.Ltl.Parser
