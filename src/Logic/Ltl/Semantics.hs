@@ -1,47 +1,50 @@
 module Logic.Ltl.Semantics (
   rewriteExpr
 , closure
+, Closure
 ) where
 
 import Logic.Ltl.Base
 import Logic.Ltl.Parser
 
-import Data.List
+import Data.Set (Set)
+import qualified Data.Set as Set
 
-type Closure a = [a]
+
+type Closure = Set Expr
 
 
 
 -- | Given an expression, rewrite it in terms of X and U and obtain it's closure.
 -- The closure cantains all subformulas of the expression and theirs negations,
 -- and it identifies Not(Not( E )) and E.
-closure :: Expr -> Closure Expr
+closure :: Expr -> Closure
 closure expr = closure' (rewriteExpr expr)
 
-closure' :: Expr -> Closure Expr
+closure' :: Expr -> Closure
 closure' (Not e) = closure e
 
 closure' expr@(Implies e1 e2) =
-  [expr, Not expr] `union` closure e1 `union` closure e2
+  (Set.fromList [expr, Not expr]) `Set.union` closure e1 `Set.union` closure e2
 
 closure' expr@(Equiv e1 e2) =
-  [expr, Not expr] `union` closure e1 `union` closure e2
+  (Set.fromList [expr, Not expr]) `Set.union` closure e1 `Set.union` closure e2
 
 closure' expr@(And e1 e2) =
-  [expr, Not expr] `union` closure e1 `union` closure e2
+  (Set.fromList [expr, Not expr]) `Set.union` closure e1 `Set.union` closure e2
 
 closure' expr@(Or e1 e2) =
-  [expr, Not expr] `union` closure e1 `union` closure e2
+  (Set.fromList [expr, Not expr]) `Set.union` closure e1 `Set.union` closure e2
 
 closure' expr@(Temporal(U e1 e2)) =
-  [expr, Not expr] `union` closure e1 `union` closure e2
+  (Set.fromList [expr, Not expr]) `Set.union` closure e1 `Set.union` closure e2
 
 closure' expr@(Temporal(X e)) =
-  [expr, Not expr] `union` closure e
+  (Set.fromList [expr, Not expr]) `Set.union` closure e
 
-closure' (Literal _) = [Literal True, Literal False]
+closure' (Literal _) = Set.fromList  [Literal True, Literal False]
 
-closure' e = [e, Not e]
+closure' e = Set.fromList [e, Not e]
 
 
 -- rewrite expression in terms of X and U

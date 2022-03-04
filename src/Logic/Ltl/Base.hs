@@ -28,9 +28,80 @@ data StateQuantified e
   deriving (Eq, Show, Read)
 
 
+instance Ord Expr where
+  (<=) = leq
 
 instance Pretty Expr where
   pretty = ppImplicative
+
+exprLength :: Expr -> Int
+exprLength (Atom _) = 1
+exprLength (Literal _) = 1
+exprLength (Not e) = 1 + exprLength e
+exprLength (Temporal (X e)) = 1 + exprLength e
+exprLength (Temporal (F e)) = 1 + exprLength e
+exprLength (Temporal (G e)) = 1 + exprLength e
+exprLength (Temporal (e1 `U` e2)) = 1 + exprLength e1 + exprLength e2
+exprLength (Temporal (e1 `W` e2)) = 1 + exprLength e1 + exprLength e2
+exprLength (Temporal (e1 `R` e2)) = 1 + exprLength e1 + exprLength e2
+exprLength (Implies e1 e2) = 1 + exprLength e1 + exprLength e2
+exprLength (Equiv e1 e2) = 1 + exprLength e1 + exprLength e2
+exprLength (And e1 e2) = 1 + exprLength e1 + exprLength e2
+exprLength (Or e1 e2) = 1 + exprLength e1 + exprLength e2
+
+
+leq :: Expr -> Expr -> Bool
+(Literal False) `leq` (Literal True) = True
+(Literal True) `leq` (Literal False) = False
+(Literal True) `leq` _ = True
+(Literal _) `leq` (Atom _) = True
+(Atom _) `leq` (Literal _) = False
+(Atom str1) `leq` (Atom str2) = str1 <= str2
+(Atom _) `leq` _ = True
+expr1 `leq` expr2 =
+  let
+    len1 = exprLength expr1
+    len2 = exprLength expr2
+  in
+    case (len1 < len2, len1 > len2) of
+      (True,False) -> True
+      (False, True) -> False
+      _ ->
+        case (expr1, expr2) of
+          (Not e1, Not e2) -> e1 `leq` e2
+          (And a1 a2, And b1 b2) -> a1 `leq` b1 || a2 `leq` b2
+          (Or a1 a2, Or b1 b2) -> a1 `leq` b1 || a2 `leq` b2
+          (Implies a1 a2, Implies b1 b2) -> a1 `leq` b1 || a2 `leq` b2
+          (Equiv a1 a2, Equiv b1 b2) -> a1 `leq` b1 || a2 `leq` b2
+          (Temporal (X e1), Temporal (X e2)) -> e1 `leq` e2
+          (Temporal (F e1), Temporal (F e2)) -> e1 `leq` e2
+          (Temporal (G e1), Temporal (G e2)) -> e1 `leq` e2
+          (Temporal (U a1 a2), Temporal (U b1 b2)) -> a1 `leq` b1 || a2 `leq` b2
+          (Temporal (W a1 a2), Temporal (W b1 b2)) -> a1 `leq` b1 || a2 `leq` b2
+          (Temporal (R a1 a2), Temporal (R b1 b2)) -> a1 `leq` b1 || a2 `leq` b2
+          (Not _, _) -> True
+          (_, Not _) -> False
+          (And _ _, _) -> True
+          (_, And _ _) -> False
+          (Or _ _, _) -> True
+          (_, Or _ _) -> False
+          (Implies _ _, _) -> True
+          (_, Implies _ _) -> False
+          (Equiv _ _, _) -> True
+          (_, Equiv _ _) -> False
+          (Temporal (X _), _) -> True
+          (_, Temporal (X _)) -> False
+          (Temporal (F _), _) -> True
+          (_, Temporal (F _)) -> False
+          (Temporal (G _), _) -> True
+          (_, Temporal (G _)) -> False
+          (Temporal (U _ _), _) -> True
+          (_, Temporal (U _ _)) -> False
+          (Temporal (W _ _), _) -> True
+          (_, Temporal (W _ _)) -> False
+          (Temporal (R _ _), _) -> True
+          (_, Temporal (R _ _)) -> False
+          _ -> False
 
 
 ppImplicative :: Expr -> Doc ann
