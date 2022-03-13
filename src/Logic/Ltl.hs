@@ -29,9 +29,10 @@ example formula = do
   case eExpr of
     Left err -> putStrLn $ "Parsing error for formula " ++ formula ++ ":" ++ (show err)
     Right expr -> do
-      let auto = exprAutomaton expr
+      let (initial,auto) = exprAutomaton expr
       putStrLn "states: "
       forM_ (states auto) print
+      putStrLn $ "initial states: " ++ (show initial)
       putStrLn "transitions: "
       forM_ (transitions auto) print
       return ()
