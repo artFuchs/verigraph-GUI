@@ -6,7 +6,7 @@ Stability   : provisional
 -}
 module Logic.Ltl
   (
-  -- * CTL Expressions
+  -- * LTL Expressions
     module Logic.Ltl.Base
   , parseExpr
 
@@ -40,4 +40,4 @@ example formula = do
 
 -- | Check if the given expression holds in the given state of the Kripke structure.
 -- check :: KripkeStructure String -> Expr -> Int -> Bool
--- check model expr s0 = s0 `elem` satisfyExpr' model expr
+-- check model expr s0 = length (satisfyExpr model expr) > 0

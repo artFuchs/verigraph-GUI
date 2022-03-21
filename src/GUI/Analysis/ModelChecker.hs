@@ -42,7 +42,8 @@ import qualified  Data.Graphs                       as G
 import qualified  Data.TypedGraph.Morphism          as TGM
 import qualified  Data.TypedGraph                   as TG
 import            Rewriting.DPO.TypedGraph
-import qualified  Logic.Ctl                         as Logic
+import qualified  Logic.Ctl                         as CTL
+import qualified  Logic.Ltl                         as LTL
 import qualified  Logic.Model                       as Logic
 
 -- GUI modules
@@ -96,6 +97,9 @@ buildModelCheckerGUI window store genStateSpaceItem focusedCanvas focusedStateIO
   formulaEntry <- Gtk.builderGetObject builder "formula_entry" >>= unsafeCastTo Gtk.Entry . fromJust
   formulaCheckBtn <- Gtk.builderGetObject builder "check_formula_btn" >>= unsafeCastTo Gtk.Button . fromJust
 
+  ctlRadioBtn  <- Gtk.builderGetObject builder "ctl_radiobutton" >>= unsafeCastTo Gtk.RadioButton . fromJust
+  ltlRadioBtn  <- Gtk.builderGetObject builder "ltl_radiobutton" >>= unsafeCastTo Gtk.RadioButton . fromJust
+
   canvas <- Gtk.builderGetObject builder "canvas" >>= unsafeCastTo Gtk.DrawingArea . fromJust
   Gtk.widgetSetEvents canvas [toEnum $ fromEnum Gdk.EventMaskAllEventsMask - fromEnum Gdk.EventMaskSmoothScrollMask]
 
@@ -139,8 +143,8 @@ buildModelCheckerGUI window store genStateSpaceItem focusedCanvas focusedStateIO
   on stopBtn #pressed $ stopBtnCallback execThread constructThread constructEndedMVar
 
 
-  on formulaCheckBtn #pressed $ checkFormula window formulaEntry statusLabel modelIORef goodStatesIORef
-  on formulaEntry #keyPressEvent $ formulaEntryKeyPressedCallback window formulaEntry statusLabel modelIORef goodStatesIORef
+  on formulaCheckBtn #pressed $ checkFormula window ctlRadioBtn formulaEntry statusLabel modelIORef goodStatesIORef
+  on formulaEntry #keyPressEvent $ formulaEntryKeyPressedCallback window ctlRadioBtn formulaEntry statusLabel modelIORef goodStatesIORef
 
 
   -- canvas - to draw the state space graph
@@ -198,16 +202,16 @@ stopBtnCallback execThread constructThread constructEndedMVar = do
   writeIORef execThread Nothing
 
 
-formulaEntryKeyPressedCallback :: Gtk.Window -> Gtk.Entry -> Gtk.Label
+formulaEntryKeyPressedCallback :: Gtk.Window -> Gtk.RadioButton -> Gtk.Entry -> Gtk.Label
              -> IORef (Maybe (Logic.KripkeStructure String)) -> IORef (Maybe [G.NodeId])
              -> Gdk.EventKey
              -> IO Bool
-formulaEntryKeyPressedCallback window formulaEntry statusLabel modelIORef goodStatesIORef eventKey = do
+formulaEntryKeyPressedCallback window ctlRadioBtn formulaEntry statusLabel modelIORef goodStatesIORef eventKey = do
   k <- get eventKey #keyval >>= return . chr . fromIntegral
   case k of
     -- Return or Enter (Numpad) -> then check formula
-    '\65293' -> checkFormula window formulaEntry statusLabel modelIORef goodStatesIORef
-    '\65421' -> checkFormula window formulaEntry statusLabel modelIORef goodStatesIORef
+    '\65293' -> checkFormula window ctlRadioBtn formulaEntry statusLabel modelIORef goodStatesIORef
+    '\65421' -> checkFormula window ctlRadioBtn formulaEntry statusLabel modelIORef goodStatesIORef
     -- Backspace -> clear goodStatesIORef
     '\65288' -> do
         t <- Gtk.entryGetTextLength formulaEntry >>= return . fromIntegral
@@ -219,14 +223,25 @@ formulaEntryKeyPressedCallback window formulaEntry statusLabel modelIORef goodSt
   return False
 
 
-checkFormula :: Gtk.Window -> Gtk.Entry -> Gtk.Label
+checkFormula :: Gtk.Window -> Gtk.RadioButton -> Gtk.Entry -> Gtk.Label
              -> IORef (Maybe (Logic.KripkeStructure String)) -> IORef (Maybe [G.NodeId])
              -> IO ()
-checkFormula window formulaEntry statusLabel modelIORef goodStatesIORef =
+checkFormula window ctlRadioBtn formulaEntry statusLabel modelIORef goodStatesIORef =
+  do
+    ctl <- Gtk.toggleButtonGetActive ctlRadioBtn
+    if ctl
+      then checkFormulaCtl window formulaEntry statusLabel modelIORef goodStatesIORef
+      else checkFormulaLtl window formulaEntry statusLabel modelIORef goodStatesIORef
+
+
+checkFormulaCtl :: Gtk.Window -> Gtk.Entry -> Gtk.Label
+             -> IORef (Maybe (Logic.KripkeStructure String)) -> IORef (Maybe [G.NodeId])
+             -> IO ()
+checkFormulaCtl window formulaEntry statusLabel modelIORef goodStatesIORef =
   do
     exprTxt <- Gtk.entryGetText formulaEntry
     exprStr <- return $ T.unpack exprTxt
-    case Logic.parseExpr "" exprStr of
+    case CTL.parseExpr "" exprStr of
       Left err -> showError window $ T.pack ("Invalid CTL formula:\n" ++ (show err))
       Right expr -> do
         maybeModel <- readIORef modelIORef
@@ -235,6 +250,31 @@ checkFormula window formulaEntry statusLabel modelIORef goodStatesIORef =
           Just model -> do
             startTime <- Time.getCurrentTime
             modelCheck model expr goodStatesIORef
+            endTime <- Time.getCurrentTime
+            gstates <- readIORef goodStatesIORef
+            let diff = Time.diffUTCTime endTime startTime
+            let text = if (G.NodeId 0) `elem` fromMaybe [] gstates then
+                        T.pack ("The formula \"" ++ exprStr ++ "\" holds for the initial state. Formula checked in " ++ (show diff) ++ "seconds" )
+                       else
+                        T.pack ("The formula \"" ++ exprStr ++ "\" doesn't hold for the inital state. Formula checked in " ++ (show diff) ++ "seconds" )
+            Gtk.labelSetText statusLabel text
+
+checkFormulaLtl :: Gtk.Window -> Gtk.Entry -> Gtk.Label
+             -> IORef (Maybe (Logic.KripkeStructure String)) -> IORef (Maybe [G.NodeId])
+             -> IO ()
+checkFormulaLtl window formulaEntry statusLabel modelIORef goodStatesIORef =
+  do
+    exprTxt <- Gtk.entryGetText formulaEntry
+    exprStr <- return $ T.unpack exprTxt
+    case LTL.parseExpr "" exprStr of
+      Left err -> showError window $ T.pack ("Invalid LTL formula:\n" ++ (show err))
+      Right expr -> do
+        maybeModel <- readIORef modelIORef
+        case maybeModel of
+          Nothing -> showError window $ "Must Generate State Space before checking a formula"
+          Just model -> do
+            startTime <- Time.getCurrentTime
+            modelCheckLtl model expr goodStatesIORef
             endTime <- Time.getCurrentTime
             gstates <- readIORef goodStatesIORef
             let diff = Time.diffUTCTime endTime startTime
@@ -409,12 +449,17 @@ showStateSpace statusLabel ssMVar initialGraph canvas context ssGraphState model
 
 -- | Given a logic model and a expression to parse, verify wich states are good and wich are bad
 -- adapted from Verigraph CLI/ModelChecker.hs
-modelCheck :: Logic.KripkeStructure String -> Logic.Expr -> IORef (Maybe [G.NodeId]) -> IO ()
+modelCheck :: Logic.KripkeStructure String -> CTL.Expr -> IORef (Maybe [G.NodeId]) -> IO ()
 modelCheck model expr goodStatesIORef =
   let
-    allGoodStates = Logic.satisfyExpr' model expr
+    allGoodStates = CTL.satisfyExpr' model expr
   in do
     writeIORef goodStatesIORef $ Just (map G.NodeId allGoodStates)
+
+modelCheckLtl :: Logic.KripkeStructure String -> LTL.Expr -> IORef (Maybe [G.NodeId]) -> IO ()
+modelCheckLtl model expr goodStatesIORef = do
+    path <- LTL.satisfyExpr model expr
+    writeIORef goodStatesIORef $ Just (map G.NodeId path)
 
 
 -- | draw state space graph -------------------------------------------------------------
