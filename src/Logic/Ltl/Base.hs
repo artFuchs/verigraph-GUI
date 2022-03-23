@@ -156,6 +156,8 @@ rewriteExpr :: Expr -> Expr
 rewriteExpr (Not (Literal True)) = Literal False
 rewriteExpr (Not (Literal False)) = Literal True
 
+rewriteExpr (Not (Not e)) = e
+
 rewriteExpr (Not e) =
   Not (rewriteExpr e)
 

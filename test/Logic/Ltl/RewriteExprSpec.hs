@@ -1,4 +1,4 @@
-module Logic.Ltl.RewriteExpressions where
+module Logic.Ltl.RewriteExprSpec where
 
 
 import           Test.Hspec
@@ -10,6 +10,8 @@ import           Logic.Ltl.Semantics
 
 import Data.Set (Set)
 import qualified Data.Set as Set
+
+import           Logic.Ltl.TestUtils     ()
 
 
 spec :: Spec

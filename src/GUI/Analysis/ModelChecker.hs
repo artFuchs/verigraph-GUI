@@ -121,6 +121,7 @@ buildModelCheckerGUI window store genStateSpaceItem focusedCanvas focusedStateIO
   execThread <- newIORef Nothing -- thread to generate state space
   constructThread <- newIORef Nothing -- thread to show state space
   goodStatesIORef <- newIORef Nothing
+  formulaType <- newIORef "ctl"
   -- IORefs for displaying the graphState of each state
   statesGSs <- newIORef IntMap.empty
   currentState <- newIORef emptyState
@@ -148,9 +149,14 @@ buildModelCheckerGUI window store genStateSpaceItem focusedCanvas focusedStateIO
 
 
   -- canvas - to draw the state space graph
-  setMainCanvasCallbacks canvas ssGraphState focusedCanvas focusedStateIORef statesGSs auxCanvas currentState goodStatesIORef
+  setMainCanvasCallbacks canvas ssGraphState focusedCanvas focusedStateIORef statesGSs auxCanvas currentState goodStatesIORef formulaType
   -- auxCanvas - to draw the selected state
   setBasicCanvasCallbacks auxCanvas currentState typeGraph (Just drawHostGraph) focusedCanvas focusedStateIORef
+
+
+  -- change formulaType according to the active radio button
+  on ctlRadioBtn #toggled $ writeIORef formulaType "ctl"
+  on ltlRadioBtn #toggled $ writeIORef formulaType "ltl"
 
   return (mainBox, canvas, ssGraphState)
 
@@ -278,10 +284,10 @@ checkFormulaLtl window formulaEntry statusLabel modelIORef goodStatesIORef =
             endTime <- Time.getCurrentTime
             gstates <- readIORef goodStatesIORef
             let diff = Time.diffUTCTime endTime startTime
-            let text = if (G.NodeId 0) `elem` fromMaybe [] gstates then
-                        T.pack ("The formula \"" ++ exprStr ++ "\" holds for the initial state. Formula checked in " ++ (show diff) ++ "seconds" )
+            let text = if null gstates then
+                        T.pack ("The formula \"" ++ exprStr ++ "\" holds for the system. Formula checked in " ++ (show diff) ++ "seconds" )
                        else
-                        T.pack ("The formula \"" ++ exprStr ++ "\" doesn't hold for the inital state. Formula checked in " ++ (show diff) ++ "seconds" )
+                        T.pack ("The formula \"" ++ exprStr ++ "\" doesn't hold for the system. Couter exemple highlighted. Formula checked in " ++ (show diff) ++ "seconds" )
             Gtk.labelSetText statusLabel text
 
 
@@ -290,8 +296,9 @@ setMainCanvasCallbacks :: Gtk.DrawingArea -> IORef GraphState
                        -> IORef (Maybe Gtk.DrawingArea) -> IORef (Maybe (IORef GraphState))
                        -> IORef (IntMap GraphState) -> Gtk.DrawingArea -> IORef GraphState
                        -> IORef (Maybe [G.NodeId])
+                       -> IORef String
                        -> IO ()
-setMainCanvasCallbacks canvas ssGraphState focusedCanvas focusedStateIORef statesGSs auxCanvas currentState goodStatesIORef = do
+setMainCanvasCallbacks canvas ssGraphState focusedCanvas focusedStateIORef statesGSs auxCanvas currentState goodStatesIORef formulaType = do
   emptyG <- newIORef G.empty
   (_,squareSelection) <- setBasicCanvasCallbacks canvas ssGraphState emptyG Nothing focusedCanvas focusedStateIORef
   on canvas #buttonPressEvent $ \eventButton -> do
@@ -317,7 +324,8 @@ setMainCanvasCallbacks canvas ssGraphState focusedCanvas focusedStateIORef state
     ss <- readIORef ssGraphState
     sq <- readIORef squareSelection
     gsts <- readIORef goodStatesIORef
-    renderWithContext context   $ drawStateSpace ss sq gsts (w,h)
+    ftype <- readIORef formulaType
+    renderWithContext context   $ drawStateSpace ss sq gsts (w,h) ftype
     return False
   return ()
 
@@ -453,29 +461,36 @@ modelCheck :: Logic.KripkeStructure String -> CTL.Expr -> IORef (Maybe [G.NodeId
 modelCheck model expr goodStatesIORef =
   let
     allGoodStates = CTL.satisfyExpr' model expr
-  in do
+  in
     writeIORef goodStatesIORef $ Just (map G.NodeId allGoodStates)
 
 modelCheckLtl :: Logic.KripkeStructure String -> LTL.Expr -> IORef (Maybe [G.NodeId]) -> IO ()
-modelCheckLtl model expr goodStatesIORef = do
-    path <- LTL.satisfyExpr model expr
-    writeIORef goodStatesIORef $ Just (map G.NodeId path)
+modelCheckLtl model expr badStatesIORef =
+    let
+      path = LTL.satisfyExpr model [0] expr
+      gstates = if null path then Nothing else Just (map G.NodeId path)
+    in
+      writeIORef badStatesIORef gstates
 
 
 -- | draw state space graph -------------------------------------------------------------
-drawStateSpace :: GraphState -> Maybe (Double,Double,Double,Double) -> Maybe [G.NodeId] -> (Double,Double) -> Render ()
-drawStateSpace state sq maybeGoodStates alloc = do
+drawStateSpace :: GraphState -> Maybe (Double,Double,Double,Double) -> Maybe [G.NodeId] -> (Double,Double) -> String -> Render ()
+drawStateSpace state sq maybeGoodStates alloc formulaType = do
   drawGraph state sq nodeColors M.empty M.empty M.empty (Just alloc)
   where
     g = stateGetGraph state
-    allGoodStates = fromMaybe [] maybeGoodStates
+    selectedStates = fromMaybe [] maybeGoodStates
     nodeColors = case maybeGoodStates of
                     Nothing            -> M.empty
                     Just allGoodStates ->
-                        let (goodStates, badStates) = List.partition (`List.elem` allGoodStates) (G.nodeIds g)
-                        in  (M.fromList $ map (\n -> (n,(0,1,0))) goodStates)
-                            `M.union`
-                            (M.fromList $ map (\n -> (n,(1,0,0))) badStates)
+                        case formulaType of
+                          "ctl" ->
+                              let (goodStates, badStates) = List.partition (`List.elem` selectedStates) (G.nodeIds g)
+                              in  (M.fromList $ map (\n -> (n,(0,1,0))) goodStates)
+                                  `M.union`
+                                  (M.fromList $ map (\n -> (n,(1,0,0))) badStates)
+                          "ltl" -> M.fromList $ map (\n -> (n,(1,0,0))) selectedStates
+                          _ -> M.empty
 
 -- | for each of the generated states, generate a GraphState to display it
 generateStatesGraphState :: M.Map Int32 GraphState -> IntMap (Int, Match Info Info, String, TypedGraphRule Info Info) -> M.Map String Int32 -> IntMap GraphState

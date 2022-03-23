@@ -18,43 +18,29 @@ import qualified Data.IntMap as IM
 
 
 
-
-satisfyExpr :: Logic.KripkeStructure String -> Expr -> IO [Int]
-satisfyExpr model expr = do
-
-  print expr'
-
-  putStrLn "\nna"
-  print (fst na)
-  mapM_ print (Logic.states $ snd na)
-  mapM_ print (Logic.transitions $ snd na)
-
-  putStrLn "\nmXna"
-  print initialSts
-  mapM_ print (Logic.states $ mXna)
-  mapM_ print (Logic.transitions $ mXna)
-  print mapping
-
-  putStrLn "\n"
-
-
-
-
-  let path' = catMaybes $ map (\i -> IM.lookup i mapping) path
-
-  return path'
+-- | Checks if there is a path that satisfies 'Not expr'.
+-- If the returned result is [] then the expression passed holds for the system
+-- else the path passed is a counter example for the expression
+satisfyExpr :: Logic.KripkeStructure String -> [Int] -> Expr -> [Int]
+satisfyExpr model initial expr = path'
   where
+    path' = catMaybes $ map (\i -> IM.lookup i mapping) path
     path = findSatisfyingPath mXna expr' initialSts
 
     -- combine model and automaton
-    (initialSts, mXna, mapping) = modelXautomaton (0,model') na
+    (initialSts, mXna, mapping) = modelXautomaton (initial,model') na
 
     -- create expression automaton
     na = exprAutomaton expr'
-    expr' = rewriteExpr expr
+    expr' = rewriteExpr (Not expr)
 
-    -- rewrite model
-    model' = model{Logic.states = states'}
+    -- rewrite model to add the information of the transitions to the source states
+    -- and to add loops to the states that are dead ends.
+    model' = model{Logic.states = states', Logic.transitions = transitions'}
+    transitions' = Logic.transitions model ++ extraTransitions
+    extraTransitions = zipWith (\i s -> Logic.Transition i s s [])
+                           [(length (Logic.transitions model))-1 ..]
+                           (filter shouldHaveLoop $ Logic.stateIds model)
     states' = map addTrasitionsAtomsToState (Logic.states model)
 
     addTrasitionsAtomsToState :: Logic.State String -> Logic.State String
@@ -63,6 +49,14 @@ satisfyExpr model expr = do
         stTransitions = filter (\(Logic.Transition _ s _ _) -> s == i) (Logic.transitions model)
         transitionsAtoms = map (Logic.values) stTransitions
         v' = v `union` (concat transitionsAtoms)
+
+    shouldHaveLoop :: Int -> Bool
+    shouldHaveLoop i = null stTransitions
+      where
+        stTransitions = filter (\(Logic.Transition _ s _ _) -> s == i) (Logic.transitions model)
+
+
+
 
 
 findSatisfyingPath :: Logic.KripkeStructure Expr -> Expr -> [Int] -> [Int]
@@ -163,12 +157,12 @@ findSatisfyingPaths model e@(Equiv a b) path@(i:is) =
 
 
 -- | Given a model and a automaton for a LTL expression, combine the two,
-modelXautomaton :: (Int,Logic.KripkeStructure String) -> ([Int],Logic.KripkeStructure Expr) -> ([Int], Logic.KripkeStructure Expr, IntMap Int)
-modelXautomaton (initialSt,model) (initialSts,autom) =
-  (initialSts', Logic.KripkeStructure states transitions, statesMapping)
+modelXautomaton :: ([Int],Logic.KripkeStructure String) -> ([Int],Logic.KripkeStructure Expr) -> ([Int], Logic.KripkeStructure Expr, IntMap Int)
+modelXautomaton (initialSts,model) (initialSts',autom) =
+  (initialSts'', Logic.KripkeStructure states transitions, statesMapping)
   where
     statesMapping = IM.map fst statesPairs
-    initialSts' = IM.keys $ IM.filter (\(s,k) -> s == initialSt && k `elem` initialSts) statesPairs
+    initialSts'' = IM.keys $ IM.filter (\(s,k) -> s `elem` initialSts && k `elem` initialSts') statesPairs
     transitions = joinTransitions model autom statesPairs
     states = IM.elems $ IM.mapWithKey (\i (s,k) -> Logic.State i (Logic.values . Logic.getState k $ autom)) statesPairs
     statesPairs = findCompatibleStates (Logic.states model) (Logic.states autom)

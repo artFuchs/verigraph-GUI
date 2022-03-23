@@ -2,6 +2,7 @@ module Logic.Ltl.Automaton (
   exprAutomaton
 , Closure
 , closure
+, genStates
 ) where
 
 import Logic.Ltl.Base
@@ -90,9 +91,9 @@ respectOps s = and . Set.toList $ Set.map respect s
                              ((e1 `Set.notMember` s) && (e2 `Set.notMember` s))
     respect (Temporal (U e1 e2)) = respect (Or e1 e2)
     respect (Not (Temporal (U e1 e2))) = not $ e2 `Set.member` s
-    respect (Not (And e1 e2)) = respect (Or (Not e1) (Not e2))
-    respect (Not (Or e1 e2)) = respect (And (Not e1) (Not e2))
-    respect (Not (Implies e1 e2)) = respect (And e1 (Not e2))
+    respect (Not e@(And e1 e2)) = not $ respect e
+    respect (Not e@(Or e1 e2)) = not $ respect e
+    respect (Not e@(Implies e1 e2)) = not $ respect e
     respect (Not e@(Equiv e1 e2)) = not $ respect e
     respect _ = True
 

@@ -1,4 +1,4 @@
-module Logic.Ltl.AutomatonGeneration where
+module Logic.Ltl.AutomatonGenSpec where
 
 
 import           Test.Hspec
@@ -11,6 +11,9 @@ import           Logic.Model
 
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.List (sort)
+
+import           Logic.Ltl.TestUtils     ()
 
 
 spec :: Spec
@@ -65,7 +68,32 @@ spec = do
           Atom "a", Not $ Atom "a", Atom "b", Not $ Atom "b",
           Atom "a" `Equiv` Atom "b", Not (Atom "a" `Equiv` Atom "b")])
 
+  context "generating states for expressions" $ do
+    it "generates states for literals" $ do
+      "true" `shouldGenerateStates` [[Literal True], [Literal False]]
 
+    it "generates states for atomic propositions" $ do
+      "a" `shouldGenerateStates` [[Atom "a"], [Not$Atom "a"]]
+
+    it "generates states for '~a'" $ do
+      "~a" `shouldGenerateStates` [[Atom "a"], [Not$Atom "a"]]
+
+    it "generates states for 'X a'" $ do
+      "X a" `shouldGenerateStates`
+        [ [Temporal$X$Atom "a", Atom "a"]
+        , [Temporal$X$Atom "a", Not$Atom "a"]
+        , [Not$Temporal$X$Atom "a", Atom "a"]
+        , [Not$Temporal$X$Atom "a", Not$Atom "a"]
+        ]
+
+    it "generates states for 'a U b'" $ do
+      "a U b" `shouldGenerateStates`
+        [ [Temporal$ Atom "a" `U` Atom "b", Atom "a", Atom "b"]
+        , [Temporal$ Atom "a" `U` Atom "b", Atom "a", Not$Atom "b"]
+        , [Temporal$ Atom "a" `U` Atom "b", Not$Atom "a", Atom "b"]
+        , [Not$Temporal$ Atom "a" `U` Atom "b", Atom "a", Not$Atom "b"]
+        , [Not$Temporal$ Atom "a" `U` Atom "b", Not$Atom "a", Not$Atom "b"]
+        ]
 
 closureShouldBe ::  String -> Closure -> HUnit.Assertion
 closureShouldBe text expected =
@@ -73,5 +101,15 @@ closureShouldBe text expected =
     Right expr ->
       let actual = closure expr
       in HUnit.assertEqual ("When generating closure for'" ++ text ++ "'") expected actual
+    Left err ->
+      HUnit.assertFailure ("Parse error for '" ++ text ++ "':\n" ++ show err)
+
+shouldGenerateStates :: String -> [[Expr]] -> HUnit.Assertion
+shouldGenerateStates text expected =
+  case parseExpr "" text of
+    Right expr ->
+      let actual = genStates expr
+          expected' = (zipWith State [0..] $ sort $ map sort expected)
+      in HUnit.assertEqual ("When generating states for'" ++ text ++ "'") expected' actual
     Left err ->
       HUnit.assertFailure ("Parse error for '" ++ text ++ "':\n" ++ show err)
