@@ -13,8 +13,10 @@ module Logic.Ltl
   -- * Model checking
   -- , check
   , module Logic.Ltl.Semantics
+  , module Logic.Ltl.Automaton
   ) where
 
+import           Logic.Ltl.Automaton
 
 import           Logic.Ltl.Base
 import           Logic.Ltl.Parser

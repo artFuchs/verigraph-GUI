@@ -465,12 +465,10 @@ modelCheck model expr goodStatesIORef =
     writeIORef goodStatesIORef $ Just (map G.NodeId allGoodStates)
 
 modelCheckLtl :: Logic.KripkeStructure String -> LTL.Expr -> IORef (Maybe [G.NodeId]) -> IO ()
-modelCheckLtl model expr badStatesIORef =
-    let
-      path = LTL.satisfyExpr model [0] expr
-      gstates = if null path then Nothing else Just (map G.NodeId path)
-    in
-      writeIORef badStatesIORef gstates
+modelCheckLtl model expr badStatesIORef = do
+    path <- LTL.satisfyExpr model [0] expr
+    let gstates = if null path then Nothing else Just (map G.NodeId path)
+    writeIORef badStatesIORef gstates
 
 
 -- | draw state space graph -------------------------------------------------------------

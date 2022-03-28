@@ -11,7 +11,7 @@ import qualified Logic.Model as Logic
 
 import Control.Monad
 import Data.Maybe (fromMaybe, catMaybes)
-import Data.List ((\\), nub, union)
+import Data.List ((\\), nub, union, sort)
 import Data.IntMap (IntMap)
 import qualified Data.IntMap as IM
 
@@ -21,11 +21,25 @@ import qualified Data.IntMap as IM
 -- | Checks if there is a path that satisfies 'Not expr'.
 -- If the returned result is [] then the expression passed holds for the system
 -- else the path passed is a counter example for the expression
-satisfyExpr :: Logic.KripkeStructure String -> [Int] -> Expr -> [Int]
-satisfyExpr model initial expr = path'
+satisfyExpr :: Logic.KripkeStructure String -> [Int] -> Expr -> IO [Int]
+satisfyExpr model initial expr = do
+  putStrLn $ "automatan for " ++ (show expr')
+  mapM_ print (Logic.states $ snd na)
+  mapM_ print (Logic.transitions $ snd na)
+
+  putStrLn "\n model x automaton"
+  mapM_ print (Logic.states $ mXna)
+  mapM_ print (Logic.transitions $ mXna)
+  print mapping
+
+  putStrLn ""
+
+  path <- findSatisfyingPath mXna expr' initialSts
+  let path' = catMaybes $ map (\i -> IM.lookup i mapping) path
+
+  return path'
   where
-    path' = catMaybes $ map (\i -> IM.lookup i mapping) path
-    path = findSatisfyingPath mXna expr' initialSts
+
 
     -- combine model and automaton
     (initialSts, mXna, mapping) = modelXautomaton (initial,model') na
@@ -59,26 +73,28 @@ satisfyExpr model initial expr = path'
 
 
 
-findSatisfyingPath :: Logic.KripkeStructure Expr -> Expr -> [Int] -> [Int]
-findSatisfyingPath model expr initialSts =
-  case paths of
+findSatisfyingPath :: Logic.KripkeStructure Expr -> Expr -> [Int] -> IO [Int]
+findSatisfyingPath model expr initialSts = do
+  mapM_ print paths
+  return $ case paths of
     (p:_) -> p
     _ -> []
   where
     paths = filter (not . null) $ concat $ map findPaths initialSts
-    findPaths s = filter (not. isDeadEnd) $ findSatisfyingPaths model expr [s]
-    isDeadEnd (i:is) = null $ Logic.nextStates model i
+    findPaths s = findSatisfyingPaths model expr [s]
 
 
 findSatisfyingPaths :: Logic.KripkeStructure Expr -> Expr -> [Int] -> [[Int]]
 findSatisfyingPaths model (Literal False) path@(i:is) = []
 
 findSatisfyingPaths model t@(Literal True) path@(i:is) =
-  case nextStates of
-    [] -> [path]
-    ns -> concat $ map (\n -> if n `elem` path then [path] else findSatisfyingPaths model t (n:path)) ns
+  case nextStates'' of
+    [] -> []
+    ns -> concat $ map (\n -> if n `elem` path then [n:path] else findSatisfyingPaths model t (n:path)) ns
   where
     nextStates = Logic.nextStates model i
+    nextStates' = filter (`elem` path) nextStates
+    nextStates'' = if null nextStates' then nextStates else nextStates'
 
 findSatisfyingPaths model e@(Atom a) path@(i:is) =
   if e `elem` exprs
@@ -99,7 +115,6 @@ findSatisfyingPaths model xe@(Temporal (X e)) path@(i:is) =
   nextPaths
   where
     nextStates = Logic.nextStates model i
-    count a = length $ filter (== a) path
     nextPaths = filter (not . null) $ concat $ map (\n -> findSatisfyingPaths model e (n:path)) nextStates
 
 findSatisfyingPaths model e@(Temporal (U a b)) path@(i:is) =

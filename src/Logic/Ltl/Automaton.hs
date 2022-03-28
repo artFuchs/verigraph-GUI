@@ -3,6 +3,7 @@ module Logic.Ltl.Automaton (
 , Closure
 , closure
 , genStates
+, transitionSatisfy
 ) where
 
 import Logic.Ltl.Base
@@ -42,17 +43,19 @@ genStateIdPairs states = map (\(a,b) -> (Logic.elementId a, Logic.elementId b)) 
     satisfyRestrictions (Logic.State _ exprsA, Logic.State _ exprsB) =
       transitionSatisfy exprsA exprsB
 
-    transitionSatisfy exprsA exprsB = and $ map satisfy exprsA
-      where
-        satisfy (Temporal(X (Literal b))) = b
-        satisfy (Temporal(X e)) = e `elem` exprsB
-        satisfy (Not (Temporal (X (Literal b)))) = not b
-        satisfy (Not (Temporal (X e))) = (Not e) `elem` exprsB
-        satisfy e@(Temporal (U e1 (Literal b))) = b || e `elem` exprsB
-        satisfy e@(Temporal (U e1 e2)) = e2 `elem` exprsA || e `elem` exprsB
-        satisfy e@(Not (Temporal (U (Literal b) e2))) = not b || e `elem` exprsB
-        satisfy e@(Not (Temporal (U e1 e2))) = e1 `notElem` exprsA || e `elem` exprsB
-        satisfy _ = True
+transitionSatisfy :: [Expr] -> [Expr] -> Bool
+transitionSatisfy exprsA exprsB = and $ map satisfy exprsA
+  where
+    satisfy (Temporal(X (Literal b))) = b
+    satisfy (Temporal(X e)) = e `elem` exprsB
+    satisfy (Not (Temporal (X (Literal b)))) = not b
+    satisfy (Not (Temporal (X (Not e)))) = e `elem` exprsB
+    satisfy (Not (Temporal (X e))) = (Not e) `elem` exprsB
+    satisfy e@(Temporal (U e1 (Literal b))) = b || e `elem` exprsB
+    satisfy e@(Temporal (U e1 e2)) = e2 `elem` exprsA || e `elem` exprsB
+    satisfy e@(Not (Temporal (U (Literal b) e2))) = not b || e `elem` exprsB
+    satisfy e@(Not (Temporal (U e1 e2))) = e1 `notElem` exprsA || e `elem` exprsB
+    satisfy _ = True
 
 
 genStates :: Expr -> [Logic.State Expr]
