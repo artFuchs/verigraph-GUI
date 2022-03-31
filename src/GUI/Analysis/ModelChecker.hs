@@ -287,7 +287,7 @@ checkFormulaLtl window formulaEntry statusLabel modelIORef goodStatesIORef =
             let text = if null gstates then
                         T.pack ("The formula \"" ++ exprStr ++ "\" holds for the system. Formula checked in " ++ (show diff) ++ "seconds" )
                        else
-                        T.pack ("The formula \"" ++ exprStr ++ "\" doesn't hold for the system. Couter exemple highlighted. Formula checked in " ++ (show diff) ++ "seconds" )
+                        T.pack ("The formula \"" ++ exprStr ++ "\" doesn't hold for the system. Counter example highlighted. Formula checked in " ++ (show diff) ++ "seconds" )
             Gtk.labelSetText statusLabel text
 
 

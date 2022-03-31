@@ -20,19 +20,19 @@ import qualified Data.IntMap as IM
 
 -- | Checks if there is a path that satisfies 'Not expr'.
 -- If the returned result is [] then the expression passed holds for the system
--- else the path passed is a counter example for the expression
+-- else the returned path (in reverse) is a counter example for the expression
 satisfyExpr :: Logic.KripkeStructure String -> [Int] -> Expr -> IO [Int]
 satisfyExpr model initial expr = do
-  putStrLn $ "automatan for " ++ (show expr')
-  mapM_ print (Logic.states $ snd na)
-  mapM_ print (Logic.transitions $ snd na)
-
-  putStrLn "\n model x automaton"
-  mapM_ print (Logic.states $ mXna)
-  mapM_ print (Logic.transitions $ mXna)
-  print mapping
-
-  putStrLn ""
+  -- putStrLn $ "automatan for " ++ (show expr')
+  -- mapM_ print (Logic.states $ snd na)
+  -- mapM_ print (Logic.transitions $ snd na)
+  --
+  -- putStrLn "\n model x automaton"
+  -- mapM_ print (Logic.states $ mXna)
+  -- mapM_ print (Logic.transitions $ mXna)
+  -- print mapping
+  --
+  -- putStrLn ""
 
   path <- findSatisfyingPath mXna expr' initialSts
   let path' = catMaybes $ map (\i -> IM.lookup i mapping) path
@@ -75,7 +75,7 @@ satisfyExpr model initial expr = do
 
 findSatisfyingPath :: Logic.KripkeStructure Expr -> Expr -> [Int] -> IO [Int]
 findSatisfyingPath model expr initialSts = do
-  mapM_ print paths
+  -- mapM_ print paths
   return $ case paths of
     (p:_) -> p
     _ -> []
