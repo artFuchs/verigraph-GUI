@@ -93,10 +93,9 @@ respectOps s = and . Set.toList $ Set.map respect s
     respect (And e1 e2) = (e1 `Set.member` s) && (e2 `Set.member` s)
     respect (Or e1 e2) = (e1 `Set.member` s) || (e2 `Set.member` s)
     respect (Implies e1 e2) = ((e1 `Set.member` s) && (e2 `Set.member` s)) || (e1 `Set.notMember` s)
-    respect (Equiv e1 e2) = ((e1 `Set.member` s) && (e2 `Set.member` s)) ||
-                             ((e1 `Set.notMember` s) && (e2 `Set.notMember` s))
+    respect (Equiv e1 e2) = (e1 `Set.member` s) == (e2 `Set.member` s)
     respect (Temporal (U e1 e2)) = respect (Or e1 e2)
-    respect (Not (Temporal (U e1 e2))) = not $ e2 `Set.member` s
+    respect (Not (Temporal (U e1 e2))) = e2 `Set.notMember` s
     respect (Not e@(And e1 e2)) = not $ respect e
     respect (Not e@(Or e1 e2)) = not $ respect e
     respect (Not e@(Implies e1 e2)) = not $ respect e
