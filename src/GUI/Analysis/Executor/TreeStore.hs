@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 
-module GUI.Executor.TreeStore (
+module GUI.Analysis.Executor.TreeStore (
   ExecGraphEntry
 , storeSetGraphEntry
 , getRuleIter

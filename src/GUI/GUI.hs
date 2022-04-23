@@ -35,12 +35,12 @@ import           GUI.Data.DiaGraph hiding (empty)
 import           GUI.Data.GraphState
 import qualified GUI.Data.DiaGraph as DG
 import           GUI.Data.Nac
-import           GUI.Dialogs
+import           GUI.Helper.Dialogs
 import           GUI.Editor as Edit
 import qualified GUI.Editor.Helper.TreeStore as Edit
-import qualified GUI.Executor as Exec
+import qualified GUI.Analysis.Executor as Exec
 import           GUI.Helper.FilePath
-import           GUI.HelpWindow
+import           GUI.Helper.HelpWindow
 import           GUI.Helper.GrammarMaker
 import           GUI.Analysis.ModelChecker
 

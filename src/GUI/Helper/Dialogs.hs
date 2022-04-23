@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 
 {-| Pop-up dialogs to inform errors or confirm operations such as save or open a project -}
-module GUI.Dialogs (
+module GUI.Helper.Dialogs (
   showError,
   createSaveDialog,
   createLoadDialog,
@@ -69,4 +69,3 @@ createConfirmDialog window msg = do
   response <- Gtk.dialogRun closeD
   Gtk.widgetDestroy closeD
   return $ toEnum . fromIntegral $ response
-

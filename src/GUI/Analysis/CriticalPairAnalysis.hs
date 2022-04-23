@@ -33,7 +33,7 @@ import           GUI.Data.DiaGraph
 import           GUI.Data.GraphState
 import           GUI.Data.Info
 import           GUI.Data.Nac
-import           GUI.Dialogs
+import           GUI.Helper.Dialogs
 import           GUI.Helper.FilePath
 import           GUI.Helper.GrammarMaker
 import           GUI.Helper.Util

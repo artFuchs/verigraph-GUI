@@ -1,4 +1,4 @@
-module GUI.Executor.MatchApplier (
+module GUI.Analysis.Executor.MatchApplier (
   applyMatch
 , Match
 , TGMProduction

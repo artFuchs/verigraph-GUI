@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
-module GUI.Executor (
+module GUI.Analysis.Executor (
   buildExecutor
 , updateTreeStore
 , removeFromTreeStore
@@ -47,8 +47,8 @@ import           GUI.Data.GraphState
 import           GUI.Data.GraphicalInfo
 import           GUI.Data.Info
 import           GUI.Data.Nac
-import           GUI.Executor.TreeStore
-import           GUI.Executor.MatchApplier
+import           GUI.Analysis.Executor.TreeStore
+import           GUI.Analysis.Executor.MatchApplier
 import           GUI.Render.Render
 import           GUI.Render.GraphDraw
 import           GUI.Helper.BasicCanvasCallbacks

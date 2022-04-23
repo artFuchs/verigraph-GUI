@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
-module GUI.HelpWindow (
+module GUI.Helper.HelpWindow (
   buildHelpWindow
 , buildAboutDialog
 )where
@@ -52,18 +52,6 @@ buildHelpWindow = do
   forM_ tbuffers $ \tbuffer -> do
     tbufferLC <- Gtk.textBufferGetLineCount tbuffer
     applyTags tbuffer 0 (tbufferLC-1)
-
-  -- textBuffer1LC <- Gtk.textBufferGetLineCount textBuffer1
-  -- applyTags textBuffer1 0 (textBuffer1LC-1)
-  --
-  -- textBuffer2LC <- Gtk.textBufferGetLineCount textBuffer2
-  -- applyTags textBuffer2 0 (textBuffer2LC-1)
-  --
-  -- textBuffer3LC <- Gtk.textBufferGetLineCount textBuffer3
-  -- applyTags textBuffer3 0 (textBuffer3LC-1)
-  --
-  -- textBuffer4LC <- Gtk.textBufferGetLineCount textBuffer4
-  -- applyTags textBuffer4 0 (textBuffer4LC-1)
 
   on helpWindow #deleteEvent $ return $ do
       #hide helpWindow

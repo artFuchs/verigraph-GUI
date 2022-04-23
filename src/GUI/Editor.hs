@@ -51,7 +51,7 @@ import           GUI.Data.GraphicalInfo
 import           GUI.Data.Info hiding (empty)
 import qualified GUI.Data.Info as I
 import           GUI.Data.Nac
-import           GUI.Dialogs
+import           GUI.Helper.Dialogs
 import           GUI.Helper.BasicCanvasCallbacks
 import           GUI.Helper.Geometry
 import           GUI.Helper.GrammarMaker

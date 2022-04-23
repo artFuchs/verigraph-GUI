@@ -33,7 +33,7 @@ import GUI.Data.GraphicalInfo
 import GUI.Data.GraphState
 import GUI.Data.Info
 import GUI.Data.SaveInfo
-import GUI.Dialogs
+import GUI.Helper.Dialogs
 import GUI.Helper.GrammarMaker
 
 -- save a forest of SaveInfo

@@ -54,8 +54,8 @@ import            GUI.Data.Nac
 import            GUI.Data.DiaGraph
 import            GUI.Data.GraphState
 import            GUI.Data.GraphicalInfo
-import            GUI.Dialogs
-import            GUI.Executor
+import            GUI.Helper.Dialogs
+import            GUI.Analysis.Executor
 import            GUI.Helper.BasicCanvasCallbacks
 import            GUI.Helper.GraphicalInfo
 import            GUI.Helper.GrammarMaker
