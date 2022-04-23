@@ -64,37 +64,37 @@
             <Info locked="False" type="station" operation="Preserve">
               <Label text="3" group="False"/>
             </Info>
-            <NodeLayout position="(218.19158935546875,144.8629150390625)" fillColor="(0.9882352941176471,0.9137254901960784,0.30980392156862746)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NCircle"/>
+            <NodeLayout position="(195.56097412109375,292.14422607421875)" fillColor="(0.9882352941176471,0.9137254901960784,0.30980392156862746)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NCircle"/>
           </Node>
           <Node id="5">
             <Info locked="False" type="passenger" operation="Preserve">
               <Label text="p" group="False"/>
             </Info>
-            <NodeLayout position="(350.5552978515625,102.28926086425781)" fillColor="(0.5333333333333333,0.5411764705882353,0.5215686274509804)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NRect"/>
+            <NodeLayout position="(327.9246826171875,249.57057189941406)" fillColor="(0.5333333333333333,0.5411764705882353,0.5215686274509804)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NRect"/>
           </Node>
           <Node id="4">
             <Info locked="False" type="train" operation="Preserve">
               <Label text="t" group="False"/>
             </Info>
-            <NodeLayout position="(116.55181884765625,-64.7188720703125)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(9.0,21.0)" shape="NSquare"/>
+            <NodeLayout position="(93.92120361328125,82.56243896484375)" fillColor="(1.0,1.0,1.0)" lineColor="(0.0,0.0,0.0)" dimension="(9.0,21.0)" shape="NSquare"/>
           </Node>
           <Node id="2">
             <Info locked="False" type="station" operation="Preserve">
               <Label text="2" group="False"/>
             </Info>
-            <NodeLayout position="(217.67974853515625,61.679229736328125)" fillColor="(0.9882352941176471,0.9137254901960784,0.30980392156862746)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NCircle"/>
+            <NodeLayout position="(195.04913330078125,208.96054077148438)" fillColor="(0.9882352941176471,0.9137254901960784,0.30980392156862746)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NCircle"/>
           </Node>
           <Node id="1">
             <Info locked="False" type="station" operation="Preserve">
               <Label text="1" group="False"/>
             </Info>
-            <NodeLayout position="(216.40313720703125,-27.97039794921875)" fillColor="(0.9882352941176471,0.9137254901960784,0.30980392156862746)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NCircle"/>
+            <NodeLayout position="(193.77252197265625,119.3109130859375)" fillColor="(0.9882352941176471,0.9137254901960784,0.30980392156862746)" lineColor="(0.0,0.0,0.0)" dimension="(12.0,21.0)" shape="NCircle"/>
           </Node>
         </Nodes>
         <Edges>
           <Edge id="7" source="3" target="1">
             <Info locked="False" type="to" operation="Preserve">
-              <Label text="7" group="False"/>
+              <Label text="" group="False"/>
             </Info>
             <EdgeLayout position="(-1.5583529404600935,42.589571083740815)" color="(0.0,0.0,0.0)" style="ENormal"/>
           </Edge>

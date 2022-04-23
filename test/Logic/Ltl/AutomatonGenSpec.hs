@@ -70,7 +70,7 @@ spec = do
 
   context "generating states for expressions" $ do
     it "generates states for literals" $ do
-      "true" `shouldGenerateStates` [[Literal True], [Literal False]]
+      "true" `shouldGenerateStates` [[]]
 
     it "generates states for atomic propositions" $ do
       "a" `shouldGenerateStates` [[Atom "a"], [Not$Atom "a"]]

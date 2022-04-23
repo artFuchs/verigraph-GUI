@@ -151,15 +151,18 @@ ppInfix e1 op e2 = align $ sep [e1, op <+> e2]
 
 
 
--- rewrite expression in terms of X and U
+-- | Rewrite a expression to only use the temporals X and U.
 rewriteExpr :: Expr -> Expr
 rewriteExpr (Not (Literal True)) = Literal False
 rewriteExpr (Not (Literal False)) = Literal True
 
-rewriteExpr (Not (Not e)) = e
+rewriteExpr (Not (Not e)) = rewriteExpr e
 
 rewriteExpr (Not e) =
-  Not (rewriteExpr e)
+  let e' = (rewriteExpr e)
+  in case e' of
+    Not i -> i
+    _ -> Not e'
 
 rewriteExpr (And e1 e2) =
   And (rewriteExpr e1) (rewriteExpr e2)

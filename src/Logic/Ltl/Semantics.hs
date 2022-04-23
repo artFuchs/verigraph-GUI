@@ -1,6 +1,5 @@
 module Logic.Ltl.Semantics (
   satisfyExpr
-, modelXautomaton
 ) where
 
 import Logic.Ltl.Base
@@ -23,22 +22,12 @@ import qualified Data.IntMap as IM
 -- else the returned path (in reverse) is a counter example for the expression
 satisfyExpr :: Logic.KripkeStructure String -> [Int] -> Expr -> [Int]
 satisfyExpr model initial expr = path'
-  -- putStrLn $ "automatan for " ++ (show expr')
-  -- mapM_ print (Logic.states $ snd na)
-  -- mapM_ print (Logic.transitions $ snd na)
-  --
-  -- putStrLn "\n model x automaton"
-  -- mapM_ print (Logic.states $ mXna)
-  -- mapM_ print (Logic.transitions $ mXna)
-  -- print mapping
-  --
-  -- putStrLn ""
   where
     path' = catMaybes $ map (\i -> IM.lookup i mapping) path
     path = findSatisfyingPath mXna expr' initialSts
 
     -- combine model and automaton
-    (initialSts, mXna, mapping) = modelXautomaton (initial,model') na
+    (initialSts, mXna, mapping) = combineModels (initial,model') na
 
     -- create expression automaton
     na = exprAutomaton expr'
@@ -142,7 +131,7 @@ findSatisfyingPaths model e@(Or a b) path@(i:is) =
 
 findSatisfyingPaths model e@(Implies a b) path@(i:is) =
   case (e `elem` exprs, pathA) of
-    (True, a:as) -> [pathB ++ path]
+    (True, a:as) -> [pathB ++ is]
     (True, []) -> findSatisfyingPaths model (Literal True) path
     _ -> []
   where
@@ -166,15 +155,15 @@ findSatisfyingPaths model e@(Equiv a b) path@(i:is) =
 
 
 -- | Given a model and a automaton for a LTL expression, combine the two,
-modelXautomaton :: ([Int],Logic.KripkeStructure String) -> ([Int],Logic.KripkeStructure Expr) -> ([Int], Logic.KripkeStructure Expr, IntMap Int)
-modelXautomaton (initialSts,model) (initialSts',autom) =
+combineModels :: ([Int],Logic.KripkeStructure String) -> ([Int],Logic.KripkeStructure Expr) -> ([Int], Logic.KripkeStructure Expr, IntMap Int)
+combineModels (initialSts,model) (initialSts',autom) =
   (initialSts'', Logic.KripkeStructure states transitions, statesMapping)
   where
     statesMapping = IM.map fst statesPairs
     initialSts'' = IM.keys $ IM.filter (\(s,k) -> s `elem` initialSts && k `elem` initialSts') statesPairs
     transitions = joinTransitions model autom statesPairs
     states = IM.elems $ IM.mapWithKey (\i (s,k) -> Logic.State i (Logic.values . Logic.getState k $ autom)) statesPairs
-    statesPairs = findCompatibleStates (Logic.states model) (Logic.states autom)
+    statesPairs = createAtoms (Logic.states model) (Logic.states autom)
 
 
 joinTransitions :: Logic.KripkeStructure String -> Logic.KripkeStructure Expr -> IntMap (Int, Int) -> [Logic.Transition Expr]
@@ -193,9 +182,9 @@ joinTransitions model autom statesPairs =
 
     stateTransitions s ks = filter (\t -> Logic.source t == s) $ Logic.transitions ks
 
-
-findCompatibleStates :: [Logic.State String] -> [Logic.State Expr] -> IntMap (Int, Int)
-findCompatibleStates modelStates automatonStates = IM.fromList $ zip [0..] compatiblePairs
+-- create Atoms, pairs of compatible states between a model and a automaton
+createAtoms :: [Logic.State String] -> [Logic.State Expr] -> IntMap (Int, Int)
+createAtoms modelStates automatonStates = IM.fromList $ zip [0..] compatiblePairs
   where
     compatiblePairs = concat $ map (\s -> zip (repeat $ Logic.elementId s) (getCompatibleASts s)) modelStates
     getCompatibleASts s = map Logic.elementId $ filter (statesAreCompatible s) automatonStates

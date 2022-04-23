@@ -3,7 +3,6 @@ module Logic.Ltl.Automaton (
 , Closure
 , closure
 , genStates
-, transitionSatisfy
 ) where
 
 import Logic.Ltl.Base
@@ -20,42 +19,47 @@ type Closure = Set Expr
 exprAutomaton :: Expr -> ([Int],Logic.KripkeStructure Expr)
 exprAutomaton expr = (initial, Logic.KripkeStructure states transitions)
   where
-    initial = map Logic.elementId $ filter (\s -> expr `elem` Logic.values s) states
+    initial = map Logic.elementId $ filter isInitialState states
     transitions = genTransitions states
     states = genStates expr
+    isInitialState :: Logic.State Expr -> Bool
+    isInitialState s =
+        case expr of
+          (Literal b) -> b
+          _ -> expr `elem` Logic.values s
 
 
 genTransitions :: [Logic.State Expr] -> [Logic.Transition Expr]
 genTransitions states = transitions
   where
-    transitions = zipWith (\i (s,t) -> Logic.Transition i s t []) [0..] idPairs
-    idPairs = genStateIdPairs states
+    transitions = zipWith (\i (s,t) -> Logic.Transition i s t []) [0..] ts
+    ts = genTransitions' states
     others state = states \\ [state]
 
 
-genStateIdPairs :: [Logic.State Expr] -> [(Int, Int)]
-genStateIdPairs states = map (\(a,b) -> (Logic.elementId a, Logic.elementId b)) selected
+genTransitions' :: [Logic.State Expr] -> [(Int, Int)]
+genTransitions' states = map (\(a,b) -> (Logic.elementId a, Logic.elementId b)) selected
   where
     selected = filter satisfyRestrictions allPairs
     allPairs = [(a,b)| a <- states, b <- states]
 
     satisfyRestrictions :: (Logic.State Expr, Logic.State Expr) -> Bool
     satisfyRestrictions (Logic.State _ exprsA, Logic.State _ exprsB) =
-      transitionSatisfy exprsA exprsB
+      satisfyRestrictions' exprsA exprsB
 
-transitionSatisfy :: [Expr] -> [Expr] -> Bool
-transitionSatisfy exprsA exprsB = and $ map satisfy exprsA
-  where
-    satisfy (Temporal(X (Literal b))) = b
-    satisfy (Temporal(X e)) = e `elem` exprsB
-    satisfy (Not (Temporal (X (Literal b)))) = not b
-    satisfy (Not (Temporal (X (Not e)))) = e `elem` exprsB
-    satisfy (Not (Temporal (X e))) = (Not e) `elem` exprsB
-    satisfy e@(Temporal (U e1 (Literal b))) = b || e `elem` exprsB
-    satisfy e@(Temporal (U e1 e2)) = e2 `elem` exprsA || e `elem` exprsB
-    satisfy e@(Not (Temporal (U (Literal b) e2))) = not b || e `elem` exprsB
-    satisfy e@(Not (Temporal (U e1 e2))) = e1 `notElem` exprsA || e `elem` exprsB
-    satisfy _ = True
+    satisfyRestrictions' :: [Expr] -> [Expr] -> Bool
+    satisfyRestrictions' exprsA exprsB = and $ map satisfy exprsA
+      where
+        satisfy (Temporal(X (Literal b))) = b
+        satisfy (Temporal(X e)) = e `elem` exprsB
+        satisfy (Not (Temporal (X (Literal b)))) = not b
+        satisfy (Not (Temporal (X (Not e)))) = e `elem` exprsB
+        satisfy (Not (Temporal (X e))) = (Not e) `elem` exprsB
+        satisfy e@(Temporal (U e1 (Literal b))) = b || e `elem` exprsB
+        satisfy e@(Temporal (U e1 e2)) = e2 `elem` exprsA || e `elem` exprsB
+        satisfy e@(Not (Temporal (U (Literal b) e2))) = not b || e `elem` exprsB
+        satisfy e@(Not (Temporal (U e1 e2))) = e1 `notElem` exprsA || e `elem` exprsB
+        satisfy _ = True
 
 
 genStates :: Expr -> [Logic.State Expr]
@@ -65,9 +69,8 @@ genStates expr =
     statesSets = genStatesSets (closure expr)
 
 genStatesSets :: Closure -> [Set Expr]
-genStatesSets clos = Set.toList result
+genStatesSets clos = Set.toList clearedSets
   where
-    result = respectingsets
     clearedSets = Set.map clearLiterals respectingsets
     respectingsets = Set.filter respectOps maxsubsets
     maxsubsets = Set.filter (\s -> Set.size s == maxSize) consistentsets

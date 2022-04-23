@@ -571,7 +571,7 @@ getRuleIndexesMap store = do
       l <- getRuleNamesAndIndexes store iter
       return (M.fromList l)
 
--- Auxiliar function to get releIndexesMap
+-- Auxiliar function to getRuleIndexesMap
 getRuleNamesAndIndexes :: Gtk.TreeStore -> Gtk.TreeIter -> IO [(String, Int32)]
 getRuleNamesAndIndexes store iter = do
   name <- Gtk.treeModelGetValue store iter 0 >>= fromGValue >>= return . fromJust :: IO String

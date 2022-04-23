@@ -43,6 +43,12 @@ spec = do
     it "rewrites '~false'" $
       "~false" `shouldRewriteTo` (Literal True)
 
+    it "rewrites '~a'" $
+      "~a" `shouldRewriteTo` (Not$Atom "a")
+
+    it "rewrites '~~a'" $
+      "~~a" `shouldRewriteTo` Atom "a"
+
     it "rewrites 'a && b'" $
       "a && b" `shouldRewriteTo` (Atom "a" `And` Atom "b")
 
@@ -54,6 +60,25 @@ spec = do
 
     it "rewrites 'a <-> b'" $
       "a <-> b" `shouldRewriteTo` (Atom "a" `Equiv` Atom "b")
+
+  context "rewrites negated temporal connectors" $ do
+    it "rewrites '~(F a)'" $
+      "~(F a)" `shouldRewriteTo` (Not (Temporal$ (Literal True) `U` (Atom "a")))
+
+    it "rewrites '~(G foo)'" $
+      "~(G foo)" `shouldRewriteTo` (Temporal$ (Literal True) `U` (Not$Atom "foo"))
+
+    it "rewrites '~(foo U bar)'" $
+      "~(foo U bar)" `shouldRewriteTo` (Not (Temporal$ (Atom "foo") `U` (Atom "bar")))
+
+    it "rewrites '~(foo W bar)'" $
+      "~(foo W bar)" `shouldRewriteTo` (Not (Or (Temporal$ Atom "foo" `U` Atom "bar")
+                                      (Not (Temporal$ (Literal True) `U` (Not$Atom "foo")))))
+
+    it "rewrites '~(foo R bar)'" $
+      "~(foo R bar)" `shouldRewriteTo` (Temporal$ (Not$Atom "foo") `U` (Not$Atom "bar"))
+
+
 
 shouldRewriteTo :: String -> Expr -> HUnit.Assertion
 shouldRewriteTo text expected =
