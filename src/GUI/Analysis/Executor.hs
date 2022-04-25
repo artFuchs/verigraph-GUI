@@ -50,6 +50,7 @@ import           GUI.Data.Nac
 import           GUI.Analysis.Executor.TreeStore
 import           GUI.Analysis.Executor.MatchApplier
 import           GUI.Render.Render
+import           GUI.Render.GraphElements
 import           GUI.Render.GraphDraw
 import           GUI.Helper.BasicCanvasCallbacks
 import           GUI.Helper.FilePath

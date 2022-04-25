@@ -60,6 +60,7 @@ import           GUI.Helper.GraphValidation
 import           GUI.Helper.List
 import           GUI.Helper.Util
 import           GUI.Render.Render
+import           GUI.Render.GraphElements
 import           GUI.Render.GraphDraw
 
 

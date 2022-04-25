@@ -1,3 +1,4 @@
+-- | This module contains functions to draw diferent kindos of graphs
 module GUI.Render.GraphDraw (
   drawGraph
 , drawTypeGraph
@@ -18,7 +19,7 @@ import GUI.Data.Info
 import GUI.Data.GraphState
 import GUI.Data.GraphicalInfo
 import GUI.Data.Nac
-import GUI.Render.Render
+import GUI.Render.GraphElements
 import GUI.Helper.GraphValidation
 import GUI.Helper.Geometry
 

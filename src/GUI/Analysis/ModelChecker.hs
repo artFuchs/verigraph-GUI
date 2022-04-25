@@ -62,6 +62,7 @@ import            GUI.Helper.GrammarMaker
 import            GUI.Helper.FilePath
 import            GUI.Helper.Util
 import            GUI.Render.Render
+import            GUI.Render.GraphElements
 import            GUI.Render.GraphDraw
 
 
