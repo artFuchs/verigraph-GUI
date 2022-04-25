@@ -60,7 +60,7 @@ import            GUI.Helper.BasicCanvasCallbacks
 import            GUI.Helper.GraphicalInfo
 import            GUI.Helper.GrammarMaker
 import            GUI.Helper.FilePath
-import            GUI.Helper.Util
+import            GUI.Helper.GrammarConverter
 import            GUI.Render.Render
 import            GUI.Render.GraphElements
 import            GUI.Render.GraphDraw

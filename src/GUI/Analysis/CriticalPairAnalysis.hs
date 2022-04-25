@@ -36,7 +36,7 @@ import           GUI.Data.Nac
 import           GUI.Helper.Dialogs
 import           GUI.Helper.FilePath
 import           GUI.Helper.GrammarMaker
-import           GUI.Helper.Util
+import           GUI.Helper.GrammarConverter
 
 import qualified System.FilePath as FilePath
 

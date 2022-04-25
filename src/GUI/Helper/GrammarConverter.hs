@@ -1,4 +1,4 @@
-module GUI.Helper.Util (
+module GUI.Helper.GrammarConverter (
   convertGrammar
 ) where
 
@@ -18,6 +18,8 @@ import           GUI.Data.Info
 import           GUI.Data.Nac
 import qualified GUI.Editor.Helper.TreeStore as Edit
 
+
+-- | Convert Structures saved in treeStore to a TypedGraph Grammar
 convertGrammar :: Gtk.TreeStore
              -> IORef (M.Map Int32 GraphState)
              -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
