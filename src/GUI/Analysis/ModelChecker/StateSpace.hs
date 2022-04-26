@@ -122,10 +122,7 @@ expandSuccessors' maxNum (index, object) =
 
 
 
-
-
--- TODO: make this better, using the previous GraphState intead of simply overwriting it
--- create diagram from space visualization
+-- | Given a state space and a graphstate, update the graphstate to 
 generateStateSpaceVisualization :: Space Info Info -> GraphState -> GraphState
 generateStateSpaceVisualization stateSpace st = st''
   where

@@ -138,8 +138,8 @@ buildModelCheckerGUI window store genStateSpaceItem focusedCanvas focusedStateIO
       threadIORefs = (execThread, constructThread)
       mvars = (constructEndedMVar, timeMVar)
 
-  on generateBtn #pressed $ Gtk.menuItemActivate genStateSpaceItem
-  on genStateSpaceItem #activate $ genStateSpaceItemActivate widgets resIORefs gsIORefs threadIORefs mvars completedGen
+  on generateBtn #pressed $ startSSGeneration widgets resIORefs gsIORefs threadIORefs mvars completedGen
+  on genStateSpaceItem #activate $ startSSGeneration widgets resIORefs gsIORefs threadIORefs mvars completedGen
 
   -- stop generation of state space
   on stopBtn #pressed $ stopBtnCallback execThread constructThread constructEndedMVar
@@ -163,14 +163,14 @@ buildModelCheckerGUI window store genStateSpaceItem focusedCanvas focusedStateIO
 
 
 -- callbacks ------------------------------------------------------------------------
-genStateSpaceItemActivate :: (Gtk.Window, Gtk.DrawingArea, Gtk.TreeStore, Gtk.SpinButton, Gtk.Label, Gtk.Spinner)
+startSSGeneration :: (Gtk.Window, Gtk.DrawingArea, Gtk.TreeStore, Gtk.SpinButton, Gtk.Label, Gtk.Spinner)
                           -> (IORef GraphState, IORef (Maybe (Logic.KripkeStructure String)), IORef (Maybe [G.NodeId]), IORef (IntMap GraphState))
                           -> (IORef (M.Map Int32 GraphState), IORef (M.Map Int32 NacInfo))
                           -> (IORef (Maybe ThreadId), IORef (Maybe ThreadId))
                           -> (MVar Bool, MVar Time.UTCTime)
                           -> IORef Bool
                           -> IO ()
-genStateSpaceItemActivate (window, canvas, store, depthSpinBtn, statusLabel, statusSpinner)
+startSSGeneration (window, canvas, store, depthSpinBtn, statusLabel, statusSpinner)
                           (ssGraphState, modelIORef, goodStatesIORef, statesGSs)
                           (graphStatesIORef, nacsInfoIORef)
                           (execThread, constructThread)
