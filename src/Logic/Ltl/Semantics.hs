@@ -27,35 +27,11 @@ satisfyExpr model initial expr = path'
     path = findSatisfyingPath mXna expr' initialSts
 
     -- combine model and automaton
-    (initialSts, mXna, mapping) = combineModels (initial,model') na
+    (initialSts, mXna, mapping) = combineModels (initial,model) na
 
     -- create expression automaton
     na = exprAutomaton expr'
     expr' = rewriteExpr (Not expr)
-
-    -- rewrite model to add the information of the transitions to the source states
-    -- and to add loops to the states that are dead ends.
-    model' = model{Logic.states = states', Logic.transitions = transitions'}
-    transitions' = Logic.transitions model ++ extraTransitions
-    extraTransitions = zipWith (\i s -> Logic.Transition i s s [])
-                           [(length (Logic.transitions model))-1 ..]
-                           (filter shouldHaveLoop $ Logic.stateIds model)
-    states' = map addTrasitionsAtomsToState (Logic.states model)
-
-    addTrasitionsAtomsToState :: Logic.State String -> Logic.State String
-    addTrasitionsAtomsToState (Logic.State i v) = Logic.State i v'
-      where
-        stTransitions = filter (\(Logic.Transition _ s _ _) -> s == i) (Logic.transitions model)
-        transitionsAtoms = map (Logic.values) stTransitions
-        v' = v `union` (concat transitionsAtoms)
-
-    shouldHaveLoop :: Int -> Bool
-    shouldHaveLoop i = null stTransitions
-      where
-        stTransitions = filter (\(Logic.Transition _ s _ _) -> s == i) (Logic.transitions model)
-
-
-
 
 
 findSatisfyingPath :: Logic.KripkeStructure Expr -> Expr -> [Int] -> [Int]

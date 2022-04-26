@@ -51,6 +51,7 @@ import           Data.Map                           (Map)
 import qualified Data.Map                           as Map
 import           Data.Set                           (Set)
 import qualified Data.Set                           as Set
+import           Data.List                          (union)
 
 import           Abstract.Category
 import           Abstract.Category.FindMorphism
@@ -107,9 +108,36 @@ searchForState obj space =
         Just state
 
 
+
 -- | Converts the state space to a transition system that may be used for model checking
-toKripkeStructure :: StateSpace morph -> Logic.KripkeStructure String
-toKripkeStructure space =
+toKripkeStructure space = model'
+  where
+    model = toKripkeStructure' space
+    -- rewrite model to add the information of the transitions to the source states
+    -- and to add loops to the states that are dead ends.
+    model' = model{Logic.states = states', Logic.transitions = transitions'}
+    transitions' = Logic.transitions model ++ extraTransitions
+    extraTransitions = zipWith (\i s -> Logic.Transition i s s [])
+                           [(length (Logic.transitions model))-1 ..]
+                           (filter shouldHaveLoop $ Logic.stateIds model)
+    states' = map addTrasitionsAtomsToState (Logic.states model)
+
+    addTrasitionsAtomsToState :: Logic.State String -> Logic.State String
+    addTrasitionsAtomsToState (Logic.State i v) = Logic.State i v'
+      where
+        stTransitions = filter (\(Logic.Transition _ s _ _) -> s == i) (Logic.transitions model)
+        transitionsAtoms = map (Logic.values) stTransitions
+        v' = v `union` (concat transitionsAtoms)
+
+    shouldHaveLoop :: Int -> Bool
+    shouldHaveLoop i = null stTransitions
+      where
+        stTransitions = filter (\(Logic.Transition _ s _ _) -> s == i) (Logic.transitions model)
+
+
+
+toKripkeStructure' :: StateSpace morph -> Logic.KripkeStructure String
+toKripkeStructure' space =
   let
     convertedStates =
       map convertState $ IntMap.toList (states space)

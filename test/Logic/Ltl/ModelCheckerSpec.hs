@@ -13,6 +13,8 @@ import           Test.HUnit  hiding (State, Test)
 
 import           Logic.Ltl
 import           Logic.Model
+import qualified Logic.Model as Logic
+import           Data.List   (union)
 
 
 spec :: Spec
@@ -155,8 +157,10 @@ unsatisfyingPath exprText model initialSts =
     Right expr ->
       List.sort (satisfyExpr model initialSts expr)
 
-assembleModel :: [[String]] -> KripkeStructure String
-assembleModel description =
+
+
+assembleModel' :: [[String]] -> KripkeStructure String
+assembleModel' description =
   let
     (states, transitions') =
       parseLines description (IntMap.empty, Set.empty)
@@ -169,6 +173,28 @@ assembleModel description =
   in
     KripkeStructure (IntMap.elems states) transitions
 
+assembleModel :: [[String]] -> KripkeStructure String
+assembleModel description =
+  model{Logic.states = states', Logic.transitions = transitions'}
+  where
+    model = assembleModel' description
+    transitions' = Logic.transitions model ++ extraTransitions
+    extraTransitions = zipWith (\i s -> Logic.Transition i s s [])
+                           [(length (Logic.transitions model))-1 ..]
+                           (filter shouldHaveLoop $ Logic.stateIds model)
+    states' = map addTrasitionsAtomsToState (Logic.states model)
+
+    addTrasitionsAtomsToState :: Logic.State String -> Logic.State String
+    addTrasitionsAtomsToState (Logic.State i v) = Logic.State i v'
+      where
+        stTransitions = filter (\(Logic.Transition _ s _ _) -> s == i) (Logic.transitions model)
+        transitionsAtoms = map (Logic.values) stTransitions
+        v' = v `union` (concat transitionsAtoms)
+
+    shouldHaveLoop :: Int -> Bool
+    shouldHaveLoop i = null stTransitions
+      where
+        stTransitions = filter (\(Logic.Transition _ s _ _) -> s == i) (Logic.transitions model)
 
 type PartialModel =
   (IntMap (State String), Set (Int, Int))
