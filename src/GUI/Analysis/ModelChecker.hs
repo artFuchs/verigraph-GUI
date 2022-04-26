@@ -145,8 +145,14 @@ buildModelCheckerGUI window store genStateSpaceItem focusedCanvas focusedStateIO
   on stopBtn #pressed $ stopBtnCallback execThread constructThread constructEndedMVar
 
 
-  on formulaCheckBtn #pressed $ checkFormula window formulaEntry statusLabel statusSpinner formulaType modelIORef goodStatesIORef execThread
-  on formulaEntry #keyPressEvent $ formulaEntryKeyPressedCallback window formulaEntry formulaCheckBtn statusLabel goodStatesIORef
+  on formulaCheckBtn #pressed
+    $ checkFormula window formulaEntry statusLabel statusSpinner formulaType
+                    modelIORef goodStatesIORef execThread
+
+  on formulaEntry #keyPressEvent
+    $ formulaEntryKeyPressedCallback window formulaEntry statusLabel
+                    statusSpinner formulaType modelIORef goodStatesIORef
+                    execThread
 
 
   -- canvas - to draw the state space graph
@@ -209,16 +215,18 @@ stopBtnCallback execThread constructThread constructEndedMVar = do
   writeIORef execThread Nothing
 
 
-formulaEntryKeyPressedCallback :: Gtk.Window -> Gtk.Entry -> Gtk.Button -> Gtk.Label
-            -> IORef (Maybe [G.NodeId])
-             -> Gdk.EventKey
-             -> IO Bool
-formulaEntryKeyPressedCallback window formulaEntry formulaCheckBtn statusLabel goodStatesIORef eventKey = do
+formulaEntryKeyPressedCallback ::
+            Gtk.Window -> Gtk.Entry -> Gtk.Label -> Gtk.Spinner
+            -> IORef String -> IORef (Maybe (Logic.KripkeStructure String))
+            -> IORef (Maybe [G.NodeId]) -> IORef (Maybe ThreadId)
+            -> Gdk.EventKey
+            -> IO Bool
+formulaEntryKeyPressedCallback window formulaEntry statusLabel statusSpinner formulaType modelIORef goodStatesIORef execThread eventKey = do
   k <- get eventKey #keyval >>= return . chr . fromIntegral
   case k of
     -- Return or Enter (Numpad) -> then check formula
-    '\65293' -> Gtk.buttonClicked formulaCheckBtn
-    '\65421' -> Gtk.buttonClicked formulaCheckBtn
+    '\65293' -> checkFormula window formulaEntry statusLabel statusSpinner formulaType modelIORef goodStatesIORef execThread
+    '\65421' -> checkFormula window formulaEntry statusLabel statusSpinner formulaType modelIORef goodStatesIORef execThread
     -- Backspace -> clear good states when the text is empty
     '\65288' -> clearGoodStates formulaEntry statusLabel  goodStatesIORef
     _ -> return ()
@@ -240,15 +248,19 @@ checkFormula :: Gtk.Window -> Gtk.Entry -> Gtk.Label -> Gtk.Spinner
              -> IO ()
 checkFormula window formulaEntry statusLabel statusSpinner formulaType  modelIORef goodStatesIORef execThread =
   do
+    exprStr <- Gtk.entryGetText formulaEntry >>= return . T.unpack
     t <- readIORef formulaType
     case t of
-      "ltl" -> startThread execThread statusLabel statusSpinner
-              $ checkFormulaLtl window formulaEntry statusLabel modelIORef goodStatesIORef
-      _ -> checkFormulaCtl window formulaEntry statusLabel modelIORef goodStatesIORef
+      "ltl" ->
+          startCheckThread execThread statusLabel statusSpinner
+              $ checkFormulaLtl window statusLabel modelIORef goodStatesIORef exprStr
+      _ ->
+          startCheckThread execThread statusLabel statusSpinner
+              $ checkFormulaCtl window statusLabel modelIORef goodStatesIORef exprStr
 
 
-startThread :: IORef (Maybe ThreadId) -> Gtk.Label -> Gtk.Spinner -> IO () -> IO ()
-startThread execThread statusLabel statusSpinner execFun = do
+startCheckThread :: IORef (Maybe ThreadId) -> Gtk.Label -> Gtk.Spinner -> IO () -> IO ()
+startCheckThread execThread statusLabel statusSpinner execFun = do
     execT <- forkFinally
                 (do
                   Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
@@ -265,22 +277,18 @@ startThread execThread statusLabel statusSpinner execFun = do
                 )
     writeIORef execThread (Just execT)
 
-
-
-
-checkFormulaCtl :: Gtk.Window -> Gtk.Entry -> Gtk.Label
+checkFormulaCtl :: Gtk.Window -> Gtk.Label
              -> IORef (Maybe (Logic.KripkeStructure String)) -> IORef (Maybe [G.NodeId])
+             -> String
              -> IO ()
-checkFormulaCtl window formulaEntry statusLabel modelIORef goodStatesIORef =
+checkFormulaCtl window statusLabel modelIORef goodStatesIORef exprStr =
   do
-    exprTxt <- Gtk.entryGetText formulaEntry
-    exprStr <- return $ T.unpack exprTxt
     case CTL.parseExpr "" exprStr of
-      Left err -> showError window $ T.pack ("Invalid CTL formula:\n" ++ (show err))
+      Left err -> showErrorThreaded  window ("Invalid CTL formula:\n" ++ (show err))
       Right expr -> do
         maybeModel <- readIORef modelIORef
         case maybeModel of
-          Nothing -> showError window $ "Must Generate State Space before checking a formula"
+          Nothing -> showErrorThreaded window "Must Generate State Space before checking a formula"
           Just model -> do
             startTime <- Time.getCurrentTime
             modelCheckCtl model expr goodStatesIORef
@@ -293,28 +301,19 @@ checkFormulaCtl window formulaEntry statusLabel modelIORef goodStatesIORef =
                         T.pack ("The formula \"" ++ exprStr ++ "\" doesn't hold for the inital state. Formula checked in " ++ (show diff) ++ "seconds" )
             Gtk.labelSetText statusLabel text
 
-checkFormulaLtl :: Gtk.Window -> Gtk.Entry -> Gtk.Label
+checkFormulaLtl :: Gtk.Window -> Gtk.Label
              -> IORef (Maybe (Logic.KripkeStructure String)) -> IORef (Maybe [G.NodeId])
+             -> String
              -> IO ()
-checkFormulaLtl window formulaEntry statusLabel modelIORef goodStatesIORef =
+checkFormulaLtl window statusLabel modelIORef goodStatesIORef exprStr =
   do
-    let showErrorThreaded msg =
-          do
-            Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
-              showError window $ T.pack msg
-              return False
-            return ()
-
-    exprTxt <- Gtk.entryGetText formulaEntry
-    exprStr <- return $ T.unpack exprTxt
-
     case LTL.parseExpr "" exprStr of
-      Left err -> showErrorThreaded ("Invalid LTL formula:\n" ++ (show err))
+      Left err -> showErrorThreaded window ("Invalid LTL formula:\n" ++ (show err))
       Right expr ->
         do
           maybeModel <- readIORef modelIORef
           case maybeModel of
-            Nothing -> showErrorThreaded "Must Generate State Space before checking a formula"
+            Nothing -> showErrorThreaded window "Must Generate State Space before checking a formula"
             Just model -> do
               startTime <- Time.getCurrentTime
               modelCheckLtl model expr goodStatesIORef
@@ -330,6 +329,14 @@ checkFormulaLtl window formulaEntry statusLabel modelIORef goodStatesIORef =
                 return False
               return ()
 
+
+showErrorThreaded :: Gtk.Window -> String -> IO ()
+showErrorThreaded window msg =
+  do
+    Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
+      showError window $ T.pack msg
+      return False
+    return ()
 
 
 setMainCanvasCallbacks :: Gtk.DrawingArea -> IORef GraphState
@@ -522,13 +529,12 @@ drawStateSpace state sq maybeGoodStates alloc formulaType = do
                     Nothing            -> M.empty
                     Just allGoodStates ->
                         case formulaType of
-                          "ctl" ->
+                          "ltl" -> M.fromList $ map (\n -> (n,(1,0,0))) selectedStates
+                          _ ->
                               let (goodStates, badStates) = List.partition (`List.elem` selectedStates) (G.nodeIds g)
                               in  (M.fromList $ map (\n -> (n,(0,1,0))) goodStates)
                                   `M.union`
                                   (M.fromList $ map (\n -> (n,(1,0,0))) badStates)
-                          "ltl" -> M.fromList $ map (\n -> (n,(1,0,0))) selectedStates
-                          _ -> M.empty
 
 -- | for each of the generated states, generate a GraphState to display it
 generateStatesGraphState :: M.Map Int32 GraphState -> IntMap (Int, Match Info Info, String, TypedGraphRule Info Info) -> M.Map String Int32 -> IntMap GraphState
