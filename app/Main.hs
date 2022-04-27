@@ -1,4 +1,4 @@
-import GUI.GUI
+import GUI.Main
 
 main :: IO ()
 main = startGUI

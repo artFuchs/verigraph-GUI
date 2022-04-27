@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
-module GUI.GUI(
+module GUI.Main(
   startGUI
 )where
 
