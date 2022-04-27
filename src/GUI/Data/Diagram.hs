@@ -1,7 +1,7 @@
-module GUI.Data.DiaGraph(
-  DiaGraph
+module GUI.Data.Diagram(
+  Diagram
 , empty
-, isDiaGraphEqual
+, isDiagrEqual
 , diagrDisjointUnion
 , diagrUnion
 , diagrSubtract
@@ -18,27 +18,23 @@ import GUI.Data.GraphicalInfo
 import GUI.Data.Info hiding (empty)
 import GUI.Helper.Geometry
 
--- |DiaGraph
+-- |Diagram
 -- A pair containing a graph and it's graphical information
-type DiaGraph = (Graph Info Info, GraphicalInfo)
+type Diagram = (Graph Info Info, GraphicalInfo)
 
-empty :: DiaGraph
+empty :: Diagram
 empty = (G.empty, (M.empty, M.empty))
 
-isDiaGraphEqual :: DiaGraph -> DiaGraph -> Bool
-isDiaGraphEqual (g1,gi1) (g2,gi2) = g1 == g2 && nodesGiEq && edgesGiEq
+isDiagrEqual :: Diagram -> Diagram -> Bool
+isDiagrEqual (g1,gi1) (g2,gi2) = g1 == g2 && nodesGiEq && edgesGiEq
   where
     nodesGiEq = sameLength (M.elems $ fst gi1) (M.elems $ fst gi2) && all (\(x,y) -> x == y) (zip (M.elems $ fst gi1) (M.elems $ fst gi2))
     edgesGiEq = sameLength (M.elems $ snd gi1) (M.elems $ snd gi2) && all (\(x,y) -> x == y) (zip (M.elems $ snd gi1) (M.elems $ snd gi2))
     sameLength l1 l2 = length l1 == length l2
 
 
--- converts and association list to the respective function
-assocToFunc :: (Eq a) => [(a,a)] -> a -> a
-assocToFunc l = foldr (\(x,y) m -> (\z -> if z == x then y else (m z)) ) id l
-
 -- disjoint union between two DiaGraphs
-diagrDisjointUnion :: DiaGraph -> DiaGraph -> DiaGraph
+diagrDisjointUnion :: Diagram -> Diagram -> Diagram
 diagrDisjointUnion diagr1@(g1,(ngiM1,egiM1)) (g2,(ngiM2,egiM2)) = diagrUnion diagr1 (g2',(ngiM2',egiM2'))
   where
     -- associar novos ids aos elementos de g2
@@ -52,8 +48,12 @@ diagrDisjointUnion diagr1@(g1,(ngiM1,egiM1)) (g2,(ngiM2,egiM2)) = diagrUnion dia
     ngiM2' = M.foldrWithKey (\k a m -> M.insert (fromEnum . fn . toEnum $ k) a m) M.empty ngiM2
     egiM2' = M.foldrWithKey (\k a m -> M.insert (fromEnum . fe . toEnum $ k) a m) M.empty egiM2
 
+-- converts an association list to the respective function
+assocToFunc :: (Eq a) => [(a,a)] -> a -> a
+assocToFunc l = foldr (\(x,y) m -> (\z -> if z == x then y else (m z)) ) id l
+
 -- diagraph union
-diagrUnion :: DiaGraph -> DiaGraph -> DiaGraph
+diagrUnion :: Diagram -> Diagram -> Diagram
 diagrUnion (g1,(ngiM1,egiM1)) (g2,(ngiM2,egiM2)) = (g3,(ngiM3,egiM3))
   where
     ns3 = concat [nodes g1, nodes g2]
@@ -63,7 +63,7 @@ diagrUnion (g1,(ngiM1,egiM1)) (g2,(ngiM2,egiM2)) = (g3,(ngiM3,egiM3))
     egiM3 = M.union egiM1 egiM2
 
 -- subtract a diagraph dg2 from diagraph dg1
-diagrSubtract :: DiaGraph -> DiaGraph -> DiaGraph
+diagrSubtract :: Diagram -> Diagram -> Diagram
 diagrSubtract (g1, (ngiM1, egiM1)) (g2, (ngiM2,egiM2)) = (g3,(ngiM3,egiM3))
   where
     eds3 = filter (\e -> notElem (edgeId e) (edgeIds g2)) $ edges g1
@@ -76,7 +76,7 @@ diagrSubtract (g1, (ngiM1, egiM1)) (g2, (ngiM2,egiM2)) = (g3,(ngiM3,egiM3))
 
 
 -- get edge position in cartesian coordinate system
-getEdgePosition :: DiaGraph -> Edge Info -> (Double,Double)
+getEdgePosition :: Diagram -> Edge Info -> (Double,Double)
 getEdgePosition (g,(nodesGi, edgesGi)) e =
   getEGIPosition egi srcgi tgtgi
   where
@@ -86,7 +86,7 @@ getEdgePosition (g,(nodesGi, edgesGi)) e =
     tgtgi = getNodeGI (fromEnum $ targetId e) $ nodesGi
 
 
-adjustDiagrPosition :: DiaGraph -> DiaGraph
+adjustDiagrPosition :: Diagram -> Diagram
 adjustDiagrPosition (g, (ngiM, egiM)) = (g,(ngiM',egiM))
   where
     allPositions = concat [map position (M.elems ngiM), map (getEdgePosition (g,(ngiM, egiM))) (edges g)]

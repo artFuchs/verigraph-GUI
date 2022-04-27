@@ -29,7 +29,7 @@ import qualified Data.Graphs               as G
 import qualified Exec.GlobalOptions        as EGO
 import qualified Exec.CriticalPairAnalysis as CPA
 
-import           GUI.Data.DiaGraph
+import           GUI.Data.Diagram
 import           GUI.Data.GraphState
 import           GUI.Data.Info
 import           GUI.Data.Nac
@@ -44,7 +44,7 @@ import qualified System.FilePath as FilePath
 buildCpaBox :: Gtk.Window
             -> Gtk.TreeStore
             -> IORef (M.Map Int32 GraphState)
-            -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
+            -> IORef (M.Map Int32 (Diagram, MergeMapping))
             -> IO (Gtk.Box)
 buildCpaBox window editStore statesMap nacInfoMap = do
   builder <- new Gtk.Builder []

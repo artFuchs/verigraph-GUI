@@ -51,7 +51,7 @@ import            GUI.Analysis.ModelChecker.StateSpace
 import            GUI.Data.Info hiding (empty)
 import qualified  GUI.Data.Info as Info
 import            GUI.Data.Nac
-import            GUI.Data.DiaGraph
+import            GUI.Data.Diagram
 import            GUI.Data.GraphState
 import            GUI.Data.GraphicalInfo
 import            GUI.Helper.Dialogs
@@ -80,7 +80,7 @@ buildModelCheckerGUI :: Gtk.Window
                    -> IORef (Maybe Gtk.DrawingArea)
                    -> IORef (Maybe (IORef GraphState))
                    -> IORef (M.Map Int32 GraphState)
-                   -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
+                   -> IORef (M.Map Int32 (Diagram, MergeMapping))
                    -> IORef (G.Graph Info Info)
                    -> IO (Gtk.Box, Gtk.DrawingArea, IORef GraphState)
 buildModelCheckerGUI window store genStateSpaceItem focusedCanvas focusedStateIORef graphStatesIORef nacsInfoIORef typeGraph = do

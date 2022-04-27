@@ -11,7 +11,7 @@ import           Data.Maybe
 import           Abstract.Rewriting.DPO
 import qualified Data.TypedGraph.Morphism  as TGM
 
-import           GUI.Data.DiaGraph
+import           GUI.Data.Diagram
 import           GUI.Helper.GrammarMaker
 import           GUI.Data.GraphState
 import           GUI.Data.Info
@@ -22,7 +22,7 @@ import qualified GUI.Editor.Helper.TreeStore as Edit
 -- | Convert Structures saved in treeStore to a TypedGraph Grammar
 convertGrammar :: Gtk.TreeStore
              -> IORef (M.Map Int32 GraphState)
-             -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
+             -> IORef (M.Map Int32 (Diagram, MergeMapping))
              -> IO (Either String (Grammar (TGM.TypedGraphMorphism Info Info)))
 convertGrammar store graphStates nacInfoMap = do
   sts <- readIORef graphStates

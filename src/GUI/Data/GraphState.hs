@@ -31,7 +31,7 @@ import Data.Maybe
 import Data.Graphs hiding (null, empty)
 import qualified Data.Graphs as G
 
-import GUI.Data.DiaGraph hiding (empty)
+import GUI.Data.Diagram hiding (empty)
 import GUI.Data.GraphicalInfo
 import GUI.Helper.Geometry
 import Data.List

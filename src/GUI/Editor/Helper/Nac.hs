@@ -19,7 +19,7 @@ import qualified Data.Relation as R
 import qualified Data.TypedGraph as TG
 import qualified Data.TypedGraph.Morphism as TGM
 
-import GUI.Data.DiaGraph
+import GUI.Data.Diagram
 import GUI.Data.GraphState
 import GUI.Data.Info
 import GUI.Data.Nac
@@ -35,7 +35,7 @@ import GUI.Data.GraphicalInfo
 
 
 -- | Join the part of the nac and the lhs of the rule, showing the complete nac.
-joinNAC :: NacInfo -> DiaGraph -> Graph Info Info -> DiaGraph
+joinNAC :: NacInfo -> Diagram -> Graph Info Info -> Diagram
 joinNAC (nacdg, (nM,eM)) lhsdg@(ruleLG,ruleLGI) tg = (nG, nGI')
   where
     -- change ids of additional elements of nacs so that those elements don't
@@ -76,7 +76,7 @@ joinNAC (nacdg, (nM,eM)) lhsdg@(ruleLG,ruleLGI) tg = (nG, nGI')
 
 -- | Modify ids of nac nodes that aren't in the mapping and have id conflict with elems from lhs.
 -- (g1,(ngi1,egi1)) must be the lhs diagraph, while (g2,(ngi2,egi2)) must be the nac diagraph
-remapElementsWithConflict :: DiaGraph -> DiaGraph -> MergeMapping -> DiaGraph
+remapElementsWithConflict :: Diagram -> Diagram -> MergeMapping -> Diagram
 remapElementsWithConflict (g1,(ngi1,egi1)) (g2,(ngi2,egi2)) (nodeMapping, edgeMapping) = (g3,gi3)
   where
     g3 = fromNodesAndEdges g3Nodes g3Edges
@@ -195,7 +195,7 @@ mergeNACElements es ((nacg,nacgi), (nM, eM)) tg context =
 
 
 -- | split elements of the NAC
-splitNACElements :: GraphState -> NacInfo -> DiaGraph -> Graph Info Info -> P.Context -> IO (NacInfo, GraphState)
+splitNACElements :: GraphState -> NacInfo -> Diagram -> Graph Info Info -> P.Context -> IO (NacInfo, GraphState)
 splitNACElements es ((nacg,nacgi),(nM,eM)) (lhsg,lhsgi) tg context = do
   -- modificar lhs de forma a tornar elementos
   let lhsgWithLockedNodes = foldr (\n g -> updateNodePayload n g (\info -> infoSetLocked info True)) lhsg (nodeIds lhsg)
@@ -435,10 +435,10 @@ updateNacLabels lhs ((nacg, nacgi), (nM,eM)) = ((nacg'',nacgi),(nM,eM))
                   edgesWithMapping
 
 
-mountNACGraph :: DiaGraph
+mountNACGraph :: Diagram
               -> Graph Info Info
               -> NacInfo
-              -> DiaGraph
+              -> Diagram
 mountNACGraph (lhs,lhsgi) tg (nacdg,mergeM) =
   -- 'lock' the nodes from LHS
   let lhsLockNodes = foldr (\n g -> G.updateNodePayload n g (\info -> infoSetOperation (infoSetLocked info True) Preserve)) lhs (nodeIds lhs)

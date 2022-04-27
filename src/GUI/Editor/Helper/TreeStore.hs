@@ -39,8 +39,8 @@ import qualified Data.Graphs as G
 
 import GUI.Data.Info
 import GUI.Data.Nac
-import GUI.Data.DiaGraph hiding (empty)
-import qualified GUI.Data.DiaGraph as DG
+import GUI.Data.Diagram hiding (empty)
+import qualified GUI.Data.Diagram as DG
 import GUI.Data.GraphicalInfo
 import GUI.Data.GraphState
 import GUI.Data.SaveInfo
@@ -129,7 +129,7 @@ getTreeStoreValues store iter = do
 -- | gets a tree of SaveInfo out of a TreeStore
 getStructsToSave :: Gtk.TreeStore
                  -> IORef (M.Map Int32 GraphState)
-                 -> IORef (M.Map Int32 (DiaGraph,MergeMapping))
+                 -> IORef (M.Map Int32 (Diagram,MergeMapping))
                  -> IO (Tree.Forest SaveInfo)
 getStructsToSave store graphStates nacInfoMapIORef = do
   (valid, fstIter) <- Gtk.treeModelGetIterFirst store
@@ -157,7 +157,7 @@ getStructsToSave store graphStates nacInfoMapIORef = do
 getParentLHSDiaGraph :: Gtk.TreeStore
                   -> [Int32]
                   -> IORef (M.Map Int32 GraphState)
-                  -> IO DiaGraph
+                  -> IO Diagram
 getParentLHSDiaGraph store pathIndices graphStates = do
   (g,gi) <- getParentDiaGraph store pathIndices graphStates
   let (lhs,_,_) = graphToRuleGraphs g
@@ -168,7 +168,7 @@ getParentLHSDiaGraph store pathIndices graphStates = do
 getParentDiaGraph :: Gtk.TreeStore
                   -> [Int32]
                   -> IORef (M.Map Int32 GraphState)
-                  -> IO DiaGraph
+                  -> IO Diagram
 getParentDiaGraph store pathIndices graphStates = do
   path <- Gtk.treePathNewFromIndices pathIndices
   (validIter, iter) <- Gtk.treeModelGetIter store path
@@ -189,7 +189,7 @@ getParentDiaGraph store pathIndices graphStates = do
 -- The iter must be set to the first GraphStore containing a Nac
 getNacList :: Gtk.TreeStore
            -> Gtk.TreeIter
-           -> M.Map Int32 (DiaGraph, MergeMapping)
+           -> M.Map Int32 (Diagram, MergeMapping)
            -> Graph Info Info
            -> IO [NAC]
 getNacList store iter nacInfoMap lhs = do
@@ -212,7 +212,7 @@ getNacList store iter nacInfoMap lhs = do
 getRuleList :: Gtk.TreeStore
             -> Gtk.TreeIter
             -> M.Map Int32 GraphState
-            -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
+            -> IORef (M.Map Int32 (Diagram, MergeMapping))
             -> IO [(Graph Info Info, [NAC], String)]
 getRuleList store iter gStates nacInfoMapIORef = do
   name <- Gtk.treeModelGetValue store iter 0 >>= fromGValue >>= return . fromJust :: IO String
@@ -241,7 +241,7 @@ getRuleList store iter gStates nacInfoMapIORef = do
 -- | Returns the rules stored in a TreeStore.
 getRules :: Gtk.TreeStore
          -> IORef (M.Map Int32 GraphState)
-         -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
+         -> IORef (M.Map Int32 (Diagram, MergeMapping))
          -> IO [(Graph Info Info, [NAC], String)]
 getRules store gStatesIORef nacInfoMapIORef = do
   (valid, iter) <- Gtk.treeModelGetIterFromString store "2:0"

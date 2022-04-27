@@ -7,14 +7,14 @@ import qualified Data.Map as M
 
 import Data.Graphs
 
-import GUI.Data.DiaGraph
+import GUI.Data.Diagram
 import GUI.Data.GraphState
 import GUI.Data.Info
 import GUI.Data.GraphicalInfo
 
 
--- | generate a DiaGraph with the selected elements from a given GraphState
-copySelected :: GraphState -> DiaGraph
+-- | generate a Diagram with the selected elements from a given GraphState
+copySelected :: GraphState -> Diagram
 copySelected  es = (cg,(ngiM',egiM'))
   where
     (nids,eids) = stateGetSelected es
@@ -30,8 +30,8 @@ copySelected  es = (cg,(ngiM',egiM'))
     ngiM' = M.filterWithKey (\k _ -> NodeId k `elem` nids) ngiM
     egiM' = M.filterWithKey (\k _ -> EdgeId k `elem` eids) egiM
 
--- | join a DiaGraph with the Diagraph of a given GraphState
-pasteClipBoard :: DiaGraph -> GraphState -> GraphState
+-- | join a Diagram with the Diagraph of a given GraphState
+pasteClipBoard :: Diagram -> GraphState -> GraphState
 pasteClipBoard clipDG es = stateSetGI (newngiM,newegiM) . stateSetGraph newGraph . stateSetSelected ([], [])$ es
   where
     graph = stateGetGraph es

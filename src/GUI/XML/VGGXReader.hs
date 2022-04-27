@@ -20,7 +20,7 @@ import qualified Data.Either as Either
 
 import qualified Data.Graphs as G
 
-import           GUI.Data.DiaGraph
+import           GUI.Data.Diagram
 import           GUI.Data.SaveInfo
 import           GUI.Data.GraphicalInfo
 import           GUI.Data.GraphState

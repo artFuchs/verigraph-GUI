@@ -44,8 +44,8 @@ import qualified Data.Graphs as G
 import qualified Data.TypedGraph.Morphism as TGM
 
 -- Verigraph-GUI modules
-import           GUI.Data.DiaGraph hiding (empty)
-import qualified GUI.Data.DiaGraph as DG
+import           GUI.Data.Diagram hiding (empty)
+import qualified GUI.Data.Diagram as DG
 import           GUI.Data.GraphState
 import           GUI.Data.GraphicalInfo
 import           GUI.Data.Info hiding (empty)
@@ -79,8 +79,8 @@ import GUI.Editor.UI.UpdateInspector
 ---------------------------------------------------------------------------------------------------------------------------------
 
 type StoreIORefs      = ( IORef (M.Map Int32 GraphState), IORef [Int32], IORef Int32, IORef Int32 )
-type ChangesIORefs    = ( IORef Bool, IORef [Bool], IORef (M.Map Int32 DiaGraph))
-type NacIORefs        = ( IORef (M.Map Int32 (DiaGraph, MergeMapping)), IORef (Maybe MergeMapping))
+type ChangesIORefs    = ( IORef Bool, IORef [Bool], IORef (M.Map Int32 Diagram))
+type NacIORefs        = ( IORef (M.Map Int32 (Diagram, MergeMapping)), IORef (Maybe MergeMapping))
 
 ---------------------------------------------------------------------------------------------------------------------------------
 --  Editor Construction  --------------------------------------------------------------------------------------------------------
@@ -146,7 +146,7 @@ startEditor window store
   movingGI          <- newIORef False -- if the user started moving some object - necessary to add a position to the undoStack
 
   -- copy/paste
-  clipboard       <- newIORef DG.empty -- clipboard - DiaGraph
+  clipboard       <- newIORef DG.empty -- clipboard - Diagram
 
   -- variables used to edit visual elements of type graphs
   currentShape    <- newIORef NCircle -- the shape that all new nodes must have
@@ -797,7 +797,7 @@ startEditor window store
         sst <- readIORef lastSavedState
         let (g,gi) = (stateGetGraph es, stateGetGI es)
             x = fromMaybe DG.empty $ M.lookup index sst
-        setChangeFlags window store changedProject changedGraph currentPath currentGraph $ not (isDiaGraphEqual (g,gi) x)
+        setChangeFlags window store changedProject changedGraph currentPath currentGraph $ not (isDiagrEqual (g,gi) x)
         Gtk.widgetQueueDraw canvas
         updateByType
 
@@ -821,7 +821,7 @@ startEditor window store
         es <- readIORef currentState
         let (g,gi) = (stateGetGraph es, stateGetGI es)
         let x = fromMaybe DG.empty $ M.lookup index sst
-        setChangeFlags window store changedProject changedGraph currentPath currentGraph $ not (isDiaGraphEqual (g,gi) x)
+        setChangeFlags window store changedProject changedGraph currentPath currentGraph $ not (isDiagrEqual (g,gi) x)
         Gtk.widgetQueueDraw canvas
         updateByType
 
@@ -1435,7 +1435,7 @@ confirmOperation :: Gtk.Window
                  -> Gtk.TreeStore
                  -> IORef Bool
                  -> IORef GraphState
-                 -> IORef (M.Map Int32 (DiaGraph, MergeMapping))
+                 -> IORef (M.Map Int32 (Diagram, MergeMapping))
                  -> IORef (Maybe String)
                  -> StoreIORefs
                  -> IO Bool
@@ -1628,7 +1628,7 @@ createNode' currentState info autoNaming pos nshape color lcolor context = do
 
 -- auxiliar function to prepare the treeStore to save
 -- auxiliar function, add the current editor state in the graphStates list
-storeCurrentES :: Gtk.Window -> IORef GraphState -> StoreIORefs -> IORef (M.Map Int32 (DiaGraph, MergeMapping)) -> IO ()
+storeCurrentES :: Gtk.Window -> IORef GraphState -> StoreIORefs -> IORef (M.Map Int32 (Diagram, MergeMapping)) -> IO ()
 storeCurrentES window currentState (graphStates, _, currentGraph, currentGraphType) nacInfoMap = do
   es <- readIORef currentState
   index <- readIORef currentGraph

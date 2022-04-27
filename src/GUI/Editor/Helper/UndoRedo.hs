@@ -11,11 +11,11 @@ import Data.Int
 import qualified Data.Map as M
 import Data.Maybe
 
-import GUI.Data.DiaGraph
+import GUI.Data.Diagram
 import GUI.Data.GraphState
 import GUI.Data.Nac
 
-type ChangeStack = [(DiaGraph,Maybe MergeMapping)]
+type ChangeStack = [(Diagram,Maybe MergeMapping)]
 
 -- | Add a state to the undo stack
 stackUndo :: IORef (M.Map Int32 ChangeStack)

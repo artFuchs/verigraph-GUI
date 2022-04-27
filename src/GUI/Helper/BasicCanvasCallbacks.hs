@@ -23,7 +23,7 @@ import qualified Data.Map as M
 
 import           Data.Graphs hiding (null, empty)
 
-import           GUI.Data.DiaGraph
+import           GUI.Data.Diagram
 import           GUI.Data.GraphState
 import           GUI.Data.GraphicalInfo
 import           GUI.Data.Info

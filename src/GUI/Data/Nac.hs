@@ -15,13 +15,13 @@ import Data.List
 import Abstract.Rewriting.DPO
 import Data.Graphs
 
-import GUI.Data.DiaGraph
+import GUI.Data.Diagram
 import GUI.Data.GraphicalInfo
 import GUI.Data.Info
 import GUI.Helper.List
 
 type MergeMapping = (M.Map NodeId NodeId, M.Map EdgeId EdgeId)
-type NacInfo = (DiaGraph, MergeMapping)
+type NacInfo = (Diagram, MergeMapping)
 
 
 extractNac :: Graph Info Info -> GraphicalInfo -> MergeMapping -> NacInfo

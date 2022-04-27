@@ -31,9 +31,9 @@ import           GUI.Analysis.CriticalPairAnalysis
 import           GUI.Data.GraphicalInfo
 import           GUI.Data.Info hiding (empty)
 import qualified GUI.Data.Info as I
-import           GUI.Data.DiaGraph hiding (empty)
+import           GUI.Data.Diagram hiding (empty)
 import           GUI.Data.GraphState
-import qualified GUI.Data.DiaGraph as DG
+import qualified GUI.Data.Diagram as DG
 import           GUI.Data.Nac
 import           GUI.Helper.Dialogs
 import           GUI.Editor as Edit
@@ -69,7 +69,7 @@ startGUI = do
   -- variables to keep track of changes
   changedProject  <- newIORef False -- set this flag as True when the graph is changed somehow
   changedGraph    <- newIORef [False] -- when modify a graph, set the flag in the 'currentGraph' to True
-  lastSavedState  <- newIORef (M.empty :: M.Map Int32 DiaGraph)
+  lastSavedState  <- newIORef (M.empty :: M.Map Int32 Diagram)
   let changesIORefs = (changedProject, changedGraph, lastSavedState)
 
   -- file name of the new editor project
@@ -467,7 +467,7 @@ buildMainWindow = do
 startNewProject :: Gtk.Window -> IORef (Maybe String)
                 -> (IORef (M.Map Int32 GraphState), IORef [Int32], IORef Int32, IORef Int32)
                 -> Gtk.TreeStore -> Gtk.TreeView -> IORef GraphState
-                -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 DiaGraph))
+                -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 Diagram))
                 -> (IORef (M.Map Int32 ChangeStack), IORef (M.Map Int32 ChangeStack))
                 -> (IORef (M.Map Int32 NacInfo), IORef (Maybe MergeMapping))
                 -> (Gtk.TreeStore, IORef (Maybe ThreadId), IORef Bool, IORef GraphState)
@@ -493,7 +493,7 @@ startNewProject window fileName
 
 
 setDefaults :: (IORef (M.Map Int32 GraphState), IORef [Int32], IORef Int32, IORef Int32)
-            -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 DiaGraph))
+            -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 Diagram))
             -> (IORef (M.Map Int32 NacInfo), IORef (Maybe MergeMapping))
             -> (IORef (M.Map Int32 ChangeStack), IORef (M.Map Int32 ChangeStack))
             -> (Gtk.TreeStore, IORef (Maybe ThreadId), IORef Bool, IORef GraphState)
@@ -522,7 +522,7 @@ setDefaults (statesMap,currentPath,currentGraph,currentGraphType)
 loadProject :: Gtk.Window -> IORef (Maybe String)
                 -> (IORef (M.Map Int32 GraphState), IORef [Int32], IORef Int32, IORef Int32)
                 -> Gtk.TreeStore -> Gtk.TreeView -> IORef GraphState
-                -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 DiaGraph))
+                -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 Diagram))
                 -> (IORef (M.Map Int32 ChangeStack), IORef (M.Map Int32 ChangeStack))
                 -> (IORef (M.Map Int32 NacInfo), IORef (Maybe MergeMapping))
                 -> (Gtk.TreeStore, IORef (Maybe ThreadId), IORef Bool, IORef GraphState)
@@ -594,14 +594,14 @@ putInStore store (Tree.Node (name,c,i,t,a,v) fs) mparent = do
 
 saveProject :: Gtk.Window -> Gtk.DrawingArea -> IORef (Maybe String) -> Gtk.TreeStore -> IORef GraphState
             -> (IORef (M.Map Int32 GraphState), IORef [Int32], IORef Int32, IORef Int32)
-            -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 DiaGraph))
+            -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 Diagram))
             -> IORef (M.Map Int32 NacInfo)
             -> IO ()
 saveProject = saveProjectBase saveFile
 
 saveProjectAs :: Gtk.Window -> Gtk.DrawingArea -> IORef (Maybe String) -> Gtk.TreeStore -> IORef GraphState
             -> (IORef (M.Map Int32 GraphState), IORef [Int32], IORef Int32, IORef Int32)
-            -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 DiaGraph))
+            -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 Diagram))
             -> IORef (M.Map Int32 NacInfo)
             -> IO ()
 saveProjectAs = saveProjectBase saveFileAs
@@ -609,7 +609,7 @@ saveProjectAs = saveProjectBase saveFileAs
 saveProjectBase :: (Tree.Forest SaveInfo -> IORef (Maybe String) -> Gtk.Window -> IO Bool)
               -> Gtk.Window -> Gtk.DrawingArea -> IORef (Maybe String) -> Gtk.TreeStore -> IORef GraphState
               -> (IORef (M.Map Int32 GraphState), IORef [Int32], IORef Int32, IORef Int32)
-              -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 DiaGraph))
+              -> (IORef Bool, IORef [Bool], IORef (M.Map Int32 Diagram))
               -> IORef (M.Map Int32 NacInfo)
               -> IO ()
 saveProjectBase saveF window editorCanvas fileName editorStore editorState

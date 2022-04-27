@@ -41,8 +41,8 @@ import qualified Data.Graphs              as G
 import qualified Data.Relation            as R
 
 -- Verigraph-GUI modules
-import           GUI.Data.DiaGraph        hiding (empty)
-import qualified GUI.Data.DiaGraph        as DG
+import           GUI.Data.Diagram        hiding (empty)
+import qualified GUI.Data.Diagram        as DG
 import           GUI.Data.GraphState
 import           GUI.Data.GraphicalInfo
 import           GUI.Data.Info
