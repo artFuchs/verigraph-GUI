@@ -15,7 +15,6 @@ import qualified Data.Text as T
 -- show a error dialog with a custom message
 showError :: Gtk.Window -> T.Text -> IO ()
 showError window msg = do
-  --dlgE <- messageDialogNew window [DialogDestroyWithParent] MessageError ButtonsOk msg
   msgDialog <- new Gtk.MessageDialog [ #text := msg
                                 , #messageType := Gtk.MessageTypeError
                                 , #buttons := Gtk.ButtonsTypeOk

@@ -63,13 +63,14 @@ executables:
 benchmarks:
   modelchecker-benchmark:
     main:             ModelChecker.hs
-    source-dirs:      benchmark
+    source-dirs:      benchmark/ModelChecker
     dependencies:
     - verigraph-GUI
     - tasty-bench
+    
   statespace-benchmark:
     main:             StateSpace.hs
-    source-dirs:      benchmark
+    source-dirs:      benchmark/StateSpace
     dependencies:
       - verigraph-GUI
       - tasty-bench
