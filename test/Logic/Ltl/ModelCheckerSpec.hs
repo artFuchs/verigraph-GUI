@@ -106,11 +106,28 @@ spec = do
       expr `shouldHoldOn` expectedStates =
         unsatisfyingPath expr model expectedStates `shouldBe` []
 
+      expr `shouldNotHoldOn` expectedStates =
+        unsatisfyingPath expr model expectedStates `shouldNotBe` []
+
+
     it "should handle 'p U q' properly" $
       "p U q" `shouldHoldOn` [2, 3, 4, 6]
 
+
     it "should handle '~(p U q)' properly" $
       "~(p U q)" `shouldHoldOn` [1]
+
+    it "should handle 'true U true' properly" $
+      "true U true" `shouldHoldOn` [1, 2, 3, 4, 5, 6]
+
+    it "should handle '~(true U true)' properly" $
+      "~(true U true)" `shouldNotHoldOn` [1, 2, 3, 4, 5, 6]
+
+    it "should handle 'false U false' properly" $
+      "false U false" `shouldNotHoldOn` [1, 2, 3, 4, 5, 6]
+
+    it "should handle '~(false U false)' properly" $
+      "~(false U false)" `shouldHoldOn` [1, 2, 3, 4, 5, 6]
 
   describe "F" $ do
     let

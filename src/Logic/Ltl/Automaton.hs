@@ -55,9 +55,13 @@ genTransitions' states = map (\(a,b) -> (Logic.elementId a, Logic.elementId b)) 
         satisfy (Not (Temporal (X (Literal b)))) = not b
         satisfy (Not (Temporal (X (Not e)))) = e `elem` exprsB
         satisfy (Not (Temporal (X e))) = (Not e) `elem` exprsB
+        satisfy e@(Temporal (U (Literal b1) (Literal b2))) = b2 || (b1 && e `elem` exprsB)
+        satisfy e@(Temporal (U (Literal b) e2)) = (b && e `elem` exprsB) || e2 `elem` exprsA
         satisfy e@(Temporal (U e1 (Literal b))) = b || e `elem` exprsB
         satisfy e@(Temporal (U e1 e2)) = e2 `elem` exprsA || e `elem` exprsB
+        satisfy e@(Not (Temporal (U (Literal b1) (Literal b2)))) = not b2 && (not b1 || e `elem` exprsB)
         satisfy e@(Not (Temporal (U (Literal b) e2))) = not b || e `elem` exprsB
+        satisfy e@(Not (Temporal (U e1 (Literal b)))) = e1 `notElem` exprsA || (not b && e `elem` exprsB)
         satisfy e@(Not (Temporal (U e1 e2))) = e1 `notElem` exprsA || e `elem` exprsB
         satisfy _ = True
 
@@ -92,9 +96,13 @@ respectOps s = and . Set.toList $ Set.map respect s
   where
     respect (And e1 e2) = (e1 `Set.member` s) && (e2 `Set.member` s)
     respect (Or e1 e2) = (e1 `Set.member` s) || (e2 `Set.member` s)
+    respect (Implies (Literal b1) (Literal b2)) = not b1 || (b1 && b2)
+    respect (Implies (Literal b) e2) = not b || (b && (e2 `Set.member` s))
     respect (Implies e1 e2) = ((e1 `Set.member` s) && (e2 `Set.member` s)) || (e1 `Set.notMember` s)
     respect (Equiv e1 e2) = (e1 `Set.member` s) == (e2 `Set.member` s)
-    respect (Temporal (U e1 e2)) = respect (Or e1 e2)
+    respect (Temporal (U (Literal False) (Literal False))) = False
+    respect (Temporal (U e1 e2)) = (e1 `Set.member` s) || (e2 `Set.member` s)
+    respect (Not (Temporal (U (Literal True) (Literal True)))) = False
     respect (Not (Temporal (U e1 e2))) = e2 `Set.notMember` s
     respect (Not e@(And e1 e2)) = not $ respect e
     respect (Not e@(Or e1 e2)) = not $ respect e

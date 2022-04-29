@@ -43,17 +43,19 @@ createAtoms modelStates automatonStates = IM.fromList $ zip [0..] compatiblePair
   where
     compatiblePairs = concat $ map (\s -> zip (repeat $ Logic.elementId s) (getCompatibleASts s)) modelStates
     getCompatibleASts s = map Logic.elementId $ filter (statesAreCompatible s) automatonStates
-    statesAreCompatible (Logic.State _ ps) (Logic.State _ exprs) = containsAtoms && dontContainNegativeAtoms
-      where
-        containsAtoms = and $ map (\p -> p `elem` ps) (extractAtoms exprs)
-        dontContainNegativeAtoms = and $ map (\p -> p `notElem` ps) (extractNegativeAtoms exprs)
 
-        extractAtoms :: [Expr] -> [String]
-        extractAtoms [] = []
-        extractAtoms ((Atom p):ps) = p : (extractAtoms ps)
-        extractAtoms (_:ps) = extractAtoms ps
+statesAreCompatible :: Logic.State String -> Logic.State Expr -> Bool
+statesAreCompatible (Logic.State _ ps) (Logic.State _ exprs) = containsAtoms && dontContainNegativeAtoms
+  where
+    containsAtoms = and $ map (\p -> p `elem` ps) (extractAtoms exprs)
+    dontContainNegativeAtoms = and $ map (\p -> p `notElem` ps) (extractNegativeAtoms exprs)
 
-        extractNegativeAtoms :: [Expr] -> [String]
-        extractNegativeAtoms [] = []
-        extractNegativeAtoms ((Not(Atom p)):ps) = p : (extractNegativeAtoms ps)
-        extractNegativeAtoms (_:ps) = extractNegativeAtoms ps
+extractAtoms :: [Expr] -> [String]
+extractAtoms [] = []
+extractAtoms ((Atom p):ps) = p : (extractAtoms ps)
+extractAtoms (_:ps) = extractAtoms ps
+
+extractNegativeAtoms :: [Expr] -> [String]
+extractNegativeAtoms [] = []
+extractNegativeAtoms ((Not(Atom p)):ps) = p : (extractNegativeAtoms ps)
+extractNegativeAtoms (_:ps) = extractNegativeAtoms ps

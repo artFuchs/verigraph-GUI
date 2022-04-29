@@ -77,14 +77,15 @@ findSatisfyingPaths model xe@(Temporal (X e)) path@(i:is) =
     nextPaths = filter (not . null) $ concat $ map (\n -> findSatisfyingPaths model e (n:path)) nextStates
 
 findSatisfyingPaths model e@(Temporal (U a b)) path@(i:is) =
-  case (e `elem` exprs, b `elem` exprs) of
-    (True, True) -> map (++is) $ findSatisfyingPaths model b [i]
-    (True, False) -> nextPaths
+  case (e `elem` exprs, pathB) of
+    (True, []) -> nextPaths
+    (True, b:bs) -> [pathB ++ is]
     _ -> []
   where
     exprs = Logic.values $ Logic.getState i model
     nextStates = filter (`notElem` path) $ Logic.nextStates model i
     nextPaths = filter (not . null) $ concat $ map (\n -> findSatisfyingPaths model e (n:path)) nextStates
+    pathB = findSatisfyingPath model b [i]
 
 findSatisfyingPaths model e@(And a b) path@(i:is) =
   case (e `elem` exprs, null pathA || null pathB) of
