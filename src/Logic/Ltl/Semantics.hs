@@ -37,7 +37,7 @@ satisfyExpr model initial expr = path'
   -- return path'
   where
     path' = catMaybes $ map (\i -> IM.lookup i mapping) path
-    path = findSatisfyingPath mXna expr' initialSts
+    path = findSatisfyingPath mXna initialSts
 
     -- combine model and automaton
     (initialSts, mXna, mapping) = combineModels (initial,model) na
@@ -47,8 +47,8 @@ satisfyExpr model initial expr = path'
     expr' = rewriteExpr (Not expr)
 
 
-findSatisfyingPath :: Logic.KripkeStructure Expr -> Expr -> [Int] -> [Int]
-findSatisfyingPath model expr initialSts =
+findSatisfyingPath :: Logic.KripkeStructure Expr -> [Int] -> [Int]
+findSatisfyingPath model initialSts =
   case paths' of
     (p:_) -> p
     _ -> []
