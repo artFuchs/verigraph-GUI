@@ -21,20 +21,6 @@ import qualified Data.IntMap as IM
 -- else the returned path (in reverse) is a counter example for the expression
 satisfyExpr :: Logic.KripkeStructure String -> [Int] -> Expr -> [Int]
 satisfyExpr model initial expr = path'
-  -- putStrLn $ "Automaton for formula " ++ (show expr)
-  -- forM_ (Logic.states (snd na)) print
-  -- forM_ (Logic.transitions (snd na)) print
-  -- putStrLn $ "initial states na: " ++ (show $ fst na)
-  --
-  -- putStrLn $ "combination"
-  -- forM_ (Logic.states mXna) print
-  -- forM_ (Logic.transitions mXna) print
-  -- putStrLn $ "initial states mXna: " ++ (show $ initialSts)
-  --
-  -- putStrLn $ "path: " ++ (show path)
-  -- putStrLn $ "path': " ++ (show path')
-
-  -- return path'
   where
     path' = catMaybes $ map (\i -> IM.lookup i mapping) path
     path = findSatisfyingPath mXna initialSts
@@ -70,6 +56,7 @@ findPaths model path@(i:is) =
   where
     nextStates = Logic.nextStates model i
 
+pathSatisfyUConstraint :: Logic.KripkeStructure Expr -> [Int] -> Bool
 pathSatisfyUConstraint model path@(i:is) =
   and $ map pathSatisfyU us
   where
