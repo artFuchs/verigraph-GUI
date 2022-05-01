@@ -133,32 +133,58 @@ spec = do
     let
       model =
         assembleModel
-          [ ["1 []", "2 []", "3 []", "4 [p]", "5 []"]
+          [ ["1 []", "2 []", "3 []", "4 [p]", "5 [q]"]
           , ["1 []", "1 []"]
           ]
 
       expr `shouldHoldOn` expectedStates =
         unsatisfyingPath expr model expectedStates `shouldBe` []
 
-    it "should handle 'AF p' properly" $
+      expr `shouldNotHoldOn` expectedStates =
+        unsatisfyingPath expr model expectedStates `shouldNotBe` []
+
+    it "should handle 'F p' properly" $
       "F p" `shouldHoldOn` [2, 3, 4]
 
+    it "should handle 'F p' properly [2]" $
+      "F p" `shouldNotHoldOn` [1,5]
 
+    it "should handle 'F q -> Fp' properly" $
+      "F q -> F p" `shouldHoldOn` [1, 2, 3, 4]
+
+    it "should handle '~F p' properly" $
+      "~F p" `shouldNotHoldOn` [2, 3, 4]
+
+    it "should handle '~F p' properly [2]" $
+      "~F p" `shouldHoldOn` [5]
 
   describe "G" $ do
     let
       model =
         assembleModel
           [ ["1 []", "2 [p]", "3 [p]", "4 [p]"]
-          , ["2 []", "2 []", "5 []"]
-          , ["3 [p]", "3 [p]"]
+          , ["2 [p]", "2 [p]", "5 []", "5 []"]
           ]
 
       expr `shouldHoldOn` expectedStates =
         unsatisfyingPath expr model expectedStates `shouldBe` []
 
+      expr `shouldNotHoldOn` expectedStates =
+        unsatisfyingPath expr model expectedStates `shouldNotBe` []
+
     it "should handle 'G p' properly" $
       "G p" `shouldHoldOn` [3, 4]
+
+    it "should handle 'G p' properly [2]" $
+      "G p" `shouldNotHoldOn` [1, 2, 5]
+
+    it "should handle '~G p' properly" $
+      "~G p" `shouldHoldOn` [1, 5]
+
+    it "should handle '~G p' properly[2]" $
+      "~G p" `shouldNotHoldOn` [3, 4]
+
+
 
 
 

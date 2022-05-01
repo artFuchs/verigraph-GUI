@@ -21,6 +21,20 @@ import qualified Data.IntMap as IM
 -- else the returned path (in reverse) is a counter example for the expression
 satisfyExpr :: Logic.KripkeStructure String -> [Int] -> Expr -> [Int]
 satisfyExpr model initial expr = path'
+  -- putStrLn $ "Automaton for formula " ++ (show expr)
+  -- forM_ (Logic.states (snd na)) print
+  -- forM_ (Logic.transitions (snd na)) print
+  -- putStrLn $ "initial states na: " ++ (show $ fst na)
+  --
+  -- putStrLn $ "combination"
+  -- forM_ (Logic.states mXna) print
+  -- forM_ (Logic.transitions mXna) print
+  -- putStrLn $ "initial states mXna: " ++ (show $ initialSts)
+  --
+  -- putStrLn $ "path: " ++ (show path)
+  -- putStrLn $ "path': " ++ (show path')
+
+  -- return path'
   where
     path' = catMaybes $ map (\i -> IM.lookup i mapping) path
     path = findSatisfyingPath mXna expr' initialSts
@@ -35,92 +49,39 @@ satisfyExpr model initial expr = path'
 
 findSatisfyingPath :: Logic.KripkeStructure Expr -> Expr -> [Int] -> [Int]
 findSatisfyingPath model expr initialSts =
-  case paths of
+  case paths' of
     (p:_) -> p
     _ -> []
   where
-    paths = filter (not . null) $ concat $ map findPaths initialSts
-    findPaths s = findSatisfyingPaths model expr [s]
+    paths' = filter (\p -> pathSatisfyUConstraint model (reverse p)) paths
+    paths = filter (not . null) $ concat $ map findPaths' initialSts
+    findPaths' s = findPaths model [s]
 
 
-findSatisfyingPaths :: Logic.KripkeStructure Expr -> Expr -> [Int] -> [[Int]]
-findSatisfyingPaths model (Literal False) path@(i:is) = []
-
-findSatisfyingPaths model t@(Literal True) path@(i:is) =
-  case nextStates'' of
+findPaths :: Logic.KripkeStructure Expr -> [Int] -> [[Int]]
+findPaths model path@(i:is) =
+  case nextStates of
     [] -> []
-    ns -> concat $ map (\n -> if n `elem` path then [n:path] else findSatisfyingPaths model t (n:path)) ns
+    ns -> concat
+          $ map (\n ->
+                if n `elem` path
+                  then [n:path]
+                  else findPaths model (n:path)) ns
   where
     nextStates = Logic.nextStates model i
-    nextStates' = filter (`elem` path) nextStates
-    nextStates'' = if null nextStates' then nextStates else nextStates'
 
-findSatisfyingPaths model e@(Atom a) path@(i:is) =
-  if e `elem` exprs
-    then findSatisfyingPaths model (Literal True) path
-    else []
+pathSatisfyUConstraint model path@(i:is) =
+  and $ map pathSatisfyU us
   where
-    exprs = Logic.values $ Logic.getState i model
-
-
-findSatisfyingPaths model ne@(Not e) path@(i:is) =
-  if ne `elem` exprs || e `notElem` exprs
-    then findSatisfyingPaths model (Literal True) path
-    else []
-  where
-    exprs = Logic.values $ Logic.getState i model
-
-findSatisfyingPaths model xe@(Temporal (X e)) path@(i:is) =
-  nextPaths
-  where
-    nextStates = Logic.nextStates model i
-    nextPaths = filter (not . null) $ concat $ map (\n -> findSatisfyingPaths model e (n:path)) nextStates
-
-findSatisfyingPaths model e@(Temporal (U a b)) path@(i:is) =
-  case (e `elem` exprs, pathB) of
-    (True, []) -> nextPaths
-    (True, b:bs) -> [pathB ++ is]
-    _ -> []
-  where
-    exprs = Logic.values $ Logic.getState i model
-    nextStates = filter (`notElem` path) $ Logic.nextStates model i
-    nextPaths = filter (not . null) $ concat $ map (\n -> findSatisfyingPaths model e (n:path)) nextStates
-    pathB = findSatisfyingPath model b [i]
-
-findSatisfyingPaths model e@(And a b) path@(i:is) =
-  case (e `elem` exprs, null pathA || null pathB) of
-    (True, False) -> findSatisfyingPaths model (Literal True) path
-    _ -> []
-  where
-    exprs = Logic.values $ Logic.getState i model
-    pathA = findSatisfyingPath model a [i]
-    pathB = findSatisfyingPath model b [i]
-
-findSatisfyingPaths model e@(Or a b) path@(i:is) =
-  case (e `elem` exprs, null pathA && null pathB) of
-    (True, False) -> findSatisfyingPaths model (Literal True) path
-    _ -> []
-  where
-    exprs = Logic.values $ Logic.getState i model
-    pathA = findSatisfyingPath model a [i]
-    pathB = findSatisfyingPath model b [i]
-
-findSatisfyingPaths model e@(Implies a b) path@(i:is) =
-  case (e `elem` exprs, pathA) of
-    (True, a:as) -> [pathB ++ is]
-    (True, []) -> findSatisfyingPaths model (Literal True) path
-    _ -> []
-  where
-    exprs = Logic.values $ Logic.getState i model
-    pathA = findSatisfyingPath model a [i]
-    pathB = findSatisfyingPath model b [i]
-
-findSatisfyingPaths model e@(Equiv a b) path@(i:is) =
-  case (e `elem` exprs, pathA, pathB) of
-    (True, a:as, b:bs) -> findSatisfyingPaths model (Literal True) path
-    (True, [], []) -> findSatisfyingPaths model (Literal True) path
-    _ -> []
-  where
-    exprs = Logic.values $ Logic.getState i model
-    pathA = findSatisfyingPath model a [i]
-    pathB = findSatisfyingPath model b [i]
+    exprs s = Logic.values $ Logic.getState s model
+    us = filter (\e -> case e of
+                      (Temporal (U a b)) -> True
+                      _ -> False)
+                (exprs i)
+    pathSatisfyU u@(Temporal(U a b)) =
+      or $
+        map (\s -> let es = (exprs s)
+                      in b == (Literal True)
+                      || b `elem` es
+                      || (Not u) `elem` es)
+        is
