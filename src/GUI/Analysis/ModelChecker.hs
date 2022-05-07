@@ -272,6 +272,7 @@ startCheckThread execThread statusLabel statusSpinner execFun = do
                 (\_ -> do
                   Gdk.threadsAddIdle GLib.PRIORITY_DEFAULT $ do
                     Gtk.spinnerStop statusSpinner
+                    writeIORef execThread Nothing
                     return False
                   return ()
                 )
