@@ -1,5 +1,5 @@
 name:                verigraph-GUI
-version:             0.2.0.4
+version:             0.2.2.0
 github:              "artFuchs/verigraph-GUI"
 license:             Apache-2.0
 author:              "Arthur Lucena Fuchs"
@@ -67,7 +67,7 @@ benchmarks:
     dependencies:
     - verigraph-GUI
     - tasty-bench
-    
+
   statespace-benchmark:
     main:             StateSpace.hs
     source-dirs:      benchmark/StateSpace

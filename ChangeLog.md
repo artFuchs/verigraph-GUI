@@ -1,5 +1,9 @@
 # Changelog for Verigraph-GUI
 
+0.2.2.0
+    - LTL Model Checker
+    - lot of bug fixes
+
 0.2.1.1
     - implemented visualization of the graphs related to each state in the state space
 
