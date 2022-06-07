@@ -21,16 +21,17 @@ description:         Please see the README on GitHub at <https://github.com/artF
 
 dependencies:
 - base >= 4.7 && < 5
+- haskell-gi-base
 - gi-gtk
 - gi-gdk
 - gi-glib
 - prettyprinter
 - text
-- cairo
-- pango
 - gi-cairo
+- gi-cairo-render
+- gi-cairo-connector
 - gi-pango
-- haskell-gi-base
+- gi-pangocairo
 - transformers
 - parallel
 - containers

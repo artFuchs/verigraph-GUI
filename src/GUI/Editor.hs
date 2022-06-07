@@ -20,9 +20,6 @@ import Data.GI.Base.GType
 import Control.Monad
 import Control.Monad.IO.Class
 import Control.Monad.Zip
-import Graphics.Rendering.Cairo
-import Graphics.Rendering.Pango.Layout
-import Graphics.Rendering.Pango
 
 -- haskell data modules
 import Data.IORef
@@ -418,10 +415,10 @@ startEditor window store
     case (index<0,gt<2) of
       (True,_) -> return ()
       (False,True) -> do
-        typeInfo <- Gtk.comboBoxTextGetActiveText nodeTypeCBox >>= return . T.unpack
-        writeIORef currentNodeType $ Just typeInfo
+        typeInfo <- Gtk.comboBoxTextGetActiveText nodeTypeCBox >>= \mt -> return (T.unpack <$> mt)
+        writeIORef currentNodeType $ typeInfo
       (False,False) -> do
-        typeInfo <- Gtk.comboBoxTextGetActiveText nodeTypeCBox >>= return . T.unpack
+        typeInfo <- Gtk.comboBoxTextGetActiveText nodeTypeCBox >>= \mt -> return . fromMaybe "" $ (T.unpack <$> mt)
         selectedType <- readIORef possibleNodeTypes >>= return . M.lookup typeInfo
         case selectedType of
           Nothing -> return ()
@@ -447,7 +444,7 @@ startEditor window store
       (True,_) -> return ()
       (False,True) -> return ()
       (False,False) -> do
-            typeInfo <- Gtk.comboBoxTextGetActiveText edgeTypeCBox >>= return . T.unpack
+            typeInfo <- Gtk.comboBoxTextGetActiveText edgeTypeCBox >>= \mt -> return . fromMaybe "" $ T.unpack <$> mt
             typeEntry <- readIORef possibleEdgeTypes >>= return . M.lookup typeInfo
             case typeEntry of
               Nothing -> return()

@@ -10,7 +10,6 @@ import qualified GI.Gtk as Gtk
 import qualified GI.Gdk as Gdk
 import qualified GI.Pango as P
 import           Data.GI.Base
-import           Graphics.Rendering.Cairo (Render)
 
 -- modules needed for threads
 import           Control.Concurrent

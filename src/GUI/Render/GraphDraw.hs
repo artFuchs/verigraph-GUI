@@ -11,7 +11,7 @@ module GUI.Render.GraphDraw (
 import qualified Data.Map as M
 import qualified Data.Maybe as Maybe
 import Control.Monad
-import Graphics.Rendering.Cairo
+import GI.Cairo.Render
 
 import Data.Graphs hiding (null)
 
@@ -23,9 +23,6 @@ import GUI.Render.GraphElements
 import GUI.Helper.GraphValidation
 import GUI.Helper.Geometry
 
-import qualified Graphics.Rendering.Pango as GRP
-import qualified Graphics.Rendering.Pango.Cairo as GRPC
-import qualified Graphics.Rendering.Pango.Layout as GRPL
 
 type Color = (Double,Double,Double)
 type SquareSelection = Maybe (Double,Double,Double,Double)
@@ -67,17 +64,16 @@ drawGraph state sq nodeColors edgeColors nodeTextColors edgeTextColors mRect = d
         srcN = M.lookup (fromEnum . sourceId $ e) nGI
         egi  = M.lookup (fromEnum . edgeId   $ e) eGI
         info = infoVisible $ edgeInfo e
-        (highlight, color) = case (edgeId e `elem` sEdges, M.lookup (edgeId e) edgeColors) of
-            (False,Nothing) -> (False, (0,0,0))
-            (False,Just c)  -> (True, c)
-            (True, _) -> (True, selectColor)
-            --(True, Just c)  -> (True, mixColors selectColor c)
-        (highlightText, textColor) = Maybe.fromMaybe (False,(0,0,0)) $ (\a -> (True, a)) <$> M.lookup (edgeId e) edgeTextColors
+        shadowColor = case (edgeId e `elem` sEdges, M.lookup (edgeId e) edgeColors) of
+            (False,Nothing) -> Nothing
+            (False,Just c)  -> Just c
+            (True, _) -> Just selectColor
+        textColor = M.lookup (edgeId e) edgeTextColors
     case (egi, srcN, tgtN, mRect) of
-      (Just gi, Just src, Just tgt, Nothing) -> renderEdge gi info src tgt highlight color highlightText textColor
+      (Just gi, Just src, Just tgt, Nothing) -> renderEdge gi info src tgt shadowColor textColor
       (Just gi, Just src, Just tgt, Just (sw,sh)) ->
         if isEdgeOnScreen (px,py) z (sw,sh) gi src tgt
-          then renderEdge gi info src tgt highlight color highlightText textColor
+          then renderEdge gi info src tgt shadowColor textColor
           else return ()
       _ -> return ()
 
@@ -85,17 +81,17 @@ drawGraph state sq nodeColors edgeColors nodeTextColors edgeTextColors mRect = d
   forM (nodes g) $ \n -> do
     let ngi = M.lookup (fromEnum . nodeId $ n) nGI
         info = infoVisible $ nodeInfo n
-        (highlight, color) = case (nodeId n `elem` sNodes, M.lookup (nodeId n) nodeColors) of
-            (False,Nothing) -> (False, (0,0,0))
-            (False, Just c) -> (True, c)
-            (True, Nothing) -> (True, selectColor)
-            (True, Just c)  -> (True, mixColors selectColor c)
-        (highlightText, textColor) = Maybe.fromMaybe (False,(0,0,0)) $ (\a -> (True, a)) <$> M.lookup (nodeId n) nodeTextColors
+        shadowColor = case (nodeId n `elem` sNodes, M.lookup (nodeId n) nodeColors) of
+            (False,Nothing) -> Nothing
+            (False, Just c) -> Just c
+            (True, Nothing) -> Just selectColor
+            (True, Just c)  -> Just (mixColors selectColor c)
+        textColor = M.lookup (nodeId n) nodeTextColors
     case (ngi, mRect) of
-      (Just gi, Nothing) -> renderNode gi info highlight color highlightText textColor
+      (Just gi, Nothing) -> renderNode gi info shadowColor textColor
       (Just gi, Just (sw,sh)) ->
         if isNodeOnScreen (px,py) z (sw,sh) gi
-          then renderNode gi info highlight color highlightText textColor
+          then renderNode gi info shadowColor textColor
           else return ()
       (Nothing,_) -> return ()
 

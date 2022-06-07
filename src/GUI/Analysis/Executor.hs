@@ -13,7 +13,6 @@ module GUI.Analysis.Executor (
 import qualified GI.Gtk                   as Gtk
 import qualified GI.Gdk                   as Gdk
 import qualified GI.Pango                 as P
-import Graphics.Rendering.Cairo           (Render)
 
 -- modules needed for threads
 import           Control.Concurrent
@@ -65,6 +64,9 @@ import qualified GUI.Editor.Helper.Nac    as Nac
 
 type TGMPredicate = TGMProduction
 
+noTreeViewColumn :: Maybe Gtk.TreeViewColumn
+noTreeViewColumn = Nothing
+
 
 buildExecutor :: Gtk.TreeStore
               -> IORef (M.Map Int32 GraphState)
@@ -111,7 +113,7 @@ buildExecutor store statesMap typeGraph nacInfoMap focusedCanvas focusedStateIOR
     Gtk.treeViewSetModel treeView (Just store)
 
     rootPath <- Gtk.treePathNewFromIndices [0]
-    Gtk.treeViewSetCursor treeView rootPath Gtk.noTreeViewColumn False
+    Gtk.treeViewSetCursor treeView rootPath noTreeViewColumn False
 
     -- IORefs -------------------------------------------------------------------------------------------------------------------
 
@@ -296,18 +298,18 @@ nacCBoxChangedCallback
   (nacState, lStateOrig)
   =
   do
-    index <- Gtk.comboBoxGetActive nacCBox
-    if index == (-1)
-        then writeIORef nacState $ emptyState
-        else do
-            nacName <- Gtk.comboBoxTextGetActiveText nacCBox >>= return . T.unpack
+    nacName <- Gtk.comboBoxTextGetActiveText nacCBox
+    case nacName of
+      Nothing -> writeIORef nacState $ emptyState
+      Just name ->
+          do
             ruleIndex <- readIORef currentRuleIndex
             nacListM <- readIORef nacIDListMap
             nacInfoM <- readIORef nacInfoMap
 
             let mIndexAndInfo =
                   do  nacList <- M.lookup ruleIndex nacListM
-                      nacIndex <- lookup nacName nacList
+                      nacIndex <- lookup (T.unpack name) nacList
                       nacInfo <- M.lookup nacIndex nacInfoM
                       return (nacIndex, nacInfo)
 
@@ -526,11 +528,11 @@ executeStep treeView keepRuleCheckBtn mainCanvas statusSpinner statusLabel
             (True,True,Just path) -> do
                     hasParent <- Gtk.treePathUp path
                     if hasParent
-                        then Gtk.treeViewSetCursor treeView path Gtk.noTreeViewColumn False
+                        then Gtk.treeViewSetCursor treeView path noTreeViewColumn False
                         else return ()
             (_,False,_) -> do
                 path <- Gtk.treePathNewFirst
-                Gtk.treeViewSetCursor treeView path Gtk.noTreeViewColumn False
+                Gtk.treeViewSetCursor treeView path noTreeViewColumn False
             _ -> return ()
         -- remove matches from treeStore
         removeMatchesFromTreeStore store
@@ -552,9 +554,9 @@ executeStep treeView keepRuleCheckBtn mainCanvas statusSpinner statusLabel
                 ruleIndex <- readIORef currentRuleIndex
                 pathFst <- Gtk.treePathNewFirst
                 case M.lookup ruleIndex matchesM of
-                    Nothing -> Gtk.treeViewSetCursor treeView pathFst Gtk.noTreeViewColumn False
+                    Nothing -> Gtk.treeViewSetCursor treeView pathFst noTreeViewColumn False
                     Just m -> if M.size m == 0
-                                then Gtk.treeViewSetCursor treeView pathFst Gtk.noTreeViewColumn False
+                                then Gtk.treeViewSetCursor treeView pathFst noTreeViewColumn False
                                 else return ()
             else return ()
         return False

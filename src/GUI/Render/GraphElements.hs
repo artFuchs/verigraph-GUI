@@ -2,19 +2,14 @@
 module GUI.Render.GraphElements(
   renderNode
 , renderEdge
-, renderLabel
 )where
 
-import GI.Cairo
-import Graphics.Rendering.Cairo
-import Graphics.Rendering.Cairo.Internal (Render(runRender))
-import Graphics.Rendering.Cairo.Types (Cairo(Cairo))
-import Control.Monad.Trans.Reader (runReaderT)
-import Foreign.Ptr (castPtr)
-
-import Graphics.Rendering.Pango.Cairo as GRPC
-import Graphics.Rendering.Pango.Layout as GRPL
-import Graphics.Rendering.Pango as GRP
+import GI.Cairo hiding (Context)
+import qualified GI.Cairo as Cairo
+import GI.Cairo.Render
+import GI.Cairo.Render.Connector
+import qualified GI.Pango as Pango
+import qualified GI.PangoCairo as Pango
 
 import qualified Data.Text as T
 import Data.List
@@ -23,9 +18,12 @@ import GUI.Helper.Geometry
 import Control.Monad
 
 
+type Quadruple a = (a, a, a, a)
+type GIRect = Quadruple Double
+
 -- draw a node with it's label
-renderNode :: NodeGI -> String -> Bool -> GIColor -> Bool -> GIColor -> Render ()
-renderNode node content drawShadow shadowColor highlightText textColor = do
+renderNode :: NodeGI -> String -> Maybe GIColor -> Maybe  GIColor -> Render ()
+renderNode node content shadowColor textColor = do
   let (x,y) = position node
       (r,g,b) = fillColor node
       (rl,gl,bl) = lineColor node
@@ -34,37 +32,26 @@ renderNode node content drawShadow shadowColor highlightText textColor = do
   setLineWidth 2
   setSourceRGB r g b
   case shape node of
-    NCircle -> let radius = (max pw ph)/2 in renderCircle (x,y) radius (r,g,b) (rl,gl,bl) drawShadow shadowColor
-    NRect -> renderRectangle (x, y, pw, ph) (r,g,b) (rl,gl,bl) drawShadow shadowColor
-    NSquare -> renderRectangle (x,y, (max pw ph), (max pw ph)) (r,g,b) (rl,gl,bl) drawShadow shadowColor
+    NCircle -> let radius = (max pw ph)/2 in renderCircle (x,y) radius (r,g,b) (rl,gl,bl) shadowColor
+    NRect -> renderRectangle (x, y, pw, ph) (r,g,b) (rl,gl,bl) shadowColor
+    NSquare -> renderRectangle (x,y, (max pw ph), (max pw ph)) (r,g,b) (rl,gl,bl) shadowColor
 
 
   moveTo (x-(pw/2-2)) (y-(ph/2-2))
 
-  case highlightText of
-    False -> do
-      setSourceRGB rl gl bl
-      pL <- GRPC.createLayout content
-      desc <- liftIO $ GRP.fontDescriptionFromString "Sans Regular 10"
-      liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
-      showLayout pL
-    True -> do
-      let (r,g,b) = textColor
-      setSourceRGB r g b
-      pL <- GRPC.createLayout content
-      desc <- liftIO $ GRP.fontDescriptionFromString "Sans Bold 10"
-      liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
-      showLayout pL
+  case textColor of
+    Nothing -> renderNodeLabel content (rl,gl,bl) "Sans Regular 10"
+    Just color -> renderNodeLabel content color "Sans Bold 10"
 
-renderCircle :: (Double,Double) -> Double -> (Double,Double,Double) -> (Double,Double,Double) -> Bool -> (Double,Double,Double) -> Render ()
-renderCircle (x,y) radius (r,g,b) (lr,lg,lb) drawShadow (sr,sg,sb) = do
-  if drawShadow
-    then do
+renderCircle :: GIPos -> Double -> GIColor -> GIColor -> Maybe GIColor -> Render ()
+renderCircle (x,y) radius (r,g,b) (lr,lg,lb) shadowColor  = do
+  case shadowColor of
+    Nothing -> return ()
+    Just (sr,sg,sb) -> do
       setSourceRGB sr sg sb
       arc x y (radius+3) 0 (2*pi)
       fill
-    else
-      return ()
+
   setSourceRGB r g b
   arc x y radius 0 (2*pi)
   fill
@@ -72,15 +59,14 @@ renderCircle (x,y) radius (r,g,b) (lr,lg,lb) drawShadow (sr,sg,sb) = do
   arc x y radius 0 (2*pi)
   stroke
 
-renderRectangle :: (Double,Double,Double,Double) -> (Double,Double,Double) -> (Double,Double,Double) -> Bool -> (Double,Double,Double) ->  Render ()
-renderRectangle (x,y,w,h) (r,g,b) (lr,lg,lb) drawShadow (sr,sg,sb) = do
-  if drawShadow
-    then do
+renderRectangle :: GIRect -> GIColor -> GIColor -> Maybe GIColor ->  Render ()
+renderRectangle (x,y,w,h) (r,g,b) (lr,lg,lb) shadowColor = do
+  case shadowColor of
+    Nothing -> return ()
+    Just (sr,sg,sb) -> do
       setSourceRGB sr sg sb
       rectangle (x-(w/2+3)) (y-(h/2+3)) (w+6) (h+6)
       fill
-    else
-      return ()
   setSourceRGB r g b
   rectangle (x-(w/2)) (y-(h/2)) w h
   fill
@@ -90,14 +76,14 @@ renderRectangle (x,y,w,h) (r,g,b) (lr,lg,lb) drawShadow (sr,sg,sb) = do
 
 
 -- draws an edge
-renderEdge :: EdgeGI -> String -> NodeGI -> NodeGI -> Bool -> GIColor -> Bool -> GIColor -> Render ()
-renderEdge edge content nodeSrc nodeDst drawShadow (shadowColor) highlightText textColor = do
+renderEdge :: EdgeGI -> String -> NodeGI -> NodeGI -> Maybe GIColor -> Maybe GIColor -> Render ()
+renderEdge edge content nodeSrc nodeDst shadowColor textColor = do
   if nodeSrc == nodeDst
-    then renderLoop edge content nodeSrc drawShadow (shadowColor) highlightText textColor
-    else renderNormalEdge edge content nodeSrc nodeDst drawShadow (shadowColor) highlightText textColor
+    then renderLoop edge content nodeSrc shadowColor textColor
+    else renderNormalEdge edge content nodeSrc nodeDst shadowColor textColor
 
-renderNormalEdge :: EdgeGI -> String -> NodeGI -> NodeGI -> Bool -> GIColor -> Bool -> GIColor -> Render ()
-renderNormalEdge edge content nodeSrc nodeDst drawShadow (sr,sg,sb) highlightText textColor = do
+renderNormalEdge :: EdgeGI -> String -> NodeGI -> NodeGI -> Maybe GIColor -> Maybe GIColor -> Render ()
+renderNormalEdge edge content nodeSrc nodeDst shadowColor textColor = do
   -- calculate the intersection points of the edge with the source and target nodes
   let (x1, y1) = position nodeSrc
       (pw, ph) = dims nodeSrc
@@ -123,19 +109,19 @@ renderNormalEdge edge content nodeSrc nodeDst drawShadow (sr,sg,sb) highlightTex
         NRect-> intersectLineRect (xe,ye) (x2,y2,pw2+3,ph2+3)
         NSquare -> let l = max pw2 ph2 in intersectLineRect (xe,ye) (x2,y2,l+3,l+3)
 
-  let (r,g,b) = color edge
+  let (rl,gl,bl) = color edge
       centered = (xe,ye) == midPoint (x1,y1) (x2,y2)
 
   -- draw shadow
-  case (drawShadow, centered) of
-    (False, _) -> return ()
-    (True, True) -> do
+  case (shadowColor, centered) of
+    (Nothing, _) -> return ()
+    (Just (sr,sg, sb), True) -> do
       setLineWidth 6
       setSourceRGB sr sg sb
       moveTo x1' y1'
       lineTo x2' y2'
       stroke
-    (True, False) -> do
+    (Just (sr,sg,sb), False) -> do
       setLineWidth 6
       setSourceRGB sr sg sb
       let aglobal = angle (x1',y1') (x2', y2')
@@ -149,7 +135,7 @@ renderNormalEdge edge content nodeSrc nodeDst drawShadow (sr,sg,sb) highlightTex
 
   -- draw the edge
   setLineWidth 2
-  setSourceRGB r g b
+  setSourceRGB rl gl bl
   if centered
     then do
       case style edge of
@@ -195,25 +181,27 @@ renderNormalEdge edge content nodeSrc nodeDst drawShadow (sr,sg,sb) highlightTex
   if null content
     then return ()
     else do
-      pL <- GRPC.createLayout content
-      desc <- case highlightText of
-        False -> liftIO $ GRP.fontDescriptionFromString "Sans Regular 10"
-        True -> liftIO $ GRP.fontDescriptionFromString "Sans Bold 10"
-      (rl,gl,bl) <- case highlightText of
-        False -> return (r,g,b)
-        True -> return textColor
-      liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
-      (_, PangoRectangle px py pw ph) <- liftIO $ layoutGetExtents pL
-      let a = angle (x1,y1) (x2,y2)
-          (x0,y0) = multPoint (quadrant a) (pw/2,ph/2)
-          minD = (abs $ tan(a)*x0 + y0) / sqrt(tan(a)*tan(a) + 1)
-          labelPos = pointAt (a - pi/2) (minD+8) (xe, ye)
-      setSourceRGB rl gl bl
-      moveTo (fst labelPos - pw/2) (snd labelPos - ph/2)
-      showLayout pL
 
-renderLoop:: EdgeGI -> String -> NodeGI -> Bool -> (Double, Double, Double) -> Bool -> GIColor -> Render ()
-renderLoop edge content node drawShadow (sr,sg,sb) highlightText textColor = do
+      let calculateLabelPos (px,py,pw,ph) =
+            let a = angle (x1,y1) (x2,y2)
+                (x0,y0) = multPoint (quadrant a) (pw/2,ph/2)
+                minD = (abs $ tan(a)*x0 + y0) / sqrt(tan(a)*tan(a) + 1)
+                (x,y) = pointAt (a - pi/2) (minD+8) (xe, ye)
+            in (x - pw/2, y - ph/2)
+
+      case textColor of
+        Just color -> renderEdgeLabel content color "Sans Bold 10" calculateLabelPos
+        Nothing -> renderEdgeLabel content (rl,gl,bl) "Sans Regular 10" calculateLabelPos
+
+
+
+
+
+
+
+
+renderLoop:: EdgeGI -> String -> NodeGI -> Maybe GIColor -> Maybe GIColor -> Render ()
+renderLoop edge content node shadowColor textColor = do
   let (a, d) = cPosition edge
       (x,y) = position node
       (xe, ye) = pointAt a d (x,y)
@@ -223,8 +211,9 @@ renderLoop edge content node drawShadow (sr,sg,sb) highlightText textColor = do
       p2' = pointAt (a-pi/2) (d/1.5) (xe,ye)
       (rl,gl,bl) = color edge
 
-  if drawShadow
-    then do
+  case shadowColor of
+    Nothing -> return ()
+    Just (sr,sg,sb) -> do
       setSourceRGB sr sg sb
       setLineWidth 6
       moveTo x y
@@ -232,7 +221,6 @@ renderLoop edge content node drawShadow (sr,sg,sb) highlightText textColor = do
       moveTo x y
       curveTo (fst p1') (snd p1') (fst p2') (snd p2') xe ye
       stroke
-    else return ()
 
   -- draws a bezier curve pointing to the node itself
   setSourceRGB rl gl bl
@@ -258,32 +246,62 @@ renderLoop edge content node drawShadow (sr,sg,sb) highlightText textColor = do
   if null content
     then  return ()
     else  do
-      pL <- GRPC.createLayout content
-      desc <- case highlightText of
-        False -> liftIO $ GRP.fontDescriptionFromString "Sans Regular 10"
-        True -> liftIO $ GRP.fontDescriptionFromString "Sans Bold 10"
-      (r,g,b) <- case highlightText of
-        True -> return textColor
-        False -> return (rl,gl,bl)
-      liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
-      setSourceRGB r g b
-      (_, PangoRectangle px py pw ph) <- liftIO $ layoutGetExtents pL
-      let a = angle (x,y) (xe,ye) + pi/2
-          (x0,y0) = multPoint (quadrant a) (pw/2,ph/2)
-          minD = (abs $ tan(a)*x0 + y0) / sqrt(tan(a)*tan(a) + 1)
-          labelPos = pointAt (a-pi/2) ( minD+8 ) (xe, ye)
-      moveTo (fst labelPos - pw/2) (snd labelPos - ph/2)
-      showLayout pL
+      let calculateLabelPos (px,py,pw,ph) =
+            let a = angle (x,y) (xe,ye) + pi/2
+                (x0,y0) = multPoint (quadrant a) (pw/2,ph/2)
+                minD = (abs $ tan(a)*x0 + y0) / sqrt(tan(a)*tan(a) + 1)
+                pos = pointAt (a-pi/2) ( minD+8 ) (xe, ye)
+            in ((fst pos - pw/2), (snd pos - ph/2))
+
+      case textColor of
+        Just color -> renderEdgeLabel content color "Sans Bold 10" calculateLabelPos
+        Nothing -> renderEdgeLabel content (rl,gl,bl) "Sans Regular 10" calculateLabelPos
 
 
-renderLabel :: String -> (Double,Double) -> Render ()
-renderLabel content (x,y) = do
-  pL <- GRPC.createLayout content
-  desc <- liftIO $ GRP.fontDescriptionFromString "Sans Regular 10"
-  liftIO $ GRPL.layoutSetFontDescription pL (Just desc)
-  setSourceRGB 0 0 0
-  moveTo x y
-  GRP.showLayout pL
+renderEdgeLabel :: String -> GIColor -> String -> (Quadruple Double -> (Double, Double)) -> Render ()
+renderEdgeLabel content (r,g,b) descStr calcLabelPos =
+  do
+    context <- getContext
+    setSourceRGB r g b
+    pL <- createLabelLayout content descStr
+    extents <- getLabelExtents pL
+    let (lx, ly) = calcLabelPos extents
+    moveTo lx ly
+    Pango.showLayout context pL
+
+
+
+renderNodeLabel :: String -> GIColor -> String -> Render ()
+renderNodeLabel content (r,g,b) descStr =
+  do
+    setSourceRGB r g b
+    pL <- createLabelLayout content descStr
+    context <- getContext
+    Pango.showLayout context pL
+
+createLabelLayout :: String -> String -> Render Pango.Layout
+createLabelLayout content descStr =
+  do
+    context <- getContext
+    pL <- Pango.createLayout context
+    Pango.layoutSetText pL (T.pack content) (-1)
+    desc <- Pango.fontDescriptionFromString (T.pack descStr)
+    Pango.layoutSetFontDescription pL (Just desc)
+    return pL
+
+getLabelExtents :: Pango.Layout -> Render (Quadruple Double)
+getLabelExtents pL =
+  do
+    (rect,_) <- Pango.layoutGetExtents pL
+    px <- Pango.getRectangleX rect
+    py <- Pango.getRectangleY rect
+    pw <- Pango.getRectangleWidth rect
+    ph <- Pango.getRectangleHeight rect
+    let [px', py', pw', ph'] =
+          map ((\x-> x / (fromIntegral Pango.SCALE)) . fromIntegral) [px,py,pw,ph]
+    return (px', py', pw', ph')
+
+
 
 
 drawPointedLine :: (Double,Double) -> (Double,Double) -> Render ()
