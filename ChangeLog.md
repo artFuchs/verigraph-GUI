@@ -1,5 +1,8 @@
 # Changelog for Verigraph-GUI
 
+0.2.2.1
+    - changed libraries used for rendering the graphs, dropping the old gtk2hs library completely
+
 0.2.2.0
     - LTL Model Checker
     - lot of bug fixes
