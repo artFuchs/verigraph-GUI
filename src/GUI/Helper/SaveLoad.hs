@@ -1,5 +1,5 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
-module GUI.Editor.Helper.SaveLoad
+module GUI.Helper.SaveLoad
 ( SaveInfo(..)
 , saveFile
 , saveFileAs

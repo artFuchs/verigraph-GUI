@@ -56,6 +56,7 @@ import           GUI.Helper.GraphicalInfo
 import           GUI.Helper.GraphValidation
 import           GUI.Helper.List
 import           GUI.Helper.GrammarConverter
+import           GUI.Helper.SaveLoad
 import           GUI.Render.Render
 import           GUI.Render.GraphElements
 import           GUI.Render.GraphDraw
@@ -64,7 +65,6 @@ import           GUI.Render.GraphDraw
 -- Editor modules
 import GUI.Editor.Helper.Clipboard
 import GUI.Editor.Helper.Nac
-import GUI.Editor.Helper.SaveLoad
 import GUI.Editor.Helper.TypeInfer
 import GUI.Editor.Helper.TreeStore
 import GUI.Editor.Helper.UndoRedo

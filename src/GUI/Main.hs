@@ -36,6 +36,7 @@ import           GUI.Data.GraphState
 import qualified GUI.Data.Diagram as DG
 import           GUI.Data.Nac
 import           GUI.Helper.Dialogs
+import           GUI.Helper.SaveLoad
 import           GUI.Editor as Edit
 import qualified GUI.Editor.Helper.TreeStore as Edit
 import qualified GUI.Analysis.Executor as Exec
@@ -44,7 +45,6 @@ import           GUI.Helper.HelpWindow
 import           GUI.Helper.GrammarMaker
 import           GUI.Analysis.ModelChecker
 
-import           GUI.Editor.Helper.SaveLoad
 import           GUI.Editor.Helper.UndoRedo (ChangeStack)
 
 
