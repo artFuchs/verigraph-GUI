@@ -3,7 +3,7 @@
 -- | This module contains the UI definition
 module GUI.Editor.UI.UIBuilders(
   buildEditor
-, buildTreePanel
+, configureTreeView
 ) where
 
 import qualified GI.Gtk as Gtk
@@ -20,7 +20,7 @@ import Data.GI.Base.ManagedPtr (unsafeCastTo)
 
 import GUI.Helper.FilePath
 
-buildEditor :: IO (Gtk.Paned, Gtk.Frame, Gtk.DrawingArea, Gtk.Entry, Gtk.Label
+buildEditor :: IO (Gtk.Paned, Gtk.TreeView, [Gtk.Button], Gtk.DrawingArea, Gtk.Entry, Gtk.Label
                   , ( Gtk.Box, Gtk.Box, Gtk.ColorButton, Gtk.Box, Gtk.ColorButton
                     , Gtk.Frame, [Gtk.RadioButton], Gtk.Frame, [Gtk.RadioButton])
                   , ( Gtk.Box, Gtk.CheckButton, Gtk.CheckButton
@@ -35,7 +35,11 @@ buildEditor = do
   mainPane <- Gtk.builderGetObject builder "mainPane" >>= unsafeCastTo Gtk.Paned . fromJust
 
   -- frame to put the treeView
-  treeFrame <- Gtk.builderGetObject builder "treeFrame" >>= unsafeCastTo Gtk.Frame . fromJust
+  treeView <- Gtk.builderGetObject builder "treeView" >>= unsafeCastTo Gtk.TreeView . fromJust
+  createRBtn <- Gtk.builderGetObject builder "newRButton" >>= unsafeCastTo Gtk.Button . fromJust
+  createNBtn <- Gtk.builderGetObject builder "newNButton" >>= unsafeCastTo Gtk.Button . fromJust
+  removeBtn <- Gtk.builderGetObject builder "rmvButton" >>= unsafeCastTo Gtk.Button . fromJust
+  ruleButtons <- return [createRBtn, createNBtn, removeBtn]
 
   -- canvas
   canvas <- Gtk.builderGetObject builder "canvas" >>= unsafeCastTo Gtk.DrawingArea . fromJust
@@ -83,47 +87,33 @@ buildEditor = do
                              , operationBox, operationCBox
                              , mergeBtn, splitBtn
                              )
-  return (mainPane, treeFrame, canvas, entry, entryLabel, layoutWidgets, typeSelectionWidgets)
+  return (mainPane, treeView, ruleButtons, canvas, entry, entryLabel, layoutWidgets, typeSelectionWidgets)
 
 
 
 -- creates the treePanel
-buildTreePanel :: IO ( Gtk.Box, Gtk.TreeView, Gtk.CellRendererText, Gtk.CellRendererToggle, Gtk.Button, Gtk.Button, Gtk.Button )
-buildTreePanel = do
-  mainBox <- new Gtk.Box [#orientation := Gtk.OrientationVertical, #spacing := 0]
-
-  scrolledwin <- new Gtk.ScrolledWindow []
-  Gtk.boxPackStart mainBox scrolledwin True True 0
-  treeview <- new Gtk.TreeView [ #headersVisible := True
-                               , #levelIndentation := 4 ]
-  Gtk.containerAdd scrolledwin treeview
-
-  changesCol <- new Gtk.TreeViewColumn []
-  Gtk.treeViewAppendColumn treeview changesCol
-  changesRenderer <- new Gtk.CellRendererText [#editable := False]
-  Gtk.cellLayoutPackStart changesCol changesRenderer False
+configureTreeView :: Gtk.TreeView -> IO (Gtk.CellRendererText, Gtk.CellRendererToggle)
+configureTreeView treeview = do
 
   nameCol <- new Gtk.TreeViewColumn [#title := "name"]
   Gtk.treeViewAppendColumn treeview nameCol
   nameRenderer <- new Gtk.CellRendererText [#editable := True]
   Gtk.cellLayoutPackStart nameCol nameRenderer False
+  Gtk.treeViewColumnAddAttribute nameCol nameRenderer "text" 0
+
+  changesCol <- new Gtk.TreeViewColumn [#title := ""]
+  Gtk.treeViewAppendColumn treeview changesCol
+  changesRenderer <- new Gtk.CellRendererText [#editable := False]
+  Gtk.cellLayoutPackStart changesCol changesRenderer False
 
   activeCol <- new Gtk.TreeViewColumn [#title := "actived"]
   Gtk.treeViewAppendColumn treeview activeCol
   activeRenderer <- new Gtk.CellRendererToggle [#activatable := True, #radio := False]
   Gtk.cellLayoutPackStart activeCol activeRenderer False
 
-
-  btnNewR <- new Gtk.Button [#label := "New Rule"]
-  Gtk.boxPackStart mainBox btnNewR False False 0
-
-  btnNewN <- new Gtk.Button [#label := "New NAC"]
-  Gtk.boxPackStart mainBox btnNewN False False 0
-
-  btnRmv <- new Gtk.Button [#label := "Remove Rule"]
-  Gtk.boxPackStart mainBox btnRmv False False 0
-
   -- set the information renderered by each column of the treeView
+  -- the model used is the one specified in GraphStore (GUI.Editor.Helper.TreeeStore)
+
   Gtk.treeViewColumnSetCellDataFunc changesCol changesRenderer $ Just $ \column renderer model iter ->
     do
       changed <- Gtk.treeModelGetValue model iter 1 >>= fromGValue:: IO Bool
@@ -136,8 +126,6 @@ buildTreePanel = do
         (Just r, True, False) -> set r [#text := "!*"]
         _ -> return ()
 
-  #addAttribute nameCol nameRenderer "text" 0
-
   Gtk.treeViewColumnSetCellDataFunc activeCol activeRenderer $ Just $ \column renderer model iter ->
     do
       gType <- Gtk.treeModelGetValue model iter 3 >>= \gv -> (fromGValue gv :: IO Int32)
@@ -149,4 +137,4 @@ buildTreePanel = do
         (Just r, _) -> set r [#visible := False]
         _ -> return ()
 
-  return (mainBox, treeview, nameRenderer, activeRenderer, btnNewR, btnRmv, btnNewN)
+  return (nameRenderer, activeRenderer)

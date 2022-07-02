@@ -100,7 +100,7 @@ startEditor window store
             focusedCanvas focusedStateIORef = do
 
   -- create the ui of the editor
-  (mainPane, treeFrame, canvas, nameEntry, entryLabel, layoutWidgets, typeSelectionWidgets) <- buildEditor
+  (mainPane, treeview, ruleButtons, canvas, nameEntry, entryLabel, layoutWidgets, typeSelectionWidgets) <- buildEditor
 
   let (layoutBox, fillColorBox, fillColorBtn, lineColorBox, lineColorBtn, nodeShapeFrame, radioShapes, edgeStyleFrame, radioStyles) = layoutWidgets
       (typeSelectionBox, autoLabelNCheckBtn, autoLabelECheckBtn, nodeTypeBox, nodeTypeCBox, edgeTypeBox, edgeTypeCBox, operationBox, operationCBox, mergeBtn, splitBtn) = typeSelectionWidgets
@@ -113,8 +113,8 @@ startEditor window store
     nacInspWidgets  = (nameEntry, nodeTypeCBox, edgeTypeCBox, mergeBtn, splitBtn)
 
   -- create the treePanel and append it to the treeFrame
-  (treeBox, treeview, nameRenderer, activeRenderer, createRBtn, removeBtn, createNBtn) <- buildTreePanel
-  Gtk.containerAdd treeFrame treeBox
+  (nameRenderer, activeRenderer) <- configureTreeView treeview
+  let [createRBtn, createNBtn, removeBtn] = ruleButtons
   Gtk.treeViewSetModel treeview (Just store)
   initTreeView treeview
 
