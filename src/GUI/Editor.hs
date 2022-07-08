@@ -1312,30 +1312,34 @@ updateElements currentState possibleNodeTypes possibleEdgeTypes= do
 
 -- change the Inspector elements according to the selected graph
 changeInspector :: Gtk.Box -> Gtk.Box -> Gtk.Box -> Gtk.Button -> Gtk.Button -> Gtk.MenuItem -> Gtk.MenuItem -> Int32 -> IO ()
-changeInspector layoutBox typeSelectionBox operationBox mergeBtn splitBtn mrg spt gType = do
-              -- if the current graph is the typeGraph then show the layout box else show the typeSelectionBox
-              if gType == 1 then do
-                #show layoutBox
-                #hide typeSelectionBox
-              else do
-                #hide layoutBox
-                #show typeSelectionBox
+changeInspector layoutBox typeSelectionBox operationBox mergeBtn splitBtn mrg spt gType =
+  if gType == 0 then
+    return ()
+  else
+    do
+      -- if the current graph is the typeGraph then show the layout box else show the typeSelectionBox
+      if gType == 1 then do
+        #show layoutBox
+        #hide typeSelectionBox
+      else do
+        #hide layoutBox
+        #show typeSelectionBox
 
-              -- if the current graph is a ruleGraph, then show the operation box
-              if gType == 3 then
-                #show operationBox
-              else
-                #hide operationBox
+      -- if the current graph is a ruleGraph, then show the operation box
+      if gType == 3 then
+        #show operationBox
+      else
+        #hide operationBox
 
-              -- if the currentGraph is a nac, then show the merge and split options
-              if gType == 4 then do
-                #show mergeBtn
-                #show splitBtn
-                mapM_ (\m -> Gtk.widgetSetSensitive m True) [mrg,spt]
-              else do
-                #hide mergeBtn
-                #hide splitBtn
-                mapM_ (\m -> Gtk.widgetSetSensitive m False) [mrg,spt]
+      -- if the currentGraph is a nac, then show the merge and split options
+      if gType == 4 then do
+        #show mergeBtn
+        #show splitBtn
+        mapM_ (\m -> Gtk.widgetSetSensitive m True) [mrg,spt]
+      else do
+        #hide mergeBtn
+        #hide splitBtn
+        mapM_ (\m -> Gtk.widgetSetSensitive m False) [mrg,spt]
 
 
 ---------------------------------------------------------------------------------------------------------------------------------
