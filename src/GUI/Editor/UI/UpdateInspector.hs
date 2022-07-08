@@ -41,46 +41,60 @@ updateInspector :: IORef Int32
                 -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.Button, Gtk.Button)
                 -> (Gtk.Box, Gtk.Box)
                 -> IO ()
-updateInspector gType st mergeMappingIORef
+updateInspector gType gState mergeMappingIORef
                 (pNodeTypes, pEdgeTypes, nodeType, edgeType)
                 c lc
-                typeInspWidgets
+                typeInspWidgets@(nameEntry,_,_,_,_,_,_,_)
                 hostInspWidgets
                 ruleInspWidgets
                 nacInspWidgets
                 (nodeTypeBox, edgeTypeBox)
                 = do
   gt <- readIORef gType
-  updateTypeInspector st c lc typeInspWidgets
-  es <- readIORef st
+  st <- readIORef gState
   pNT <- readIORef pNodeTypes >>= return . M.map snd
   pET <- readIORef pEdgeTypes >>= return . M.map snd
   cNT <- readIORef nodeType >>= \x -> return $ fromMaybe "" x
   cET <- readIORef edgeType >>= \x -> return $ fromMaybe "" x
   mergeMapping <- readIORef mergeMappingIORef
+  updateNameEntry st nameEntry
   case gt of
-    2 -> updateHostInspector es pNT pET cNT cET hostInspWidgets (nodeTypeBox, edgeTypeBox)
-    3 -> updateRuleInspector es pNT pET cNT cET ruleInspWidgets (nodeTypeBox, edgeTypeBox)
-    4 -> updateNacInspector es pNT pET cNT cET mergeMapping nacInspWidgets (nodeTypeBox, edgeTypeBox)
+    1 -> updateTypeInspector st c lc typeInspWidgets
+    2 -> updateHostInspector st pNT pET cNT cET hostInspWidgets (nodeTypeBox, edgeTypeBox)
+    3 -> updateRuleInspector st pNT pET cNT cET ruleInspWidgets (nodeTypeBox, edgeTypeBox)
+    4 -> updateNacInspector st pNT pET cNT cET mergeMapping nacInspWidgets (nodeTypeBox, edgeTypeBox)
     _ -> return ()
 
+updateNameEntry :: GraphState -> Gtk.Entry -> IO ()
+updateNameEntry st nameEntry = do
+  let g = stateGetGraph st
+      (selNodes,selEdges) = stateGetSelected st
+      ns = filter (\n -> elem (nodeId n) selNodes) $ nodes g
+      es = filter (\e -> elem (edgeId e) selEdges) $ edges g
+      unifyNames (x:xs) = if all (==x) xs then x else "----"
+      name = case (length ns, length es) of
+        (0,0) -> ""
+        (n,0) -> T.pack . unifyNames $ map (infoLabelStr . nodeInfo) ns
+        (0,n) -> T.pack . unifyNames $ map (infoLabelStr . edgeInfo) es
+        _ -> T.pack . unifyNames $ concat [(map (infoLabelStr . edgeInfo) es), (map (infoLabelStr . nodeInfo) ns)]
+  set nameEntry [#text := name]
+
+
 -- update the inspector --------------------------------------------------------
-updateTypeInspector :: IORef GraphState -> IORef (Double,Double,Double) -> IORef (Double,Double,Double)
+updateTypeInspector :: GraphState -> IORef (Double,Double,Double) -> IORef (Double,Double,Double)
                     -> (Gtk.Entry, Gtk.Box, Gtk.ColorButton, Gtk.ColorButton, Gtk.Frame, [Gtk.RadioButton], Gtk.Frame, [Gtk.RadioButton])
                     -> IO ()
 updateTypeInspector st currentC currentLC (nameEntry, hBoxColor, colorBtn, lcolorBtn, frameShape, radioShapes, frameStyle, radioStyles) = do
   emptyColor <- new Gdk.RGBA [#red := 0.5, #blue := 0.5, #green := 0.5, #alpha := 1.0]
-  est <- readIORef st
-  let g = stateGetGraph est
-      ns = filter (\n -> elem (nodeId n) $ fst $ stateGetSelected est) $ nodes g
-      es = filter (\e -> elem (edgeId e) $ snd $ stateGetSelected est) $ edges g
-      (ngiM,egiM) = stateGetGI est
-      unifyNames (x:xs) = if all (==x) xs then x else "----"
+  let g = stateGetGraph st
+      (selNodes,selEdges) = stateGetSelected st
+      ns = filter (\n -> elem (nodeId n) selNodes) $ nodes g
+      es = filter (\e -> elem (edgeId e) selEdges) $ edges g
+      (ngiM,egiM) = stateGetGI st
   case (length ns, length es) of
     (0,0) -> do
       (r, g, b)    <- readIORef currentC
       (r', g', b') <- readIORef currentLC
-      set nameEntry [#text := ""]
       color <- new Gdk.RGBA [#red := r, #green := g, #blue := b, #alpha:=1.0]
       lcolor <- new Gdk.RGBA [#red := r', #green := g', #blue := b', #alpha:=1.0]
       Gtk.colorChooserSetRgba colorBtn color
@@ -90,14 +104,12 @@ updateTypeInspector st currentC currentLC (nameEntry, hBoxColor, colorBtn, lcolo
       set frameStyle [#visible := True]
     (n,0) -> do
       let nid = nodeId (ns!!0)
-          info = T.pack . unifyNames $ map (infoLabelStr . nodeInfo) ns
           gi = getNodeGI (fromEnum nid) ngiM
           (r,g,b) = fillColor gi
           (r',g',b') = lineColor gi
           nodeShape = shape gi
       color <- new Gdk.RGBA [#red := r, #green := g, #blue := b, #alpha := 1.0]
       lcolor <- new Gdk.RGBA [#red := r', #green := g', #blue := b', #alpha := 1.0]
-      set nameEntry [#text := info]
       Gtk.colorChooserSetRgba colorBtn $ if n==1 then color else emptyColor
       Gtk.colorChooserSetRgba lcolorBtn $ if n==1 then lcolor else emptyColor
       case (n,nodeShape) of
@@ -105,18 +117,15 @@ updateTypeInspector st currentC currentLC (nameEntry, hBoxColor, colorBtn, lcolo
         (1,NRect) -> Gtk.toggleButtonSetActive (radioShapes!!1) True
         (1,NSquare) -> Gtk.toggleButtonSetActive (radioShapes!!2) True
         _ -> return ()
-
       set hBoxColor [#visible := True]
       set frameShape [#visible := True]
       set frameStyle [#visible := False]
     (0,n) -> do
       let eid = edgeId (es!!0)
-          info = T.pack . unifyNames $ map (infoLabelStr . edgeInfo) es
           gi = getEdgeGI (fromEnum eid) egiM
           (r,g,b) = color gi
           edgeStyle = style gi
       edgeColor <- new Gdk.RGBA [#red := r, #green := g, #blue := b, #alpha := 1.0]
-      set nameEntry [#text := info]
       Gtk.colorChooserSetRgba lcolorBtn $ if n == 1 then edgeColor else emptyColor
       case (n,edgeStyle) of
         (1,ENormal) -> Gtk.toggleButtonSetActive (radioStyles!!0) True
@@ -128,8 +137,6 @@ updateTypeInspector st currentC currentLC (nameEntry, hBoxColor, colorBtn, lcolo
       set frameShape [#visible := False]
       set frameStyle [#visible := True]
     _ -> do
-      let info = T.pack . unifyNames $ concat [(map (infoLabelStr . edgeInfo) es), (map (infoLabelStr . nodeInfo) ns)]
-      set nameEntry [#text := info ]
       Gtk.colorChooserSetRgba colorBtn emptyColor
       Gtk.colorChooserSetRgba lcolorBtn emptyColor
       set hBoxColor [#visible := True]
@@ -138,11 +145,11 @@ updateTypeInspector st currentC currentLC (nameEntry, hBoxColor, colorBtn, lcolo
 
 updateHostInspector :: GraphState -> M.Map String Int32 -> M.Map String Int32 -> String -> String
                     -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText) -> (Gtk.Box, Gtk.Box) -> IO()
-updateHostInspector est pNT pET cNT cET (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox) = do
-  let g = stateGetGraph est
-      ns = filter (\n -> elem (nodeId n) $ fst $ stateGetSelected est) $ nodes g
-      es = filter (\e -> elem (edgeId e) $ snd $ stateGetSelected est) $ edges g
-      (ngiM,egiM) = stateGetGI est
+updateHostInspector st pNT pET cNT cET (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox) = do
+  let g = stateGetGraph st
+      ns = filter (\n -> elem (nodeId n) $ fst $ stateGetSelected st) $ nodes g
+      es = filter (\e -> elem (edgeId e) $ snd $ stateGetSelected st) $ edges g
+      (ngiM,egiM) = stateGetGI st
       unifyNames [] = ""
       unifyNames (x:xs) = if all (==x) xs then x else ""
 
@@ -171,11 +178,11 @@ updateHostInspector est pNT pET cNT cET (entry, nodeTCBox, edgeTCBox) (nodeTBox,
 
 updateRuleInspector :: GraphState -> M.Map String Int32 -> M.Map String Int32 -> String -> String
                     -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.ComboBoxText) -> (Gtk.Box, Gtk.Box) -> IO()
-updateRuleInspector est possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox, operationCBox) (nodeTBox, edgeTBox) = do
-  updateHostInspector est possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox)
-  let g = stateGetGraph est
-      ns = filter (\n -> elem (nodeId n) $ fst $ stateGetSelected est) $ nodes g
-      es = filter (\e -> elem (edgeId e) $ snd $ stateGetSelected est) $ edges g
+updateRuleInspector st possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox, operationCBox) (nodeTBox, edgeTBox) = do
+  updateHostInspector st possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox)
+  let g = stateGetGraph st
+      ns = filter (\n -> elem (nodeId n) $ fst $ stateGetSelected st) $ nodes g
+      es = filter (\e -> elem (edgeId e) $ snd $ stateGetSelected st) $ edges g
       unifyNames [] = ""
       unifyNames (x:xs) = if all (==x) xs then x else "------"
       operation = unifyNames $ concat [map (infoOperationStr . edgeInfo) es, map (infoOperationStr . nodeInfo) ns]
@@ -188,13 +195,13 @@ updateRuleInspector est possibleNT possibleET currentNodeType currentEdgeType (e
 
 updateNacInspector :: GraphState -> M.Map String Int32 -> M.Map String Int32 -> String -> String -> Maybe MergeMapping
                   -> (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.Button, Gtk.Button) -> (Gtk.Box, Gtk.Box) -> IO()
-updateNacInspector est possibleNT possibleET currentNodeType currentEdgeType mergeMapping (entry, nodeTCBox, edgeTCBox, joinBtn, splitBtn) (nodeTBox, edgeTBox) = do
-  updateHostInspector est possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox)
+updateNacInspector st possibleNT possibleET currentNodeType currentEdgeType mergeMapping (entry, nodeTCBox, edgeTCBox, joinBtn, splitBtn) (nodeTBox, edgeTBox) = do
+  updateHostInspector st possibleNT possibleET currentNodeType currentEdgeType (entry, nodeTCBox, edgeTCBox) (nodeTBox, edgeTBox)
   let (nM,eM) = case mergeMapping of
                       Nothing -> (M.empty, M.empty)
                       Just m -> m
-  let g = stateGetGraph est
-      (snodes,sedges) = stateGetSelected est
+  let g = stateGetGraph st
+      (snodes,sedges) = stateGetSelected st
       nodesFromLHS = filter (\n -> nodeId n `elem` snodes && (infoLocked $ nodeInfo n)) $ nodes g
       edgesFromLHS = filter (\e -> edgeId e `elem` sedges && (infoLocked $ edgeInfo e)) $ edges g
       mergeableNodes = filter (\n -> (infoType $ nodeInfo n) == (infoType $ nodeInfo $ head nodesFromLHS)) nodesFromLHS
