@@ -1,3 +1,6 @@
+{-| This module contains functions to infer a type for one or more edges.
+    It is made by checking in the TypeGraph for the possible edge types between two nodes.
+-}
 module GUI.Editor.Helper.TypeInfer (
   listPossibleEdgeTypes
 , infereEdgeType
