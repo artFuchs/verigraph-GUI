@@ -185,7 +185,8 @@ startEditor window store
   on canvas #draw $ drawGraphByType canvas currentState typeGraph squareSelection currentGraphType mergeMapping
 
   -- mouse button pressed on canvas
-  on canvas #buttonPressEvent $ canvasButtonPressedCallback
+  on canvas #buttonPressEvent $
+    canvasButtonPressedCallback
       canvas window nameEntry autoLabelNCheckBtn autoLabelECheckBtn
       nodeTypeCBox edgeTypeCBox
       store storeIORefs
@@ -201,31 +202,16 @@ startEditor window store
   -- if the left button is hold while moving, indicate changes and add the previous diagram to the undo stack
   on canvas #motionNotifyEvent $ indicateChangesWhenMovingElements window store movingGI currentState mergeMapping undoStack redoStack storeIORefs changesIORefs
 
-  -- mouse button release on canvas
-  -- set callback to select elements that are inside squareSelection
-  on canvas #buttonReleaseEvent $ basicCanvasButtonReleasedCallback currentState squareSelection canvas
-  -- if there are elements selected, then update the inspector and the edge type selection comboBox
-  on canvas #buttonReleaseEvent $ \eventButton -> do
-    b <- get eventButton #button
-    gType <- readIORef currentGraphType
-    tg <- readIORef typeGraph
-    es <- readIORef currentState
-    case b of
-      1 -> writeIORef movingGI False
-      _ -> return ()
+  on canvas #buttonReleaseEvent $
+    canvasButtonReleasedCallback
+      canvas
+      currentGraphType currentState typeGraph mergeMapping
+      selectableTypesIORefs possibleEdgeTypes edgeTypeCBox
+      squareSelection movingGI
+      currentC currentLC
+      typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
+      (nodeTypeBox, edgeTypeBox)
 
-    if gType > 1 then
-      changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox currentState tg
-    else
-      return ()
-
-    pSET <- readIORef possibleSelectableEdgeTypes
-
-    updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
-                    currentC currentLC
-                    typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
-                    (nodeTypeBox, edgeTypeBox)
-    return True
 
   -- mouse wheel scroll on canvas
   on canvas #scrollEvent $ basicCanvasScrollCallback currentState canvas

@@ -35,6 +35,7 @@ import           GUI.Render.GraphDraw
 import           GUI.Editor.Helper.UndoRedo
 import           GUI.Editor.Helper.TreeStore
 import           GUI.Editor.Helper.TypeInfer
+import           GUI.Editor.UI.UpdateInspector
 
 
 type StoreIORefs      = ( IORef (M.Map Int32 GraphState), IORef [Int32], IORef Int32, IORef Int32 )
@@ -250,6 +251,45 @@ createEdgeCallback typeGraph currentGraphType currentState currentEdgeType possi
 
               writeIORef currentState $ stateSetSelected ([],createdEdges) es'
         return True
+
+
+canvasButtonReleasedCallback
+  canvas
+  currentGraphType currentState typeGraph mergeMapping
+  selectableTypesIORefs@(possibleNodeTypes, possibleSelectableEdgeTypes, currentNodeType, currentEdgeType) possibleEdgeTypes edgeTypeCBox
+  squareSelection movingGI
+  currentC currentLC
+  typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
+  (nodeTypeBox, edgeTypeBox)
+  eventButton =
+    do
+      -- select elements that are inside squareSelection
+      basicCanvasButtonReleasedCallback currentState squareSelection canvas eventButton
+      -- if there are elements selected, then update the inspector and the edge type selection comboBox
+      b <- get eventButton #button
+      gType <- readIORef currentGraphType
+      tg <- readIORef typeGraph
+      es <- readIORef currentState
+      case b of
+        1 -> writeIORef movingGI False
+        _ -> return ()
+
+      if gType > 1 then
+        changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox currentState tg
+      else
+        return ()
+
+      pSET <- readIORef possibleSelectableEdgeTypes
+
+      updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
+                      currentC currentLC
+                      typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
+                      (nodeTypeBox, edgeTypeBox)
+      return True
+
+
+
+
 
 
 
