@@ -185,7 +185,8 @@ startEditor window store
   on canvas #draw $ drawGraphByType canvas currentState typeGraph squareSelection currentGraphType mergeMapping
 
   -- mouse button pressed on canvas
-  on canvas #buttonPressEvent $ canvasButtonPressedCallback
+  on canvas #buttonPressEvent $
+    canvasButtonPressedCallback
       canvas window nameEntry autoLabelNCheckBtn autoLabelECheckBtn
       nodeTypeCBox edgeTypeCBox
       store storeIORefs
@@ -197,50 +198,28 @@ startEditor window store
 
   -- mouse motion on canvas
   -- set callback to move elements or expand the square selection area
-  on canvas #motionNotifyEvent $ basicCanvasMotionCallBack currentState oldPoint squareSelection canvas
+  on canvas #motionNotifyEvent $
+    basicCanvasMotionCallBack currentState oldPoint squareSelection canvas
   -- if the left button is hold while moving, indicate changes and add the previous diagram to the undo stack
-  on canvas #motionNotifyEvent $ indicateChangesWhenMovingElements window store movingGI currentState mergeMapping undoStack redoStack storeIORefs changesIORefs
+  on canvas #motionNotifyEvent $
+    indicateChangesWhenMovingElements window store movingGI currentState mergeMapping undoStack redoStack storeIORefs changesIORefs
 
-  -- mouse button release on canvas
-  -- set callback to select elements that are inside squareSelection
-  on canvas #buttonReleaseEvent $ basicCanvasButtonReleasedCallback currentState squareSelection canvas
-  -- if there are elements selected, then update the inspector and the edge type selection comboBox
-  on canvas #buttonReleaseEvent $ \eventButton -> do
-    b <- get eventButton #button
-    gType <- readIORef currentGraphType
-    tg <- readIORef typeGraph
-    es <- readIORef currentState
-    case b of
-      1 -> writeIORef movingGI False
-      _ -> return ()
+  on canvas #buttonReleaseEvent $
+    canvasButtonReleasedCallback
+      canvas
+      currentGraphType currentState typeGraph mergeMapping
+      selectableTypesIORefs possibleEdgeTypes edgeTypeCBox
+      squareSelection movingGI
+      currentC currentLC
+      typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
+      (nodeTypeBox, edgeTypeBox)
 
-    if gType > 1 then
-      changeEdgeTypeCBoxByContext possibleEdgeTypes possibleSelectableEdgeTypes edgeTypeCBox currentState tg
-    else
-      return ()
-
-    pSET <- readIORef possibleSelectableEdgeTypes
-
-    updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
-                    currentC currentLC
-                    typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
-                    (nodeTypeBox, edgeTypeBox)
-    return True
 
   -- mouse wheel scroll on canvas
   on canvas #scrollEvent $ basicCanvasScrollCallback currentState canvas
 
   -- keyboard
-  on canvas #keyPressEvent $ \eventKey -> do
-    k <- get eventKey #keyval >>= return . chr . fromIntegral
-    ms <- get eventKey #state
-    case (Gdk.ModifierTypeControlMask `elem` ms, Gdk.ModifierTypeShiftMask `elem` ms, toLower k) of
-      -- F2 - rename selection
-      (False,False,'\65471') -> Gtk.widgetGrabFocus nameEntry
-      -- 'delete' while the focus is on canvas - delete elements
-      (False,False,'\65535') -> Gtk.menuItemActivate del
-      _ -> return ()
-    return True
+  on canvas #keyPressEvent $ canvasKeyPressCallback nameEntry del
 
   -- if the canvas is focused, then set this canvas to respond to the events of the view menu, like zoom in and zoom out
   on canvas #focusInEvent $ \event -> do
@@ -253,31 +232,20 @@ startEditor window store
   ----------------------------------------------------------------------------------------------------------------------------
 
   -- if the user press enter, then change focus to the canvas so that the selected elements are renamed
-  on nameEntry #keyPressEvent $ \eventKey -> do
-    k <- get eventKey #keyval >>= return . chr . fromIntegral
-    --if it's Return or Enter (Numpad), change focus to the canvas
-    case k of
-       '\65293' -> Gtk.widgetGrabFocus canvas
-       '\65421' -> Gtk.widgetGrabFocus canvas
-       _       -> return ()
-    return False
+  on nameEntry #keyPressEvent $ nameEntryKeyPressedCallback canvas
 
   -- when the nameEntry lose focus, rename selected element(s)
-  on nameEntry #focusOutEvent $ \event -> do
-    es <- readIORef currentState
-    mergeM <- readIORef mergeMapping
-    renameSelectedCallback nameEntry canvas currentState possibleEdgeTypes typeGraph
-    indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
-    updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
-                    currentC currentLC
-                    typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
-                    (nodeTypeBox, edgeTypeBox)
-    updateByType
-        currentGraphType
-        store graphStates nacInfoMap mergeMapping currentState typeGraph currentGraph currentPath
-        possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes
-        nodeTypeCBox edgeTypeCBox
-    return False
+  on nameEntry #focusOutEvent $
+    nameEntryFocusOutCallback
+      canvas window nameEntry
+      nodeTypeCBox edgeTypeCBox
+      store storeIORefs
+      currentState typeGraph nacInfoMap mergeMapping
+      changesIORefs undoStack redoStack
+      selectableTypesIORefs possibleEdgeTypes
+      currentC currentLC
+      typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
+      nodeTypeBox edgeTypeBox
 
 
   -- select a fill color
@@ -899,66 +867,7 @@ startEditor window store
 -- Auxiliar functions for the canvas callbacks ----------------------------------------------------------------------------------
 ---------------------------------------------------------------------------------------------------------------------------------
 
--- callback used to display a
 
-
-
-
-
-
-
-
-
-
-
-indicateChangesWhenMovingElements :: Gtk.Window -> Gtk.TreeStore
-                                  -> IORef Bool ->  IORef GraphState -> IORef (Maybe MergeMapping)
-                                  -> IORef (M.Map Int32 ChangeStack) -> IORef (M.Map Int32 ChangeStack)
-                                  -> StoreIORefs -> ChangesIORefs -> Gdk.EventMotion
-                                  -> IO Bool
-indicateChangesWhenMovingElements window store movingGI currentState mergeMapping undoStack redoStack
-                                  storeIORefs changesIORefs eventMotion =
-  do
-    ms <- get eventMotion #state
-    es <- readIORef currentState
-    mergeM <- readIORef mergeMapping
-    let leftButton = Gdk.ModifierTypeButton1Mask `elem` ms
-        (sNodes, sEdges) = stateGetSelected es
-    if leftButton && ((length sNodes) + (length sEdges) > 0) then
-      do
-        mv <- readIORef movingGI
-        if not mv then
-          do
-            writeIORef movingGI True
-            indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
-        else
-          return ()
-    else
-      return ()
-
-    return True
-
-
-renameSelectedCallback :: Gtk.Entry -> Gtk.DrawingArea
-               -> IORef GraphState -> IORef (M.Map String (M.Map (String, String) EdgeGI, Int32)) -> IORef (Graph Info Info)
-               -> IO ()
-renameSelectedCallback nameEntry canvas currentState possibleEdgeTypes typeGraph =
-  do
-    es <- readIORef currentState
-    name <- Gtk.entryGetText nameEntry >>= return . T.unpack
-    context <- Gtk.widgetGetPangoContext canvas
-    es' <- renameSelected es name context
-
-    -- infere the types of edge(s) connected to the renamed node(s)
-    typesE <- readIORef possibleEdgeTypes
-    tg <- readIORef typeGraph
-    let
-      typesE' = M.map fst typesE
-      es'' = infereEdgesTypesAfterNodeChange es' tg typesE'
-
-    -- show changes
-    writeIORef currentState es''
-    Gtk.widgetQueueDraw canvas
 
 
 setNewColor :: Gtk.DrawingArea -> Gtk.ColorButton -> IORef GIColor -> Bool -> IORef GraphState -> IO ()
