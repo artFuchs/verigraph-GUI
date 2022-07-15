@@ -232,11 +232,8 @@ startEditor window store
   ----------------------------------------------------------------------------------------------------------------------------
 
   -- if the user press enter, then change focus to the canvas so that the selected elements are renamed
-  on nameEntry #keyPressEvent $ nameEntryKeyPressedCallback canvas
-
-  -- when the nameEntry lose focus, rename selected element(s)
-  on nameEntry #focusOutEvent $
-    nameEntryFocusOutCallback
+  on nameEntry #keyPressEvent $
+    nameEntryKeyPressedCallback
       canvas window nameEntry
       nodeTypeCBox edgeTypeCBox
       store storeIORefs

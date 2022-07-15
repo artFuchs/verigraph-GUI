@@ -43,6 +43,7 @@ import           GUI.Editor.UI.UpdateInspector
 type StoreIORefs      = ( IORef (M.Map Int32 GraphState), IORef [Int32], IORef Int32, IORef Int32 )
 type ChangesIORefs    = ( IORef Bool, IORef [Bool], IORef (M.Map Int32 Diagram))
 type NacIORefs        = ( IORef (M.Map Int32 (Diagram, MergeMapping)), IORef (Maybe MergeMapping))
+type SelectableTypesIORefs = (IORef (M.Map String (NodeGI, Int32)), IORef (M.Map String (M.Map (String, String) EdgeGI, Int32)), IORef (Maybe String), IORef (Maybe String))
 
 
 --------------------------------------------------------------------------------
@@ -141,18 +142,14 @@ indicateChangesWhenMovingElements window store movingGI currentState mergeMappin
   do
     ms <- get eventMotion #state
     es <- readIORef currentState
-    mergeM <- readIORef mergeMapping
+    mv <- readIORef movingGI
     let leftButton = Gdk.ModifierTypeButton1Mask `elem` ms
         (sNodes, sEdges) = stateGetSelected es
-    if leftButton && ((length sNodes) + (length sEdges) > 0) then
+    if leftButton && ((length sNodes) + (length sEdges) > 0) && (not mv) then
       do
-        mv <- readIORef movingGI
-        if not mv then
-          do
-            writeIORef movingGI True
-            indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
-        else
-          return ()
+        writeIORef movingGI True
+        mergeM <- readIORef mergeMapping
+        indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
     else
       return ()
 
@@ -208,20 +205,23 @@ canvasKeyPressCallback nameEntry del eventKey = do
 -- Inspector Pane --------------------------------------------------------------
 --------------------------------------------------------------------------------
 
-nameEntryKeyPressedCallback :: Gtk.DrawingArea -> Gdk.EventKey -> IO Bool
-nameEntryKeyPressedCallback canvas eventKey =
-  do
-    k <- get eventKey #keyval >>= return . chr . fromIntegral
-    --if it's Return or Enter (Numpad), change focus to the canvas
-    case k of
-       '\65293' -> Gtk.widgetGrabFocus canvas
-       '\65421' -> Gtk.widgetGrabFocus canvas
-       _       -> return ()
-    return False
+nameEntryKeyPressedCallback ::
+  Gtk.DrawingArea -> Gtk.Window -> Gtk.Entry ->
+  Gtk.ComboBoxText -> Gtk.ComboBoxText ->
+  Gtk.TreeStore -> StoreIORefs ->
+  IORef GraphState -> IORef (Graph Info Info) -> IORef (M.Map Int32 NacInfo) -> IORef (Maybe MergeMapping) ->
+  ChangesIORefs -> IORef (M.Map Int32 ChangeStack) -> IORef (M.Map Int32 ChangeStack) ->
+  SelectableTypesIORefs -> IORef (M.Map String (M.Map (String, String) EdgeGI, Int32)) ->
+  IORef (Double,Double,Double) -> IORef (Double,Double,Double) ->
+  (Gtk.Entry, Gtk.Box, Gtk.ColorButton, Gtk.ColorButton, Gtk.Frame, [Gtk.RadioButton], Gtk.Frame, [Gtk.RadioButton]) ->
+  (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText) ->
+  (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.ComboBoxText) ->
+  (Gtk.Entry, Gtk.ComboBoxText, Gtk.ComboBoxText, Gtk.Button, Gtk.Button) ->
+  Gtk.Box -> Gtk.Box ->
+  Gdk.EventKey ->
+  IO Bool
 
-
--- when the focus is out of nameEntry, then
-nameEntryFocusOutCallback
+nameEntryKeyPressedCallback
   canvas window nameEntry
   nodeTypeCBox edgeTypeCBox
   store storeIORefs@(graphStates,currentPath,currentGraph,currentGraphType)
@@ -231,22 +231,32 @@ nameEntryFocusOutCallback
   currentC currentLC
   typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
   nodeTypeBox edgeTypeBox
-  event =
+  eventKey =
     do
-      es <- readIORef currentState
-      mergeM <- readIORef mergeMapping
-      renameSelectedCallback nameEntry canvas currentState possibleEdgeTypes typeGraph
-      indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
-      updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
-                      currentC currentLC
-                      typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
-                      (nodeTypeBox, edgeTypeBox)
-      updateByType
-          currentGraphType
-          store graphStates nacInfoMap mergeMapping currentState typeGraph currentGraph currentPath
-          possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes
-          nodeTypeCBox edgeTypeCBox
+      k <- get eventKey #keyval >>= return . chr . fromIntegral
+      --if it's Return or Enter (Numpad), change focus to the canvas
+      case k of
+         '\65293' -> rename
+         '\65421' -> rename
+         '\65289' -> rename
+         _       -> return ()
       return False
+    where
+      rename =
+        do
+          es <- readIORef currentState
+          mergeM <- readIORef mergeMapping
+          renameSelectedCallback nameEntry canvas currentState possibleEdgeTypes typeGraph
+          indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
+          updateInspector currentGraphType currentState  mergeMapping selectableTypesIORefs
+                          currentC currentLC
+                          typeInspWidgets hostInspWidgets ruleInspWidgets nacInspWidgets
+                          (nodeTypeBox, edgeTypeBox)
+          updateByType
+              currentGraphType
+              store graphStates nacInfoMap mergeMapping currentState typeGraph currentGraph currentPath
+              possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes
+              nodeTypeCBox edgeTypeCBox
 
 
 renameSelectedCallback :: Gtk.Entry -> Gtk.DrawingArea
@@ -269,8 +279,6 @@ renameSelectedCallback nameEntry canvas currentState possibleEdgeTypes typeGraph
     -- show changes
     writeIORef currentState es''
     Gtk.widgetQueueDraw canvas
-
---
 
 -- update the typeGraph and selectable element types according to the current graph type
 updateByType
