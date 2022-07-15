@@ -270,6 +270,7 @@ renameSelectedCallback nameEntry canvas currentState possibleEdgeTypes typeGraph
     writeIORef currentState es''
     Gtk.widgetQueueDraw canvas
 
+--
 
 -- update the typeGraph and selectable element types according to the current graph type
 updateByType
