@@ -1,5 +1,7 @@
 {-# LANGUAGE OverloadedStrings, OverloadedLabels #-}
 
+-- | This module contains some of the callbacks of the editor, as well as auxiliar functions to some of them.
+
 module GUI.Editor.Helper.Callbacks where
 
 import qualified GI.Gtk as Gtk
