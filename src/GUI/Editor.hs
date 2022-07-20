@@ -263,61 +263,34 @@ startEditor window store
     indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
 
 
+
+  -- auxiliar function to change the selected nodes or edges to new shapes or styles according to the toggled RadioButton.
+  -- it receives a RadioButton, the new shape or style desired, an IORef with the current shape or style and a function to change the selected elements.
+  let
+    setSelectedS :: Gtk.RadioButton -> a -> IORef a -> (Gtk.RadioButton -> Gtk.DrawingArea -> a -> IORef a -> IORef GraphState -> IO Bool) -> IO ()
+    setSelectedS radioBtn newS currentS setS =
+      do
+        st <- readIORef currentState
+        changed <- setS radioBtn canvas newS currentS currentState
+        if changed then
+          do indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
+             updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
+        else return ()
+
+
   -- toogle the radio buttons for node shapes
   -- change the shape of the selected nodes and set the current shape for new nodes
-  circleRadioBtn `on` #toggled $ do
-    st <- readIORef currentState
-    changed <- setNewShape circleRadioBtn canvas NCircle currentShape currentState
-    if changed then
-      do indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
-         updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
-    else return ()
-
-  rectRadioBtn `on` #toggled $ do
-    st <- readIORef currentState
-    changed <- setNewShape rectRadioBtn canvas NRect currentShape currentState
-    if changed then
-      do  indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
-          updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
-    else return ()
-
-  squareRadioBtn `on` #toggled $ do
-    st <- readIORef currentState
-    changed <- setNewShape squareRadioBtn canvas NSquare currentShape currentState
-    if changed then
-      do  indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
-          updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
-    else return ()
-
-
-
+  circleRadioBtn `on` #toggled $ setSelectedS circleRadioBtn NCircle currentShape setNewShape
+  rectRadioBtn `on` #toggled $ setSelectedS rectRadioBtn NRect currentShape setNewShape
+  squareRadioBtn `on` #toggled $ setSelectedS squareRadioBtn NSquare currentShape setNewShape
 
 
   -- toogle the radio buttons for edge styles
   -- change the style of the selected edges and set the current style for new edges
-  normalRadioBtn `on` #toggled $ do
-    st <- readIORef currentState
-    changed <- setNewStyle normalRadioBtn canvas ENormal currentStyle currentState
-    if changed then
-      do  indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
-          updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
-    else return ()
 
-  pointedRadioBtn `on` #toggled $ do
-    st <- readIORef currentState
-    changed <- setNewStyle pointedRadioBtn canvas EPointed currentStyle currentState
-    if changed then
-      do  indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
-          updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
-    else return ()
-
-  slashedRadioBtn `on` #toggled $ do
-    st <- readIORef currentState
-    changed <- setNewStyle slashedRadioBtn canvas ESlashed currentStyle currentState
-    if changed then
-      do  indicateChanges window store storeIORefs changesIORefs undoStack redoStack Nothing st
-          updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
-    else return ()
+  normalRadioBtn `on` #toggled $  setSelectedS normalRadioBtn ENormal currentStyle setNewStyle
+  pointedRadioBtn `on` #toggled $ setSelectedS pointedRadioBtn EPointed currentStyle setNewStyle
+  slashedRadioBtn `on` #toggled $ setSelectedS slashedRadioBtn ESlashed currentStyle setNewStyle
 
 
   -- choose a type in the type nodeTypeCBox for nodes
@@ -339,13 +312,12 @@ startEditor window store
             es <- readIORef currentState
             mergeM <- readIORef mergeMapping
             changed <- changeNodesType typeGraph possibleEdgeTypes currentState typeInfo typeNGI
-            if changed then do
-              if gt == 4
-                then updateNacInfo nacInfoMap currentGraph mergeMapping currentState
-                else return ()
-              indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
-              Gtk.widgetQueueDraw canvas
-            else return ()
+            when changed $
+              do
+                when (gt == 4) $
+                  updateNacInfo nacInfoMap currentGraph mergeMapping currentState
+                indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
+                Gtk.widgetQueueDraw canvas
 
 
   -- choose a type in the type comboBox for edges
