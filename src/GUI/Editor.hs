@@ -265,7 +265,7 @@ startEditor window store
 
 
   -- auxiliar function to change the selected nodes or edges to new shapes or styles according to the toggled RadioButton.
-  -- it receives a RadioButton, the new shape or style desired, an IORef with the current shape or style and a function to change the selected elements. 
+  -- it receives a RadioButton, the new shape or style desired, an IORef with the current shape or style and a function to change the selected elements.
   let
     setSelectedS :: Gtk.RadioButton -> a -> IORef a -> (Gtk.RadioButton -> Gtk.DrawingArea -> a -> IORef a -> IORef GraphState -> IO Bool) -> IO ()
     setSelectedS radioBtn newS currentS setS =
@@ -292,26 +292,23 @@ startEditor window store
   pointedRadioBtn `on` #toggled $ setSelectedS pointedRadioBtn EPointed currentStyle setNewStyle
   slashedRadioBtn `on` #toggled $ setSelectedS slashedRadioBtn ESlashed currentStyle setNewStyle
 
-
-  -- choose a type in the type nodeTypeCBox for nodes
-  on nodeTypeCBox #changed $ do
-    gt <- readIORef currentGraphType
-    index <- Gtk.comboBoxGetActive nodeTypeCBox
-    case (index<0,gt<2) of
-      (True,_) -> return ()
-      (False,True) -> do
-        typeInfo <- Gtk.comboBoxTextGetActiveText nodeTypeCBox >>= \mt -> return (T.unpack <$> mt)
-        writeIORef currentNodeType $ typeInfo
-      (False,False) -> do
-        typeInfo <- Gtk.comboBoxTextGetActiveText nodeTypeCBox >>= \mt -> return . fromMaybe "" $ (T.unpack <$> mt)
-        selectedType <- readIORef possibleNodeTypes >>= return . M.lookup typeInfo
+  -- auxiliar function to changing the type of the selected elements
+  -- receives an integer that indicates the current graph type,
+  -- a string representing the current type,
+  -- and a function to change the current type of the selected nodes or edges
+  let
+    changeSelectedType' :: Int32 -> Gtk.ComboBoxText -> IORef (M.Map String (t,Int32)) -> (String -> t -> IO Bool) -> IO ()
+    changeSelectedType' gt cbox possibleTypes changeElementType =
+      do
+        typeInfo <- Gtk.comboBoxTextGetActiveText cbox >>= \mt -> return . fromMaybe "" $ (T.unpack <$> mt)
+        selectedType <- readIORef possibleTypes >>= return . M.lookup typeInfo
         case selectedType of
           Nothing -> return ()
-          Just (typeNGI,_) -> do
+          Just (selT,_) -> do
             writeIORef currentNodeType $ Just typeInfo
             es <- readIORef currentState
             mergeM <- readIORef mergeMapping
-            changed <- changeNodesType typeGraph possibleEdgeTypes currentState typeInfo typeNGI
+            changed <- changeElementType typeInfo selT
             when changed $
               do
                 when (gt == 4) $
@@ -320,32 +317,27 @@ startEditor window store
                 Gtk.widgetQueueDraw canvas
 
 
+  -- choose a type in the type nodeTypeCBox for nodes
+  on nodeTypeCBox #changed $ do
+    gt <- readIORef currentGraphType
+    index <- Gtk.comboBoxGetActive nodeTypeCBox
+    when (index > (-1)) $
+      if gt == 1
+        then
+          do
+            typeInfo <- Gtk.comboBoxTextGetActiveText nodeTypeCBox >>= \mt -> return (T.unpack <$> mt)
+            writeIORef currentNodeType $ typeInfo
+        else
+          changeSelectedType' gt nodeTypeCBox possibleNodeTypes (changeNodesType typeGraph possibleEdgeTypes currentState)
+
+
   -- choose a type in the type comboBox for edges
   on edgeTypeCBox #changed $ do
     gt <- readIORef currentGraphType
     index <- Gtk.comboBoxGetActive edgeTypeCBox
-    case (index<0, gt<2) of
-      (True,_) -> return ()
-      (False,True) -> return ()
-      (False,False) -> do
-            typeInfo <- Gtk.comboBoxTextGetActiveText edgeTypeCBox >>= \mt -> return . fromMaybe "" $ T.unpack <$> mt
-            typeEntry <- readIORef possibleEdgeTypes >>= return . M.lookup typeInfo
-            case typeEntry of
-              Nothing -> return()
-              Just (pET,_) -> do
-                writeIORef currentEdgeType $ Just typeInfo
-                es <- readIORef currentState
-                mergeM <- readIORef mergeMapping
-                changed <- changeEdgesType currentState typeInfo pET
-                if changed then
-                  do
-                    if gt == 4
-                      then updateNacInfo nacInfoMap currentGraph mergeMapping currentState
-                      else return ()
-                    indicateChanges window store storeIORefs changesIORefs undoStack redoStack mergeM es
-                    Gtk.widgetQueueDraw canvas
-                else
-                  return ()
+    when (index>(-1) && gt>1) $
+      changeSelectedType' gt edgeTypeCBox possibleEdgeTypes (changeEdgesType currentState)
+
 
 
   -- choose a operaion in the operation comboBox
