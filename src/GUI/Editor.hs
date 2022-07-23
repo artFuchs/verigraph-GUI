@@ -265,7 +265,7 @@ startEditor window store
 
 
   -- auxiliar function to change the selected nodes or edges to new shapes or styles according to the toggled RadioButton.
-  -- it receives a RadioButton, the new shape or style desired, an IORef with the current shape or style and a function to change the selected elements.
+  -- it receives a RadioButton, the new shape or style desired, an IORef with the current shape or style and a function to change the selected elements. 
   let
     setSelectedS :: Gtk.RadioButton -> a -> IORef a -> (Gtk.RadioButton -> Gtk.DrawingArea -> a -> IORef a -> IORef GraphState -> IO Bool) -> IO ()
     setSelectedS radioBtn newS currentS setS =
