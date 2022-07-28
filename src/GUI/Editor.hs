@@ -326,12 +326,10 @@ startEditor window store
     gt <- readIORef currentGraphType
     index <- Gtk.comboBoxGetActive nodeTypeCBox
     when (index > (-1)) $
-      if gt == 1
-        then
-          do
-            typeInfo <- Gtk.comboBoxTextGetActiveText nodeTypeCBox >>= \mt -> return (T.unpack <$> mt)
-            writeIORef currentNodeType $ typeInfo
-        else
+      if gt == 1 then do
+          typeInfo <- Gtk.comboBoxTextGetActiveText nodeTypeCBox >>= \mt -> return (T.unpack <$> mt)
+          writeIORef currentNodeType $ typeInfo
+      else
           changeSelectedType gt nodeTypeCBox possibleNodeTypes (changeNodesType typeGraph possibleEdgeTypes currentState)
 
   -- choose a type in the type comboBox for edges
@@ -363,96 +361,67 @@ startEditor window store
 
   -- when the typeGraph row is changed or created, update the typeGraph
   after store #rowChanged $ \path iter -> do
-    gid <- Gtk.treeModelGetValue store iter 2 >>= fromGValue :: IO Int32
     t   <- Gtk.treeModelGetValue store iter 3 >>= fromGValue :: IO Int32
-    case t of
-      1 -> do
-        gt <- readIORef currentGraphType
-        if gt == t then do
-          updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
-        else return ()
-      _ -> return ()
+    when (t == 1) $
+      updateTG currentState typeGraph possibleNodeTypes possibleEdgeTypes possibleSelectableEdgeTypes graphStates nodeTypeCBox edgeTypeCBox store
 
-  -- event: changed the selected graph
+  -- changed the selected graph
   on treeview #cursorChanged $ do
     selection <- Gtk.treeViewGetSelection treeview
     (sel,model,iter) <- Gtk.treeSelectionGetSelected selection
-    case sel of
-      False -> return ()
-      True -> do
+    when sel $ do
         gType <- Gtk.treeModelGetValue model iter 3 >>= fromGValue  :: IO Int32
         path <- Gtk.treeModelGetPath model iter >>= Gtk.treePathGetIndices >>= return . fromMaybe [0]
-        if gType /= 0 then do
-          -- update the current path
-          writeIORef currentPath path
-        else return ()
+
+        when (gType /= 0) $ writeIORef currentPath path
 
         cIndex <- readIORef currentGraph
         index <- Gtk.treeModelGetValue model iter 2 >>= fromGValue  :: IO Int32
         -- compare the selected graph with the current one and change the graph according to selection
-        case (cIndex == index, gType) of
-          -- case the index did not change or the graph is a topic, then do nothing
-          (True, _)  -> return ()
-          (False, 0) -> return ()
-
-          -- case the selection is a NAC, mount the graph with the LHS part, the additional elements and the merge information
-          (False, 4) -> do
-
+        when (cIndex /= index) $
+          do
             -- update the current graph in the tree
             storeCurrentES window currentState storeIORefs nacInfoMap
-
-            -- build the graph for the nac
             writeIORef currentGraphType gType
             states <- readIORef graphStates
             let maybeState = M.lookup index states
-            case maybeState of
-              Just es -> do
-                tg <- readIORef typeGraph
-                -- load lhs diagraph
-                (lhs,lgi) <- getParentLHSDiaGraph store path graphStates
-                let lhsIsValid = isGraphValid lhs tg
-
-                case lhsIsValid of
-                  False -> do
-                    showError window "Parent rule have type errors. Please, correct them before loading nacGraph."
-                    if (length path > 1)
-                      then do
-                        parentPath <- Gtk.treePathNewFromIndices (init path)
-                        Gtk.treeViewSetCursor treeview parentPath (Nothing :: Maybe Gtk.TreeViewColumn) False
-                      else return ()
-                  True -> do
-                    -- load nac' diagraph
-                    context <- Gtk.widgetGetPangoContext canvas
-                    lhsNgi <- updateNodesGiDims (fst lgi) lhs context
-                    let lhsgi = (lhsNgi, snd lgi)
-                    nacInfoM <- readIORef nacInfoMap
-                    (nG,nGI) <- case M.lookup index nacInfoM of
-                      Nothing -> return (lhs,lhsgi)
-                      Just (nacdg,mergeM) -> do
-                        (nacdg',mergeM') <- applyLhsChangesToNac lhs (nacdg,mergeM) (Just context)
-                        writeIORef mergeMapping $ Just mergeM'
-                        modifyIORef nacInfoMap $ M.insert index (nacdg', mergeM')
-                        return $ mountNACGraph (lhs,lhsgi) tg (nacdg', mergeM')
-                    writeIORef currentState $ stateSetGI nGI . stateSetGraph nG $ es
+            when (not . null $ maybeState) $
+              do
+                let es = fromJust maybeState
+                if gType /= 4 then
+                  do
+                    writeIORef currentState es
                     writeIORef currentGraph index
-              Nothing -> return ()
+                    writeIORef mergeMapping Nothing
+                else
+                  do
+                    tg <- readIORef typeGraph
+                    -- load lhs diagraph
+                    (lhs,lgi) <- getParentLHSDiaGraph store path graphStates
+                    if not (isGraphValid lhs tg)
+                      then do
+                        showError window "Parent rule is not valid. Please, correct any errors before loading the NAC."
+                        when (length path > 1) $
+                          do
+                            parentPath <- Gtk.treePathNewFromIndices (init path)
+                            Gtk.treeViewSetCursor treeview parentPath (Nothing :: Maybe Gtk.TreeViewColumn) False
+                      else do
+                        -- load nac' diagraph
+                        context <- Gtk.widgetGetPangoContext canvas
+                        lhsNgi <- updateNodesGiDims (fst lgi) lhs context
+                        let lhsgi = (lhsNgi, snd lgi)
+                        nacInfoM <- readIORef nacInfoMap
+                        (nG,nGI) <- case M.lookup index nacInfoM of
+                          Nothing -> return (lhs,lhsgi)
+                          Just (nacdg,mergeM) -> do
+                            (nacdg',mergeM') <- applyLhsChangesToNac lhs (nacdg,mergeM) (Just context)
+                            writeIORef mergeMapping $ Just mergeM'
+                            modifyIORef nacInfoMap $ M.insert index (nacdg', mergeM')
+                            return $ mountNACGraph (lhs,lhsgi) tg (nacdg', mergeM')
+                        writeIORef currentState $ stateSetGI nGI . stateSetGraph nG $ es
+                        writeIORef currentGraph index
 
-          -- case the selection is another type of graph, get the graph from the map
-          (False, _) -> do
-            -- update the current path
-            writeIORef currentPath path
-            -- update the current graph in the tree
-            storeCurrentES window currentState storeIORefs nacInfoMap
-            -- load the selected graph from the tree
-            writeIORef currentGraphType gType
-            states <- readIORef graphStates
-            let maybeState = M.lookup index states
-            case maybeState of
-              Just es -> do
-                writeIORef currentState es
-                writeIORef currentGraph index
-                writeIORef mergeMapping Nothing
-              Nothing -> return ()
+
 
 
         -- set the GI of new elements to a default and update the elments of a graph according to the current typegraph
